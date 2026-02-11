@@ -95,3 +95,9 @@ export function requireOnboardingComplete(
   if (!session?.user) return false;
   return session.user.status !== 'pending_onboarding';
 }
+
+export function canSetBudget(
+  role: string | null | undefined,
+): boolean {
+  return role === 'admin' || role === 'office';
+}

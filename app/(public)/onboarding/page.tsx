@@ -1,9 +1,8 @@
-import { prisma } from '@/lib/prisma';
-import { OnboardingForm } from '../../../components/features/onboard/OnboardingForm';
-import { Button } from '@/components/ui/button';
 import SignOutButton from '@/components/features/auth/SignOutButton';
 import { auth } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { redirect } from 'next/navigation';
+import { OnboardingForm } from '../../../components/features/onboard/OnboardingForm';
 
 export default async function OnboardingPage() {
   const session = await auth();

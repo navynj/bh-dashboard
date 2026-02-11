@@ -67,7 +67,7 @@ export function OnboardingForm({
 
   const role = watch('role');
 
-  const submitHandler = async (data: OnboardingFormValues) => {
+  const submit = async (data: OnboardingFormValues) => {
     const result = await api('/onboarding', {
       method: 'POST',
       body: {
@@ -84,7 +84,7 @@ export function OnboardingForm({
   };
 
   return (
-    <form onSubmit={handleSubmit(submitHandler)} className={className}>
+    <form onSubmit={handleSubmit(submit)} className={className}>
       <Card>
         <CardHeader>
           <CardTitle>Profile</CardTitle>

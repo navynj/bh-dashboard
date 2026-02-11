@@ -3,7 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  output  = "../node_modules/.prisma/client"
+  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -53,27 +53,81 @@ model VerificationToken {
 
 // ---------- App: Locations (HQ, CC, PM, extensible) ----------
 model Location {
-  id        String   @id @default(cuid())
-  code      String   @unique // e.g. "HQ", "CC", "PM"
-  name      String
-  createdAt DateTime @default(now()) @map("created_at")
+  id               String   @id @default(cuid())
+  code             String   @unique // e.g. "HQ", "CC", "PM"
+  name             String
+  realmId          String   @map("realm_id")
+  accessToken      String   @map("access_token")
+  refreshToken     String   @map("refresh_token")
+  expiresAt        DateTime @map("expires_at")
+  refreshExpiresAt DateTime @map("refresh_expires_at")
+  createdAt        DateTime @default(now()) @map("created_at")
 
-  users User[]
+  users   User[]
+  budgets Budget[]
 
   @@map("locations")
 }
 
+// ---------- Budget: default settings (office/admin) ----------
+// Single row: default budget rate (e.g. 0.33 = 33% of reference income), reference period in months (e.g. 6).
+model BudgetSettings {
+  id                    String   @id @default(cuid())
+  budgetRate            Decimal  @map("budget_rate") @db.Decimal(5, 4) // e.g. 0.33
+  referencePeriodMonths Int      @map("reference_period_months") // e.g. 6
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  updatedById           String?  @map("updated_by_id")
+  updatedBy             User?    @relation("BudgetSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("budget_settings")
+}
+
+// ---------- Budget: total per location per month ----------
+model Budget {
+  id                        String   @id @default(cuid())
+  locationId                String   @map("location_id")
+  yearMonth                 String   @map("year_month") // YYYY-MM
+  totalAmount               Decimal  @map("total_amount") @db.Decimal(14, 2)
+  budgetRateUsed            Decimal? @map("budget_rate_used") @db.Decimal(5, 4)
+  referencePeriodMonthsUsed Int?     @map("reference_period_months_used")
+  error                     String?  @map("error") // e.g. QB_REFRESH_EXPIRED when creation failed
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  location   Location         @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  categories BudgetCategory[]
+
+  @@unique([locationId, yearMonth])
+  @@map("budgets")
+}
+
+// ---------- Budget category: COS category share of that month's budget ----------
+model BudgetCategory {
+  id         String   @id @default(cuid())
+  budgetId   String   @map("budget_id")
+  categoryId String   @map("category_id") // e.g. QB account id or name
+  name       String
+  amount     Decimal  @db.Decimal(14, 2)
+  percent    Decimal? @db.Decimal(5, 2) // share of total COS when set
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@unique([budgetId, categoryId])
+  @@map("budget_categories")
+}
+
 // ---------- App: User (extends Auth.js User with role, location, approval) ----------
 enum UserRole {
-  admin   // developer, full config
-  office  // set budget, view all locations; permitted by admin
+  admin // developer, full config
+  office // set budget, view all locations; permitted by admin
   manager // view own location only; permitted by admin or office
 }
 
 enum UserStatus {
   pending_onboarding // just signed up, must set name/role/location
-  pending_approval   // office or manager waiting for permission
-  active             // can use the app
+  pending_approval // office or manager waiting for permission
+  active // can use the app
+  rejected // rejected by admin
 }
 
 model User {
@@ -84,17 +138,18 @@ model User {
   image         String?
 
   // App fields
-  role       UserRole?    @default(manager)
-  status     UserStatus   @default(pending_onboarding) @map("status")
-  locationId String?      @map("location_id") // only for manager
-  permittedById String?   @map("permitted_by_id") // who approved (admin or office)
-  permittedAt   DateTime? @map("permitted_at")
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
+  role          UserRole?  @default(manager)
+  status        UserStatus @default(pending_onboarding) @map("status")
+  locationId    String?    @map("location_id") // only for manager
+  permittedById String?    @map("permitted_by_id") // who approved (admin or office)
+  permittedAt   DateTime?  @map("permitted_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
 
-  location   Location?   @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  permittedBy User?       @relation("UserPermittedBy", fields: [permittedById], references: [id], onDelete: SetNull)
-  permittedUsers User[]   @relation("UserPermittedBy")
+  location              Location?        @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  permittedBy           User?            @relation("UserPermittedBy", fields: [permittedById], references: [id], onDelete: SetNull)
+  permittedUsers        User[]           @relation("UserPermittedBy")
+  budgetSettingsUpdates BudgetSettings[] @relation("BudgetSettingsUpdatedBy")
 
   accounts Account[]
   sessions Session[]
