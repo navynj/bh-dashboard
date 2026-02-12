@@ -16,7 +16,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'BH Budget',
+  title: {
+    default: 'BH Budget',
+    template: '%s | BH Budget',
+  },
   description: 'Budget charts and overview',
 };
 

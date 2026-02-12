@@ -485,15 +485,31 @@ export async function fetchProfitAndLossReport(
   const resolvedRealmId = decryptRefreshToken(realmId);
   const url = `${QB_BASE}/v3/company/${resolvedRealmId}/reports/ProfitAndLoss?start_date=${startDate}&end_date=${endDate}&accounting_method=${accountingMethod}`;
 
-  const doFetch = (token: string) =>
-    fetch(url, {
+  const QB_FETCH_TIMEOUT_MS = 25_000;
+
+  const doFetch = (token: string) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), QB_FETCH_TIMEOUT_MS);
+    return fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/json',
       },
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
+  };
 
-  let res = await doFetch(accessToken);
+  let res: Response;
+  try {
+    res = await doFetch(accessToken);
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') {
+      throw new AppError(
+        'QuickBooks P&L request timed out. The service may be slow or unreachable.',
+      );
+    }
+    throw e;
+  }
 
   if (res.status === 401) {
     const err = await res.text();
