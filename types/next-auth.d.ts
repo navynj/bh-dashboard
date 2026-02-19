@@ -18,6 +18,7 @@ declare module 'next-auth' {
       status: UserStatus;
       locationId: string | null;
       locationCode: string | null;
+      rejectReason: string | null;
     };
   }
 }

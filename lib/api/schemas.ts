@@ -29,6 +29,12 @@ export const onboardingApprovePostSchema = z.object({
   userId: z.string().min(1, 'userId is required').transform((s) => s.trim()),
 });
 
+/** POST /api/onboarding/reject */
+export const onboardingRejectPostSchema = z.object({
+  userId: z.string().min(1, 'userId is required').transform((s) => s.trim()),
+  reason: z.string().max(2000).transform((s) => s.trim()).optional(),
+});
+
 const cosCategorySchema = z.object({
   categoryId: z.string(),
   name: z.string(),
@@ -115,6 +121,7 @@ export const locationPatchSchema = z.object({
 
 export type OnboardingPostBody = z.infer<typeof onboardingPostSchema>;
 export type OnboardingApprovePostBody = z.infer<typeof onboardingApprovePostSchema>;
+export type OnboardingRejectPostBody = z.infer<typeof onboardingRejectPostSchema>;
 export type BudgetPostBody = z.infer<typeof budgetPostSchema>;
 export type BudgetPatchBody = z.infer<typeof budgetPatchSchema>;
 export type BudgetBulkPatchBody = z.infer<typeof budgetBulkPatchSchema>;

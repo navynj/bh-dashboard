@@ -129,6 +129,7 @@ model User {
   locationId    String?    @map("location_id") // only for manager
   permittedById String?    @map("permitted_by_id") // who approved (admin or office)
   permittedAt   DateTime?  @map("permitted_at")
+  rejectReason  String?    @map("reject_reason") // optional reason when status is rejected
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 

@@ -7,21 +7,33 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { auth } from '@/lib/auth';
 import { Mail, Phone } from 'lucide-react';
 
-export default async function WaitingPage() {
+export default async function RejectedPage() {
+  const session = await auth();
+  const rejectReason = session?.user?.rejectReason ?? null;
+
   return (
     <div className="flex min-h-screen flex-col gap-6 items-center justify-center p-4">
       <ApprovalPolling />
       <Card className="w-full max-w-md gap-0">
         <CardHeader>
-          <CardTitle>Waiting for approval</CardTitle>
+          <CardTitle>Account rejected</CardTitle>
           <CardDescription className="space-y-4">
             <p>
               Your account is rejected.
               <br />
-              Please contact to the administrator.
-            </p>{' '}
+              Please contact the administrator.
+            </p>
+            {rejectReason ? (
+              <div className="rounded-md border bg-muted/50 p-3">
+                <p className="text-sm font-medium text-muted-foreground mb-1">
+                  Reason:
+                </p>
+                <p className="text-sm">{rejectReason}</p>
+              </div>
+            ) : null}
             <div className="flex flex-col items-end gap-1">
               <p className="flex items-center gap-1 text-blue-500">
                 <Mail size={14} />

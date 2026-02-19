@@ -31,6 +31,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           session.user.status = dbUser.status;
           session.user.locationId = dbUser.locationId;
           session.user.locationCode = dbUser.location?.code ?? null;
+          session.user.rejectReason = dbUser.rejectReason ?? null;
         }
       }
       return session;
