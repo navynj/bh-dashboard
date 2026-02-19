@@ -1,6 +1,7 @@
 'use client';
 
 import { DataTable } from '@/components/ui/data-table';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -11,7 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { type ColumnDef, type Row } from '@tanstack/react-table';
-import { Check, Pencil } from 'lucide-react';
+import { Check, Pencil, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -90,19 +91,46 @@ export default function UsersPage() {
 
   const updateUser = useCallback(
     async (row: UserRow, field: string, value: unknown) => {
+      const previous = users.find((u) => u.id === row.id);
+      if (!previous) return;
+
+      const optimisticUser: UserRow = (() => {
+        const next = { ...previous };
+        if (field === 'name') next.name = value as string;
+        else if (field === 'role') {
+          next.role = value as UserRole;
+          next.locationId = null;
+          next.location = null;
+        } else if (field === 'status') next.status = value as UserStatus;
+        else if (field === 'locationId') {
+          next.locationId = value as string | null;
+          next.location =
+            value != null
+              ? locations.find((l) => l.id === value) ?? null
+              : null;
+        }
+        return next;
+      })();
+
+      setUsers((prev) =>
+        prev.map((u) => (u.id === row.id ? optimisticUser : u)),
+      );
+
       try {
         const body: Record<string, unknown> = { [field]: value };
         if (field === 'role') {
           body.locationId = null;
         }
         await patchUser(row.id, body);
-        await fetchUsers();
         toast.success('Updated');
       } catch (e) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === row.id ? previous : u)),
+        );
         toast.error(e instanceof Error ? e.message : 'Update failed');
       }
     },
-    [fetchUsers],
+    [users, locations],
   );
 
   const columns: ColumnDef<UserRow>[] = [
@@ -222,23 +250,10 @@ export default function UsersPage() {
     },
   ];
 
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Users</h1>
-        <p className="text-muted-foreground">Loading…</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Users</h1>
-      <p className="text-muted-foreground text-sm">
-        Edit name, role, status, and location inline. Changes save
-        automatically.
-      </p>
-      <DataTable columns={columns} data={users} />
+      <DataTable columns={columns} data={users} isLoading={loading} />
     </div>
   );
 }
@@ -304,6 +319,15 @@ function EditableName({
         onClick={handleSave}
       >
         <Check className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Cancel"
+        onClick={handleCancel}
+      >
+        <X className="size-3.5" />
       </Button>
     </div>
   );

@@ -1,10 +1,11 @@
 'use client';
 
 import { DataTable } from '@/components/ui/data-table';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { type ColumnDef, type Row } from '@tanstack/react-table';
-import { Check, Pencil } from 'lucide-react';
+import { Check, Pencil, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -39,20 +40,36 @@ export default function LocationsPage() {
   }, []);
 
   useEffect(() => {
-    fetchLocations().catch(() => toast.error('Failed to load locations')).finally(() => setLoading(false));
+    fetchLocations()
+      .catch(() => toast.error('Failed to load locations'))
+      .finally(() => setLoading(false));
   }, [fetchLocations]);
 
   const updateLocation = useCallback(
     async (row: LocationRow, field: string, value: unknown) => {
+      const previous = locations.find((l) => l.id === row.id);
+      if (!previous) return;
+
+      const optimisticLocation: LocationRow = {
+        ...previous,
+        [field]: value as string | null,
+      };
+
+      setLocations((prev) =>
+        prev.map((l) => (l.id === row.id ? optimisticLocation : l)),
+      );
+
       try {
         await patchLocation(row.id, { [field]: value });
-        await fetchLocations();
         toast.success('Updated');
       } catch (e) {
+        setLocations((prev) =>
+          prev.map((l) => (l.id === row.id ? previous : l)),
+        );
         toast.error(e instanceof Error ? e.message : 'Update failed');
       }
     },
-    [fetchLocations]
+    [locations],
   );
 
   const columns: ColumnDef<LocationRow>[] = [
@@ -85,28 +102,18 @@ export default function LocationsPage() {
         <EditableCell
           row={row}
           field="classId"
-          onSave={(v) => updateLocation(row.original, 'classId', v === '' ? null : v)}
+          onSave={(v) =>
+            updateLocation(row.original, 'classId', v === '' ? null : v)
+          }
         />
       ),
     },
   ];
 
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Locations</h1>
-        <p className="text-muted-foreground">Loading…</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Locations</h1>
-      <p className="text-muted-foreground text-sm">
-        Edit code, name, and class ID inline. Changes save on blur.
-      </p>
-      <DataTable columns={columns} data={locations} />
+      <DataTable columns={columns} data={locations} isLoading={loading} />
     </div>
   );
 }
@@ -174,15 +181,26 @@ function EditableCell({
         }}
         placeholder={field === 'classId' ? 'Optional' : undefined}
       />
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Save"
-        onClick={handleSave}
-      >
-        <Check className="size-3.5" />
-      </Button>
+      <div className="flex">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Save"
+          onClick={handleSave}
+        >
+          <Check className="size-3.5" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Cancel"
+          onClick={handleCancel}
+        >
+          <X className="size-3.5" />
+        </Button>
+      </div>
     </div>
   );
 }
