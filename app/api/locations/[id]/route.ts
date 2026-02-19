@@ -33,11 +33,13 @@ export async function PATCH(
     name?: string;
     classId?: string | null;
     realmId?: string;
+    startYearMonth?: string | null;
   } = {};
   if (body.code !== undefined) updateData.code = body.code;
   if (body.name !== undefined) updateData.name = body.name;
   if (body.classId !== undefined) updateData.classId = body.classId ?? null;
   if (body.realmId !== undefined) updateData.realmId = body.realmId;
+  if (body.startYearMonth !== undefined) updateData.startYearMonth = body.startYearMonth ?? null;
 
   await prisma.location.update({
     where: { id },

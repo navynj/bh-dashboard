@@ -18,6 +18,7 @@ function BudgetAmountSummary({
   displayRate,
   displayPeriod,
 }: BudgetAmountSummaryProps) {
+  const noReference = displayPeriod != null && displayPeriod <= 0;
   return (
     <>
       <div className="text-2xl font-semibold">
@@ -32,7 +33,7 @@ function BudgetAmountSummary({
               <div>
                 <p className="text-base font-normal">Cost of Sales</p>
                 <p className="text-muted-foreground text-base font-normal">
-                  Budget
+                  {noReference ? 'No budget set' : 'Budget'}
                 </p>
               </div>
               <div className="inline-flex flex-col items-end">
@@ -40,17 +41,18 @@ function BudgetAmountSummary({
                   {formatCurrency(currentCosTotal)}
                 </p>
                 <p className="text-muted-foreground text-base font-normal">
-                  /{formatCurrency(totalBudget)}
+                  {noReference ? '—' : `/${formatCurrency(totalBudget)}`}
                 </p>
               </div>
             </div>
           )
         )}
       </div>
-      {(displayRate != null || displayPeriod != null) && (
+      {(displayRate != null || (displayPeriod != null && !noReference)) && (
         <p className="text-muted-foreground text-xs text-right">
           {displayRate != null && `Rate: ${(displayRate * 100).toFixed(0)}%`}
           {displayPeriod != null &&
+            displayPeriod > 0 &&
             `${displayRate != null ? ' · ' : ''}Ref: ${displayPeriod} months`}
         </p>
       )}

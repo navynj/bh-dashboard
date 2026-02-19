@@ -209,10 +209,14 @@ function FieldError({
     }
 
     return (
-      <ul className="ml-4 flex list-disc flex-col gap-1">
+      <ul className="bg-red-50 rounded-md p-2 ml-4 flex list-disc flex-col gap-1">
         {uniqueErrors.map(
           (error, index) =>
-            error?.message && <li key={index}>{error.message}</li>,
+            error?.message && (
+              <li key={index} className="text-destructive">
+                {error.message}
+              </li>
+            ),
         )}
       </ul>
     );
@@ -226,7 +230,10 @@ function FieldError({
     <div
       role="alert"
       data-slot="field-error"
-      className={cn('text-destructive text-sm font-normal', className)}
+      className={cn(
+        'bg-red-50 rounded-md p-2 text-destructive text-sm font-normal',
+        className,
+      )}
       {...props}
     >
       {content}

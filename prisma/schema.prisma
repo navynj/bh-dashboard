@@ -69,15 +69,15 @@ model Realm {
 
 // ---------- App: Locations (HQ, CC, PM, extensible) ----------
 model Location {
-  id        String    @id @default(cuid())
-  code      String    @unique // e.g. "HQ", "CC", "PM"
-  name      String
-  realmId   String    @map("realm_id") // FK to Realm
-  classId   String?   @map("class_id")
-  createdAt DateTime  @default(now()) @map("created_at")
-  startDate DateTime? @map("start_date")
+  id             String   @id @default(cuid())
+  code           String   @unique // e.g. "HQ", "CC", "PM"
+  name           String
+  realmId        String   @map("realm_id") // FK to Realm
+  classId        String?  @map("class_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  startYearMonth String?  @map("start_year_month") // YYYY-MM
 
-  realm   Realm     @relation(fields: [realmId], references: [id], onDelete: Restrict)
+  realm   Realm    @relation(fields: [realmId], references: [id], onDelete: Restrict)
   users   User[]
   budgets Budget[]
 

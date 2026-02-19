@@ -15,7 +15,7 @@ import { ArrowRightIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CategoryBudgetBarChart from '../chart/CategoryBudgetBarChart';
 
-/** Derive display categories: merge current month COS with reference so categories with 0 current (e.g. COS5-Liquor) still show. Percent = category amount / Budget total. */
+/** Derive display categories: merge current month COS with reference so categories with 0 current (e.g. COS5-Liquor) still show. Percent = category amount / Budget total (or current COS total when no reference). */
 function deriveDisplayCategories(
   currentCosByCategory:
     | { categoryId: string; name: string; amount: number }[]
@@ -24,6 +24,8 @@ function deriveDisplayCategories(
     | { categoryId: string; name: string; amount: number }[]
     | undefined,
   totalBudget: number,
+  currentCosTotal?: number,
+  noReference?: boolean,
 ): BudgetCategoryRow[] {
   const currentMap = new Map(
     (currentCosByCategory ?? []).map((c) => [c.categoryId, c]),
@@ -31,6 +33,9 @@ function deriveDisplayCategories(
   const refList = referenceCosByCategory ?? currentCosByCategory ?? [];
   if (!refList.length) return [];
   const hasBudget = Number.isFinite(totalBudget) && totalBudget > 0;
+  const totalForPercent =
+    hasBudget ? totalBudget : (noReference && Number.isFinite(currentCosTotal) && (currentCosTotal ?? 0) > 0 ? currentCosTotal! : 0);
+  const hasPercent = hasBudget || (noReference && totalForPercent > 0);
   return refList.map((ref) => {
     const current = currentMap.get(ref.categoryId);
     const amount = current?.amount ?? 0;
@@ -39,7 +44,7 @@ function deriveDisplayCategories(
       categoryId: ref.categoryId,
       name: ref.name,
       amount,
-      percent: hasBudget ? (amount / totalBudget) * 100 : null,
+      percent: hasPercent ? (amount / totalForPercent) * 100 : null,
     };
   });
 }
@@ -79,17 +84,24 @@ function BudgetCard({
     Number.isFinite(budget.currentCosTotal)
       ? budget.currentCosTotal
       : 0;
+  const noReference =
+    budget.referencePeriodMonthsUsed != null &&
+    budget.referencePeriodMonthsUsed <= 0;
   const displayCategories = useMemo(
     () =>
       deriveDisplayCategories(
         budget.currentCosByCategory,
         budget.referenceCosByCategory,
         totalAmount,
+        currentCosTotal,
+        noReference,
       ),
     [
       budget.currentCosByCategory,
       budget.referenceCosByCategory,
       totalAmount,
+      currentCosTotal,
+      noReference,
     ],
   );
 
@@ -171,6 +183,7 @@ function BudgetCard({
           <TotalBudgetChart
             totalAmount={totalAmount}
             currentCosByCategory={budget.currentCosByCategory}
+            referencePeriodMonthsUsed={budget.referencePeriodMonthsUsed}
           />
         )}
         <BudgetCategoryList
@@ -184,6 +197,7 @@ function BudgetCard({
             currentCosByCategory={budget.currentCosByCategory}
             referenceCosByCategory={budget.referenceCosByCategory}
             referenceCosTotal={budget.referenceCosTotal}
+            referencePeriodMonthsUsed={budget.referencePeriodMonthsUsed}
             className="mt-4"
           />
         )}

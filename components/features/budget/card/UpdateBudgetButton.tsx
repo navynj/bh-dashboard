@@ -147,7 +147,7 @@ function UpdateBudgetModal({
             <Input
               id="update-budget-period"
               type="number"
-              min={1}
+              min={0}
               max={24}
               placeholder="e.g. 6"
               value={period}
@@ -155,9 +155,7 @@ function UpdateBudgetModal({
             />
           </Field>
         </div>
-        {error && (
-          <FieldError className="mt-4 text-right">{error}</FieldError>
-        )}
+        {error && <FieldError className="mt-4 text-right">{error}</FieldError>}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} disabled={loading}>
             Cancel

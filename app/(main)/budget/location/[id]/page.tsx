@@ -67,23 +67,39 @@ const LocationPage = async ({
       context,
     });
 
-    budget = mapBudgetToDataType(created);
+    budget = created ? mapBudgetToDataType(created) : null;
   }
 
-  const [withCos] = await attachCurrentMonthCosToBudgets(
-    [budget],
-    yearMonth,
-    context,
-  );
-  budget = withCos;
-  if (session?.user?.id) {
-    const [withRef] = await attachReferenceCosToBudgets(
+  if (budget) {
+    const [withCos] = await attachCurrentMonthCosToBudgets(
       [budget],
       yearMonth,
-      session.user.id,
       context,
     );
-    budget = withRef;
+    budget = withCos;
+    if (session?.user?.id) {
+      const [withRef] = await attachReferenceCosToBudgets(
+        [budget],
+        yearMonth,
+        session.user.id,
+        context,
+      );
+      budget = withRef;
+    }
+  }
+
+  if (!budget) {
+    const startYearMonth = location.startYearMonth;
+    const startMsg =
+      startYearMonth != null
+        ? `Budget for this location starts from ${startYearMonth}.`
+        : 'No budget for this month.';
+    return (
+      <div className="rounded-lg border border-dashed p-6 text-center text-muted-foreground">
+        <p>{startMsg}</p>
+        <p className="mt-1 text-sm">Select a different month to view budget.</p>
+      </div>
+    );
   }
 
   return (
@@ -94,6 +110,7 @@ const LocationPage = async ({
           size="lg"
           totalAmount={budget.totalAmount}
           currentCosByCategory={budget.currentCosByCategory ?? []}
+          referencePeriodMonthsUsed={budget.referencePeriodMonthsUsed}
         />
         <CategoryBudgetBarChart
           className="w-full md:w-2/3 md:mx-auto"
@@ -101,6 +118,7 @@ const LocationPage = async ({
           currentCosByCategory={budget.currentCosByCategory ?? []}
           referenceCosByCategory={budget.referenceCosByCategory ?? []}
           referenceCosTotal={budget.referenceCosTotal}
+          referencePeriodMonthsUsed={budget.referencePeriodMonthsUsed}
         />
       </div>
       <BudgetCardList

@@ -14,6 +14,8 @@ interface CategoryBudgetBarChartProps extends ClassName {
   /** Reference-period COS (N months before yearMonth) for category budget ratio. */
   referenceCosByCategory?: CosCategory[];
   referenceCosTotal?: number;
+  /** When <= 0, no reference: show current COS only (no budget/over segments). */
+  referencePeriodMonthsUsed?: number | null;
   chartConfig?: ChartConfig;
 }
 
@@ -33,6 +35,7 @@ const CategoryBudgetBarChart = ({
   currentCosByCategory,
   referenceCosByCategory,
   referenceCosTotal,
+  referencePeriodMonthsUsed,
   chartConfig,
   className,
 }: CategoryBudgetBarChartProps) => {
@@ -53,6 +56,10 @@ const CategoryBudgetBarChart = ({
 
   const config = { ...defaultConfig, ...chartConfig };
 
+  const noReference =
+    referencePeriodMonthsUsed != null && referencePeriodMonthsUsed <= 0;
+  const cosOnlyMode = noReference;
+
   const currentTop = getTopLevelCategoryRows(currentCosByCategory ?? []);
   const refTop = referenceCosByCategory
     ? getTopLevelCategoryRows(referenceCosByCategory)
@@ -63,21 +70,21 @@ const CategoryBudgetBarChart = ({
     currentTop.map((c) => [c.categoryId, c.amount]),
   );
   const rowsToShow =
-    refTop.length > 0
+    refTop.length > 0 && !cosOnlyMode
       ? refTop
       : currentTop;
 
   const chartData = rowsToShow.map((row, index) => {
-    const current = currentByCategoryId.get(row.categoryId) ?? (refTop.length > 0 ? 0 : row.amount);
+    const current = currentByCategoryId.get(row.categoryId) ?? (refTop.length > 0 && !cosOnlyMode ? 0 : row.amount);
     const refCos = refTop.find((r) => r.categoryId === row.categoryId)?.amount ?? 0;
     const categoryBudget =
-      refTopTotal > 0 && totalBudget > 0
+      !cosOnlyMode && refTopTotal > 0 && totalBudget > 0
         ? (totalBudget * refCos) / refTopTotal
         : 0;
 
-    const currentSeg = Math.min(current, categoryBudget);
-    const budgetSeg = Math.max(0, categoryBudget - current);
-    const overSeg = Math.max(0, current - categoryBudget);
+    const currentSeg = cosOnlyMode ? current : Math.min(current, categoryBudget);
+    const budgetSeg = cosOnlyMode ? 0 : Math.max(0, categoryBudget - current);
+    const overSeg = cosOnlyMode ? 0 : Math.max(0, current - categoryBudget);
 
     const cosNumReg = /COS(\d+)/;
     const cosNum = row.name.match(cosNumReg)?.[1];

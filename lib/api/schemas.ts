@@ -13,26 +13,41 @@ const yearMonthSchema = z
 /** POST /api/onboarding */
 export const onboardingPostSchema = z
   .object({
-    name: z.string().min(1, 'Name is required').transform((s) => s.trim()),
+    name: z
+      .string()
+      .min(1, 'Name is required')
+      .transform((s) => s.trim()),
     role: z.enum(['admin', 'office', 'manager'], {
       message: 'Valid role is required (admin, office, manager)',
     }),
     locationId: z.string().min(1).optional(),
   })
   .refine(
-    (data) => data.role !== 'manager' || (data.locationId && data.locationId.length > 0),
+    (data) =>
+      data.role !== 'manager' ||
+      (data.locationId && data.locationId.length > 0),
     { message: 'Location is required for manager role', path: ['locationId'] },
   );
 
 /** POST /api/onboarding/approve */
 export const onboardingApprovePostSchema = z.object({
-  userId: z.string().min(1, 'userId is required').transform((s) => s.trim()),
+  userId: z
+    .string()
+    .min(1, 'userId is required')
+    .transform((s) => s.trim()),
 });
 
 /** POST /api/onboarding/reject */
 export const onboardingRejectPostSchema = z.object({
-  userId: z.string().min(1, 'userId is required').transform((s) => s.trim()),
-  reason: z.string().max(2000).transform((s) => s.trim()).optional(),
+  userId: z
+    .string()
+    .min(1, 'userId is required')
+    .transform((s) => s.trim()),
+  reason: z
+    .string()
+    .max(2000)
+    .transform((s) => s.trim())
+    .optional(),
 });
 
 const cosCategorySchema = z.object({
@@ -46,7 +61,7 @@ export const budgetPostSchema = z.object({
   yearMonth: yearMonthSchema.optional(),
   locationIds: z.array(z.string()).optional(),
   budgetRate: z.number().min(0).max(1).optional(),
-  referencePeriodMonths: z.number().int().min(1).max(24).optional(),
+  referencePeriodMonths: z.number().int().min(0).max(24).optional(),
   referenceData: z
     .object({
       incomeTotal: z.number(),
@@ -59,7 +74,7 @@ export const budgetPostSchema = z.object({
 export const budgetPatchSchema = z.object({
   yearMonth: yearMonthSchema.optional(),
   budgetRate: z.number().min(0).max(1).optional(),
-  referencePeriodMonths: z.number().int().min(1).max(24).optional(),
+  referencePeriodMonths: z.number().int().min(0).max(24).optional(),
   referenceData: z
     .object({
       incomeTotal: z.number(),
@@ -69,68 +84,107 @@ export const budgetPatchSchema = z.object({
 });
 
 /** POST /api/budget/bulk — bulk update budgets in a year-month range */
-export const budgetBulkPatchSchema = z.object({
-  fromYearMonth: yearMonthSchema,
-  toYearMonth: yearMonthSchema,
-  budgetRate: z
-    .number()
-    .min(0)
-    .max(1, 'Budget rate must be between 0 and 1 (e.g. 0.33 for 33%)')
-    .optional(),
-  referencePeriodMonths: z
-    .number()
-    .int()
-    .min(1)
-    .max(24, 'Reference period must be between 1 and 24 months')
-    .optional(),
-}).refine(
-  (data) => data.fromYearMonth <= data.toYearMonth,
-  { message: 'From month must be before or equal to To month', path: ['toYearMonth'] },
-);
+export const budgetBulkPatchSchema = z
+  .object({
+    fromYearMonth: yearMonthSchema,
+    toYearMonth: yearMonthSchema,
+    budgetRate: z
+      .number()
+      .min(0)
+      .max(1, 'Budget rate must be between 0 and 1 (e.g. 0.33 for 33%)')
+      .optional(),
+    referencePeriodMonths: z
+      .number()
+      .int()
+      .min(0)
+      .max(24, 'Reference period must be between 1 and 24 months')
+      .optional(),
+  })
+  .refine((data) => data.fromYearMonth <= data.toYearMonth, {
+    message: 'From month must be before or equal to To month',
+    path: ['toYearMonth'],
+  });
 
 /** PATCH /api/budget/settings */
 export const budgetSettingsPatchSchema = z
   .object({
-    budgetRate: z.number().min(0).max(1, 'budgetRate must be between 0 and 1 (e.g. 0.3 for 30%)').optional(),
+    budgetRate: z
+      .number()
+      .min(0)
+      .max(1, 'budgetRate must be between 0 and 1 (e.g. 0.3 for 30%)')
+      .optional(),
     referencePeriodMonths: z
       .number()
       .int()
-      .min(1)
+      .min(0)
       .max(24, 'referencePeriodMonths must be between 1 and 24')
       .optional(),
   })
   .refine(
-    (data) => data.budgetRate !== undefined || data.referencePeriodMonths !== undefined,
+    (data) =>
+      data.budgetRate !== undefined || data.referencePeriodMonths !== undefined,
     { message: 'Provide budgetRate and/or referencePeriodMonths' },
   );
 
 /** PATCH /api/users/[id] */
 export const userPatchSchema = z.object({
-  name: z.string().min(0).transform((s) => s.trim()).optional(),
+  name: z
+    .string()
+    .min(0)
+    .transform((s) => s.trim())
+    .optional(),
   role: z.enum(['admin', 'office', 'manager']).optional(),
-  status: z.enum(['pending_onboarding', 'pending_approval', 'active', 'rejected']).optional(),
+  status: z
+    .enum(['pending_onboarding', 'pending_approval', 'active', 'rejected'])
+    .optional(),
   locationId: z.string().nullable().optional(),
 });
 
 /** POST /api/locations */
 export const locationPostSchema = z.object({
-  code: z.string().min(1, 'Code is required').transform((s) => s.trim()),
-  name: z.string().min(1, 'Name is required').transform((s) => s.trim()),
+  code: z
+    .string()
+    .min(1, 'Code is required')
+    .transform((s) => s.trim()),
+  name: z
+    .string()
+    .min(1, 'Name is required')
+    .transform((s) => s.trim()),
   realmId: z.string().min(1, 'Realm is required'),
   classId: z.string().nullable().optional(),
+  startYearMonth: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/, 'Use YYYY-MM')
+    .nullish(),
 });
 
 /** PATCH /api/locations/[id] */
 export const locationPatchSchema = z.object({
-  code: z.string().min(1, 'Code is required').transform((s) => s.trim()).optional(),
-  name: z.string().min(1, 'Name is required').transform((s) => s.trim()).optional(),
+  code: z
+    .string()
+    .min(1, 'Code is required')
+    .transform((s) => s.trim())
+    .optional(),
+  name: z
+    .string()
+    .min(1, 'Name is required')
+    .transform((s) => s.trim())
+    .optional(),
   classId: z.string().nullable().optional(),
   realmId: z.string().min(1, 'Realm is required').optional(),
+  startYearMonth: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/, 'Use YYYY-MM')
+    .nullish(),
 });
 
 export type OnboardingPostBody = z.infer<typeof onboardingPostSchema>;
-export type OnboardingApprovePostBody = z.infer<typeof onboardingApprovePostSchema>;
-export type OnboardingRejectPostBody = z.infer<typeof onboardingRejectPostSchema>;
+export type OnboardingApprovePostBody = z.infer<
+  typeof onboardingApprovePostSchema
+>;
+export type OnboardingRejectPostBody = z.infer<
+  typeof onboardingRejectPostSchema
+>;
 export type BudgetPostBody = z.infer<typeof budgetPostSchema>;
 export type BudgetPatchBody = z.infer<typeof budgetPatchSchema>;
 export type BudgetBulkPatchBody = z.infer<typeof budgetBulkPatchSchema>;
@@ -151,7 +205,9 @@ export async function parseBody<T>(
   try {
     json = await request.json();
   } catch {
-    return { error: NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) };
+    return {
+      error: NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }),
+    };
   }
   const parsed = schema.safeParse(json);
   if (parsed.success) {
@@ -161,7 +217,9 @@ export async function parseBody<T>(
   const firstIssue = parsed.error.issues[0];
   const message =
     (formErrors[0] as string | undefined) ??
-    (firstIssue && 'message' in firstIssue ? (firstIssue as { message: string }).message : undefined) ??
+    (firstIssue && 'message' in firstIssue
+      ? (firstIssue as { message: string }).message
+      : undefined) ??
     'Validation failed';
   return { error: NextResponse.json({ error: message }, { status: 400 }) };
 }

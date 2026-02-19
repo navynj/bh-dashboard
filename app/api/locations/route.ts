@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseBody(request, locationPostSchema);
   if ('error' in parsed) return parsed.error;
-  const { code, name, realmId, classId } = parsed.data;
+  const { code, name, realmId, classId, startYearMonth } = parsed.data;
 
   const existing = await prisma.location.findUnique({
     where: { code },
@@ -36,13 +36,20 @@ export async function POST(request: NextRequest) {
   }
 
   const location = await prisma.location.create({
-    data: { code, name, realmId, classId: classId ?? null },
+    data: {
+      code,
+      name,
+      realmId,
+      classId: classId ?? null,
+      startYearMonth: startYearMonth ?? null,
+    },
     select: {
       id: true,
       code: true,
       name: true,
       classId: true,
       realmId: true,
+      startYearMonth: true,
       realm: { select: { id: true, name: true } },
     },
   });
@@ -54,6 +61,7 @@ export async function POST(request: NextRequest) {
     classId: location.classId,
     realmId: location.realmId,
     realmName: location.realm?.name ?? null,
+    startYearMonth: location.startYearMonth,
   };
 
   return NextResponse.json(row, { status: 201 });
@@ -75,9 +83,10 @@ export async function GET() {
       name: true,
       classId: true,
       realmId: true,
+      startYearMonth: true,
       realm: { select: { id: true, name: true } },
     },
-    orderBy: { code: 'asc' },
+    orderBy: { createdAt: 'asc' },
   });
 
   const rows = locations.map((loc) => ({
@@ -87,6 +96,7 @@ export async function GET() {
     classId: loc.classId,
     realmId: loc.realmId,
     realmName: loc.realm?.name ?? null,
+    startYearMonth: loc.startYearMonth,
   }));
 
   return NextResponse.json(rows);

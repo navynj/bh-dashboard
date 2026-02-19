@@ -21,6 +21,8 @@ import {
 import { toast } from 'sonner';
 import { Settings } from 'lucide-react';
 import { ManageRealmsDialog } from './ManageRealmsDialog';
+import { YearMonthPicker } from '@/components/ui/year-month-picker';
+import { getCurrentYearMonth } from '@/lib/utils';
 
 export type RealmOption = { id: string; name: string };
 
@@ -34,6 +36,7 @@ const defaultForm = {
   name: '',
   realmId: '',
   classId: '',
+  startYearMonth: null as string | null,
 };
 
 export function AddLocationDialog({
@@ -79,6 +82,7 @@ export function AddLocationDialog({
             name: form.name.trim(),
             realmId: form.realmId,
             classId: form.classId.trim() || null,
+            startYearMonth: form.startYearMonth ?? null,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -179,6 +183,33 @@ export function AddLocationDialog({
               placeholder="QuickBooks class ID"
               autoComplete="off"
             />
+          </div>
+          <div className="grid gap-2">
+            <Label>Start month (optional)</Label>
+            <div className="flex items-center gap-2">
+              <YearMonthPicker
+                value={form.startYearMonth ?? getCurrentYearMonth()}
+                onChange={(ym) =>
+                  setForm((prev) => ({ ...prev, startYearMonth: ym }))
+                }
+                triggerClassName="border border-input bg-background"
+              />
+              {form.startYearMonth != null && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setForm((prev) => ({ ...prev, startYearMonth: null }))
+                  }
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Budgets are only created from this month onward. Leave unset for all months.
+            </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button

@@ -16,6 +16,8 @@ import { ClassName } from '@/types/className';
 interface TotalBudgetChartProps extends ClassName {
   totalAmount: number; // Budget total; all chart percentages are share of budget
   currentCosByCategory?: { categoryId: string; name: string; amount: number }[];
+  /** When <= 0, no reference income: show current COS only (100% = current COS total). */
+  referencePeriodMonthsUsed?: number | null;
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -23,13 +25,18 @@ const TotalBudgetChart = ({
   size = 'md',
   totalAmount,
   currentCosByCategory,
+  referencePeriodMonthsUsed,
   className,
 }: TotalBudgetChartProps) => {
   const hasValidBudget = Number.isFinite(totalAmount) && totalAmount > 0;
+  const noReference =
+    referencePeriodMonthsUsed != null && referencePeriodMonthsUsed <= 0;
+  const cosOnlyMode = noReference;
+  const currentCosSum = (currentCosByCategory ?? []).reduce((s, c) => s + c.amount, 0);
   const hasNoChartData =
     !currentCosByCategory?.length ||
-    !Number.isFinite(totalAmount) ||
-    totalAmount <= 0;
+    (!cosOnlyMode && (!Number.isFinite(totalAmount) || totalAmount <= 0)) ||
+    (cosOnlyMode && currentCosSum <= 0);
 
   if (hasNoChartData) {
     return hasValidBudget ? (
@@ -63,52 +70,68 @@ const TotalBudgetChart = ({
     );
   }
 
-  // All percentages are share of Budget (totalAmount), not of current COS
-  const categoryData = topLevelCategories.map((category, index) => ({
-    category: category.category,
-    amount: category.cos,
-    cos: Number(((category.cos / totalAmount) * 100).toFixed(2)),
-    fill: CHART_COLORS[index % CHART_COLORS.length],
-  }));
-
   const currentAmount = topLevelCategories.reduce((sum, c) => sum + c.cos, 0);
-  const currentPercentValue = (currentAmount / totalAmount) * 100;
-  const currentPercent = currentPercentValue.toFixed(1);
-  const isOverBudget = currentAmount > totalAmount;
-  const overAmount = isOverBudget ? currentAmount - totalAmount : 0;
-  const overPercent = isOverBudget
-    ? Number(((overAmount / totalAmount) * 100).toFixed(2))
-    : 0;
-  const remainingAmount = Math.max(0, totalAmount - currentAmount);
-  const remainingPercent = Number(
-    ((remainingAmount / totalAmount) * 100).toFixed(2),
-  );
-  const shouldShowRemaining = !isOverBudget && remainingPercent >= 0.1;
-  const shouldShowOver = isOverBudget && overPercent >= 0.1;
 
-  const chartData = [
-    ...categoryData,
-    ...(shouldShowRemaining
-      ? [
-          {
-            category: 'Remaining',
-            amount: remainingAmount,
-            cos: remainingPercent,
-            fill: 'var(--muted-background)',
-          },
-        ]
-      : []),
-    ...(shouldShowOver
-      ? [
-          {
-            category: 'Over',
-            amount: overAmount,
-            cos: overPercent,
-            fill: 'var(--destructive)',
-          },
-        ]
-      : []),
-  ];
+  let categoryData: { category: string; amount: number; cos: number; fill: string }[];
+  let currentPercent: string;
+  let chartData: { category: string; amount: number; cos: number; fill: string }[];
+
+  if (cosOnlyMode) {
+    // No reference: 100% = current COS total; segments = category share of current COS
+    const totalCos = currentAmount > 0 ? currentAmount : 1;
+    categoryData = topLevelCategories.map((category, index) => ({
+      category: category.category,
+      amount: category.cos,
+      cos: Number(((category.cos / totalCos) * 100).toFixed(2)),
+      fill: CHART_COLORS[index % CHART_COLORS.length],
+    }));
+    currentPercent = '100';
+    chartData = categoryData;
+  } else {
+    // Normal: percentages are share of budget
+    categoryData = topLevelCategories.map((category, index) => ({
+      category: category.category,
+      amount: category.cos,
+      cos: Number(((category.cos / totalAmount) * 100).toFixed(2)),
+      fill: CHART_COLORS[index % CHART_COLORS.length],
+    }));
+    const currentPercentValue = (currentAmount / totalAmount) * 100;
+    currentPercent = currentPercentValue.toFixed(1);
+    const isOverBudget = currentAmount > totalAmount;
+    const overAmount = isOverBudget ? currentAmount - totalAmount : 0;
+    const overPercent = isOverBudget
+      ? Number(((overAmount / totalAmount) * 100).toFixed(2))
+      : 0;
+    const remainingAmount = Math.max(0, totalAmount - currentAmount);
+    const remainingPercent = Number(
+      ((remainingAmount / totalAmount) * 100).toFixed(2),
+    );
+    const shouldShowRemaining = !isOverBudget && remainingPercent >= 0.1;
+    const shouldShowOver = isOverBudget && overPercent >= 0.1;
+    chartData = [
+      ...categoryData,
+      ...(shouldShowRemaining
+        ? [
+            {
+              category: 'Remaining',
+              amount: remainingAmount,
+              cos: remainingPercent,
+              fill: 'var(--muted-background)',
+            },
+          ]
+        : []),
+      ...(shouldShowOver
+        ? [
+            {
+              category: 'Over',
+              amount: overAmount,
+              cos: overPercent,
+              fill: 'var(--destructive)',
+            },
+          ]
+        : []),
+    ];
+  }
 
   // ===============================
   // Chart Config

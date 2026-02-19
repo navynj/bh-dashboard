@@ -2,7 +2,7 @@ import { AppError } from '@/lib/core/errors';
 import { prisma } from '@/lib/core/prisma';
 import type { Prisma } from '@prisma/client';
 import type { BudgetDataType } from './view-types';
-import { parseYearMonth, isValidYearMonth } from '@/lib/utils';
+import { parseYearMonth, isValidYearMonth, isBeforeYearMonth } from '@/lib/utils';
 import type { CreateBudgetInput, QuickBooksApiContext } from './types';
 import { computeTotalBudget } from './calculations';
 import { getOrCreateBudgetSettings, DEFAULT_REFERENCE_PERIOD_MONTHS } from './settings';
@@ -77,10 +77,18 @@ export function mapBudgetToDataType(raw: RawBudgetWithInclude): BudgetDataType {
 
 export async function ensureBudgetForMonth(
   input: CreateBudgetInput,
-): Promise<BudgetWithLocationRaw> {
+): Promise<BudgetWithLocationRaw | null> {
   const { locationId, yearMonth, userId, referenceData: providedRef } = input;
   if (!isValidYearMonth(yearMonth)) {
     throw new AppError('Invalid yearMonth; use YYYY-MM');
+  }
+
+  const location = await prisma.location.findUnique({
+    where: { id: locationId },
+    select: { startYearMonth: true },
+  });
+  if (location?.startYearMonth != null && isBeforeYearMonth(yearMonth, location.startYearMonth)) {
+    return null;
   }
 
   try {
@@ -95,27 +103,31 @@ export async function ensureBudgetForMonth(
       input.referencePeriodMonths ?? settings.referencePeriodMonths;
 
     const context = input.context;
+    const skipRefFetch = refMonths <= 0;
     const ref =
       providedRef ??
-      (context
-        ? await getReferenceIncomeAndCos(
-            userId,
-            locationId,
-            yearMonth,
-            refMonths,
-            context,
-          )
-        : (() => {
-            throw new AppError(
-              'context (baseUrl, cookie) required to fetch reference COS via /api/quickbooks',
-            );
-          })());
+      (skipRefFetch
+        ? { incomeTotal: 0, cosTotal: undefined, cosByCategory: undefined }
+        : context
+          ? await getReferenceIncomeAndCos(
+              userId,
+              locationId,
+              yearMonth,
+              refMonths,
+              context,
+            )
+          : (() => {
+              throw new AppError(
+                'context (baseUrl, cookie) required to fetch reference COS via /api/quickbooks',
+              );
+            })());
 
-    const totalAmount = computeTotalBudget(
-      ref.incomeTotal ?? 0,
-      rate,
-      refMonths,
-    );
+    const refIncome = ref.incomeTotal ?? 0;
+    const noReference = skipRefFetch || refIncome <= 0;
+    const effectiveRefMonths = noReference ? 0 : refMonths;
+    const totalAmount = noReference
+      ? 0
+      : computeTotalBudget(refIncome, rate, refMonths);
 
     if (existing) {
       await prisma.budget.update({
@@ -123,7 +135,7 @@ export async function ensureBudgetForMonth(
         data: {
           totalAmount,
           budgetRateUsed: rate,
-          referencePeriodMonthsUsed: refMonths,
+          referencePeriodMonthsUsed: effectiveRefMonths,
           error: null,
         },
       });
@@ -139,7 +151,7 @@ export async function ensureBudgetForMonth(
         yearMonth,
         totalAmount,
         budgetRateUsed: rate,
-        referencePeriodMonthsUsed: refMonths,
+        referencePeriodMonthsUsed: effectiveRefMonths,
       },
       include: { location: true },
     });
@@ -275,7 +287,12 @@ export async function getBudgetsByMonth(
     include: { location: true },
     orderBy: { location: { createdAt: 'asc' } },
   });
-  return raw.map(mapBudgetToDataType);
+  const filtered = raw.filter(
+    (b) =>
+      b.location.startYearMonth == null ||
+      b.yearMonth >= b.location.startYearMonth,
+  );
+  return filtered.map(mapBudgetToDataType);
 }
 
 export async function ensureBudgetsForMonth(
@@ -285,12 +302,17 @@ export async function ensureBudgetsForMonth(
 ): Promise<void> {
   if (!isValidYearMonth(yearMonth)) return;
   const locations = await prisma.location.findMany({
-    select: { id: true },
+    select: { id: true, startYearMonth: true },
     orderBy: { createdAt: 'asc' },
   });
 
+  const locationsInScope = locations.filter(
+    (loc) =>
+      loc.startYearMonth == null || yearMonth >= loc.startYearMonth,
+  );
+
   await Promise.all(
-    locations.map(async (loc) => {
+    locationsInScope.map(async (loc) => {
       const existing = await prisma.budget.findUnique({
         where: { locationId_yearMonth: { locationId: loc.id, yearMonth } },
         select: { id: true, error: true },

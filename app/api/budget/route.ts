@@ -126,11 +126,13 @@ export async function POST(request: NextRequest) {
       ),
     );
 
-    const created = results.map((b) => ({
-      id: b.id,
-      locationId: b.locationId,
-      totalAmount: Number(b.totalAmount),
-    }));
+    const created = results
+      .filter((b): b is NonNullable<typeof results[0]> => b != null)
+      .map((b) => ({
+        id: b.id,
+        locationId: b.locationId,
+        totalAmount: Number(b.totalAmount),
+      }));
 
     return NextResponse.json({
       ok: true,

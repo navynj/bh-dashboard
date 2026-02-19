@@ -20,6 +20,15 @@ import { ManageRealmsDialog } from '@/components/features/locations/ManageRealms
 import { AddLocationDialog } from '@/components/features/locations/AddLocationDialog';
 import { ClassName } from '@/types/className';
 import { cn } from '@/lib/utils';
+import { YearMonthPicker } from '@/components/ui/year-month-picker';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { parseYearMonth } from '@/lib/utils';
+import { MONTH_NAMES } from '@/constants/date';
+import { getCurrentYearMonth } from '@/lib/utils';
 
 type RealmOption = { id: string; name: string };
 
@@ -30,6 +39,7 @@ type LocationRow = {
   classId: string | null;
   realmId: string;
   realmName: string | null;
+  startYearMonth: string | null;
 };
 
 async function patchLocation(id: string, body: Record<string, unknown>) {
@@ -81,6 +91,7 @@ export default function LocationsPage() {
         ...(field === 'realmId' && typeof value === 'string'
           ? { realmName: realms.find((r) => r.id === value)?.name ?? null }
           : {}),
+        ...(field === 'startYearMonth' ? { startYearMonth: value as string | null } : {}),
       };
 
       setLocations((prev) =>
@@ -148,6 +159,16 @@ export default function LocationsPage() {
         />
       ),
     },
+    {
+      accessorKey: 'startYearMonth',
+      header: 'Start',
+      cell: ({ row }: { row: Row<LocationRow> }) => (
+        <StartYearMonthCell
+          row={row}
+          onSave={(v) => updateLocation(row.original, 'startYearMonth', v)}
+        />
+      ),
+    },
   ];
 
   return (
@@ -210,6 +231,67 @@ function RealmSelectCell({
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+function formatStartYearMonth(ym: string): string {
+  const { year, month } = parseYearMonth(ym);
+  return `${MONTH_NAMES[month]} ${year}`;
+}
+
+function StartYearMonthCell({
+  row,
+  onSave,
+}: {
+  row: Row<LocationRow>;
+  onSave: (value: string | null) => void;
+}) {
+  const value = row.original.startYearMonth;
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <div className="flex max-w-[140px] items-center gap-1">
+          <span className="min-w-0 truncate text-sm">
+            {value ? formatStartYearMonth(value) : '—'}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Edit start month"
+            className="opacity-50"
+            onClick={() => setOpen(true)}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+        </div>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-3" align="start">
+        <div className="flex flex-col gap-2">
+          <YearMonthPicker
+            value={value ?? getCurrentYearMonth()}
+            onChange={(ym) => {
+              onSave(ym);
+              setOpen(false);
+            }}
+            triggerClassName="border border-input bg-background"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onSave(null);
+              setOpen(false);
+            }}
+          >
+            Clear
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
