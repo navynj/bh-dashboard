@@ -78,11 +78,28 @@ export const budgetSettingsPatchSchema = z
     { message: 'Provide budgetRate and/or referencePeriodMonths' },
   );
 
+/** PATCH /api/users/[id] */
+export const userPatchSchema = z.object({
+  name: z.string().min(0).transform((s) => s.trim()).optional(),
+  role: z.enum(['admin', 'office', 'manager']).optional(),
+  status: z.enum(['pending_onboarding', 'pending_approval', 'active', 'rejected']).optional(),
+  locationId: z.string().nullable().optional(),
+});
+
+/** PATCH /api/locations/[id] */
+export const locationPatchSchema = z.object({
+  code: z.string().min(1, 'Code is required').transform((s) => s.trim()).optional(),
+  name: z.string().min(1, 'Name is required').transform((s) => s.trim()).optional(),
+  classId: z.string().nullable().optional(),
+});
+
 export type OnboardingPostBody = z.infer<typeof onboardingPostSchema>;
 export type OnboardingApprovePostBody = z.infer<typeof onboardingApprovePostSchema>;
 export type BudgetPostBody = z.infer<typeof budgetPostSchema>;
 export type BudgetPatchBody = z.infer<typeof budgetPatchSchema>;
 export type BudgetSettingsPatchBody = z.infer<typeof budgetSettingsPatchSchema>;
+export type UserPatchBody = z.infer<typeof userPatchSchema>;
+export type LocationPatchBody = z.infer<typeof locationPatchSchema>;
 
 /**
  * Parse and validate JSON body. Returns either { data } or { error: NextResponse }.

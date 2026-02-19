@@ -3,20 +3,18 @@ import { redirect } from 'next/navigation';
 import React from 'react';
 import SignOutButton from '../features/auth/SignOutButton';
 import Link from 'next/link';
-import { BudgetSettingsDialog } from '../features/budget/BudgetSettingsDialog';
 import HeaderNav from './HeaderNav';
 
 type HeaderProps = {
-  showBudgetSettings?: boolean;
-  budgetSettings?: { budgetRate: number; referencePeriodMonths: number };
+  isOfficeOrAdmin?: boolean;
 };
 
-const Header = async ({ showBudgetSettings, budgetSettings }: HeaderProps) => {
+const Header = async ({ isOfficeOrAdmin }: HeaderProps) => {
   const session = await auth();
   if (!session?.user) redirect('/auth');
 
   const isActive = session.user.status === 'active';
-  const isOfficeOrAdmin = getOfficeOrAdmin(session.user.role);
+  const isOfficeOrAdminFlag = isOfficeOrAdmin ?? getOfficeOrAdmin(session.user.role);
 
   return (
     isActive && (
@@ -43,22 +41,14 @@ const Header = async ({ showBudgetSettings, budgetSettings }: HeaderProps) => {
         </div>
         <HeaderNav
           className="hidden md:flex w-full"
-          isOfficeOrAdmin={isOfficeOrAdmin}
+          isOfficeOrAdmin={isOfficeOrAdminFlag}
         />
         <div className="flex items-center gap-2">
-          {showBudgetSettings && budgetSettings && (
-            <BudgetSettingsDialog
-              initialBudgetRate={budgetSettings.budgetRate}
-              initialReferencePeriodMonths={
-                budgetSettings.referencePeriodMonths
-              }
-            />
-          )}
           <SignOutButton size="sm" />
         </div>
         <HeaderNav
           className="md:hidden w-full"
-          isOfficeOrAdmin={isOfficeOrAdmin}
+          isOfficeOrAdmin={isOfficeOrAdminFlag}
         />
       </header>
     )
