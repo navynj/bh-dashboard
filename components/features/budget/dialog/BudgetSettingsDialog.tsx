@@ -1,15 +1,14 @@
 'use client';
 
-import React from 'react';
-import { Settings } from 'lucide-react';
+import { BudgetSettingsForm } from '@/components/features/budget/form/BudgetSettingsForm';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { BudgetSettingsForm } from '@/components/features/budget/form/BudgetSettingsForm';
+import { Settings } from 'lucide-react';
 
 type BudgetSettingsDialogProps = {
   initialBudgetRate: number;

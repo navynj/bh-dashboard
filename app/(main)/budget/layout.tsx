@@ -1,5 +1,5 @@
-import { BudgetBulkEditDialog } from '@/components/features/budget/BudgetBulkEditDialog';
-import { BudgetSettingsDialog } from '@/components/features/budget/BudgetSettingsDialog';
+import { BudgetBulkEditDialog } from '@/components/features/budget/dialog/BudgetBulkEditDialog';
+import { BudgetSettingsDialog } from '@/components/features/budget/dialog/BudgetSettingsDialog';
 import MonthNav from '@/components/layout/MonthNav';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { getOrCreateBudgetSettings } from '@/lib/budget';
@@ -13,8 +13,9 @@ const BudgetLayout = async ({ children }: { children: React.ReactNode }) => {
   const isOfficeOrAdmin = session?.user
     ? getOfficeOrAdmin(session.user.role)
     : false;
-  const budgetSettings =
-    isOfficeOrAdmin ? await getOrCreateBudgetSettings() : null;
+  const budgetSettings = isOfficeOrAdmin
+    ? await getOrCreateBudgetSettings()
+    : null;
 
   return (
     <>

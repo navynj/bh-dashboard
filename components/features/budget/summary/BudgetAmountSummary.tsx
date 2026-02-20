@@ -1,5 +1,6 @@
 import { formatCurrency } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
+import { BudgetRateRefInfo } from '@/components/features/budget/summary/BudgetRateRefInfo';
 
 type BudgetAmountSummaryProps = {
   isUpdating: boolean;
@@ -49,12 +50,12 @@ function BudgetAmountSummary({
         )}
       </div>
       {(displayRate != null || (displayPeriod != null && !noReference)) && (
-        <p className="text-muted-foreground text-xs text-right">
-          {displayRate != null && `Rate: ${(displayRate * 100).toFixed(0)}%`}
-          {displayPeriod != null &&
-            displayPeriod > 0 &&
-            `${displayRate != null ? ' · ' : ''}Ref: ${displayPeriod} months`}
-        </p>
+        <BudgetRateRefInfo
+          displayRate={displayRate}
+          displayPeriod={displayPeriod}
+          hideRefWhenZero
+          textAlignClassName="text-right"
+        />
       )}
     </>
   );
