@@ -31,7 +31,9 @@ const layout = async ({ children }: { children: ReactNode }) => {
       <main className="flex-1 min-w-0">
         <Header isOfficeOrAdmin={isOfficeOrAdmin} />
         <div className="space-y-6">
-          <RefreshTokenExpiredAlert isOfficeOrAdmin={isOfficeOrAdmin ?? false} />
+          <RefreshTokenExpiredAlert
+            isOfficeOrAdmin={isOfficeOrAdmin ?? false}
+          />
           <OnboardingList canApprove={canApprove} pending={pending} />
           {children}
         </div>

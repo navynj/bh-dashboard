@@ -76,6 +76,7 @@ model Location {
   classId        String?  @map("class_id")
   createdAt      DateTime @default(now()) @map("created_at")
   startYearMonth String?  @map("start_year_month") // YYYY-MM
+  showBudget     Boolean  @default(true) @map("show_budget")
 
   realm   Realm    @relation(fields: [realmId], references: [id], onDelete: Restrict)
   users   User[]

@@ -34,12 +34,14 @@ export async function PATCH(
     classId?: string | null;
     realmId?: string;
     startYearMonth?: string | null;
+    showBudget?: boolean;
   } = {};
   if (body.code !== undefined) updateData.code = body.code;
   if (body.name !== undefined) updateData.name = body.name;
   if (body.classId !== undefined) updateData.classId = body.classId ?? null;
   if (body.realmId !== undefined) updateData.realmId = body.realmId;
   if (body.startYearMonth !== undefined) updateData.startYearMonth = body.startYearMonth ?? null;
+  if (body.showBudget !== undefined) updateData.showBudget = body.showBudget;
 
   await prisma.location.update({
     where: { id },

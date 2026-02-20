@@ -126,7 +126,7 @@ export const budgetSettingsPatchSchema = z
     { message: 'Provide budgetRate and/or referencePeriodMonths' },
   );
 
-/** PATCH /api/users/[id] */
+/** PATCH /api/user/[id] */
 export const userPatchSchema = z.object({
   name: z
     .string()
@@ -140,7 +140,7 @@ export const userPatchSchema = z.object({
   locationId: z.string().nullable().optional(),
 });
 
-/** POST /api/locations */
+/** POST /api/location */
 export const locationPostSchema = z.object({
   code: z
     .string()
@@ -156,9 +156,10 @@ export const locationPostSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}$/, 'Use YYYY-MM')
     .nullish(),
+  showBudget: z.boolean().optional().default(true),
 });
 
-/** PATCH /api/locations/[id] */
+/** PATCH /api/location/[id] */
 export const locationPatchSchema = z.object({
   code: z
     .string()
@@ -176,6 +177,7 @@ export const locationPatchSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}$/, 'Use YYYY-MM')
     .nullish(),
+  showBudget: z.boolean().optional(),
 });
 
 export type OnboardingPostBody = z.infer<typeof onboardingPostSchema>;

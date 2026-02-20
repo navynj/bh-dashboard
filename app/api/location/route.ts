@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseBody(request, locationPostSchema);
   if ('error' in parsed) return parsed.error;
-  const { code, name, realmId, classId, startYearMonth } = parsed.data;
+  const { code, name, realmId, classId, startYearMonth, showBudget } = parsed.data;
 
   const existing = await prisma.location.findUnique({
     where: { code },
@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
       realmId,
       classId: classId ?? null,
       startYearMonth: startYearMonth ?? null,
+      showBudget: showBudget ?? true,
     },
     select: {
       id: true,
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest) {
       classId: true,
       realmId: true,
       startYearMonth: true,
+      showBudget: true,
       realm: { select: { id: true, name: true } },
     },
   });
@@ -62,6 +64,7 @@ export async function POST(request: NextRequest) {
     realmId: location.realmId,
     realmName: location.realm?.name ?? null,
     startYearMonth: location.startYearMonth,
+    showBudget: location.showBudget,
   };
 
   return NextResponse.json(row, { status: 201 });
@@ -84,6 +87,7 @@ export async function GET() {
       classId: true,
       realmId: true,
       startYearMonth: true,
+      showBudget: true,
       realm: { select: { id: true, name: true } },
     },
     orderBy: { createdAt: 'asc' },
@@ -97,6 +101,7 @@ export async function GET() {
     realmId: loc.realmId,
     realmName: loc.realm?.name ?? null,
     startYearMonth: loc.startYearMonth,
+    showBudget: loc.showBudget,
   }));
 
   return NextResponse.json(rows);

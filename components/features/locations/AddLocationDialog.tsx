@@ -20,9 +20,11 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Settings } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { ManageRealmsDialog } from './ManageRealmsDialog';
 import { YearMonthPicker } from '@/components/ui/year-month-picker';
 import { getCurrentYearMonth } from '@/lib/utils';
+import { Separator } from '@/components/ui/separator';
 
 export type RealmOption = { id: string; name: string };
 
@@ -37,6 +39,7 @@ const defaultForm = {
   realmId: '',
   classId: '',
   startYearMonth: null as string | null,
+  showBudget: true,
 };
 
 export function AddLocationDialog({
@@ -74,7 +77,7 @@ export function AddLocationDialog({
       }
       setSubmitting(true);
       try {
-        const res = await fetch('/api/locations', {
+        const res = await fetch('/api/location', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -83,6 +86,7 @@ export function AddLocationDialog({
             realmId: form.realmId,
             classId: form.classId.trim() || null,
             startYearMonth: form.startYearMonth ?? null,
+            showBudget: form.showBudget,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -184,7 +188,26 @@ export function AddLocationDialog({
               autoComplete="off"
             />
           </div>
-          <div className="grid gap-2">
+          <Separator className="my-2" />
+          <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+            <div>
+              <Label htmlFor="add-location-show-budget" className="text-sm">
+                Show in Budget
+              </Label>
+              <p className="text-muted-foreground text-xs mt-0.5">
+                Include this location in budget views and calculations.
+              </p>
+            </div>
+            <Switch
+              id="add-location-show-budget"
+              checked={form.showBudget}
+              onCheckedChange={(checked) =>
+                setForm((prev) => ({ ...prev, showBudget: checked }))
+              }
+              aria-label="Show in budget"
+            />
+          </div>
+          <div className="grid gap-2 p-4 rounded-lg border">
             <Label>Start month (optional)</Label>
             <div className="flex items-center gap-2">
               <YearMonthPicker
@@ -208,7 +231,8 @@ export function AddLocationDialog({
               )}
             </div>
             <p className="text-muted-foreground text-xs">
-              Budgets are only created from this month onward. Leave unset for all months.
+              Budgets are only created from this month onward. Leave unset for
+              all months.
             </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">

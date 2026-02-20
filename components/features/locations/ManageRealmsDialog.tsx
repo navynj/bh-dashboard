@@ -14,12 +14,11 @@ import { Spinner } from '@/components/ui/spinner';
 import { toast } from 'sonner';
 import { RefreshCw, Link2 } from 'lucide-react';
 
-/** Match GET /api/realm response shape (realm-centric, locationId only for auth flow). */
-export type ConnectionItem = {
-  locationId: string;
-  realmId: string | null;
-  qbRealmId: string | null;
-  realmName: string | null;
+/** Match GET /api/realm response: realm list with QB connection status per realm. */
+export type RealmWithConnection = {
+  id: string;
+  name: string;
+  realmId: string;
   hasTokens: boolean;
   refreshExpiresAt: string | null;
   accessTokenExpired: boolean;
@@ -27,21 +26,33 @@ export type ConnectionItem = {
 };
 
 type ManageRealmsDialogProps = {
-  /** Called when the dialog closes (e.g. so parent can refetch realms). */
+  /** Realms with connection status from GET /api/realm. When provided, no fetch. */
+  realms?: RealmWithConnection[];
+  isAdmin?: boolean;
+  /** Called when the dialog closes (e.g. so parent can refetch). */
   onOpenChange?: (open: boolean) => void;
+  /** Called after refresh-token success so parent can refetch (e.g. router.refresh()). */
+  onRealmsRefetch?: () => void;
   trigger?: React.ReactNode;
 };
 
 export function ManageRealmsDialog({
+  realms: realmsProp,
+  isAdmin: isAdminProp = false,
   onOpenChange,
+  onRealmsRefetch,
   trigger,
 }: ManageRealmsDialogProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [connections, setConnections] = useState<ConnectionItem[]>([]);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [realmsState, setRealmsState] = useState<RealmWithConnection[]>([]);
+  const [isAdminState, setIsAdminState] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+
+  const useProps = realmsProp != null;
+  const realms = useProps ? realmsProp : realmsState;
+  const isAdmin = useProps ? isAdminProp : isAdminState;
 
   const handleOpenChange = useCallback(
     (value: boolean) => {
@@ -51,43 +62,41 @@ export function ManageRealmsDialog({
     [onOpenChange],
   );
 
-  const fetchConnections = useCallback(async () => {
+  const fetchFromRealm = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/realm');
-      if (!res.ok) throw new Error('Failed to load connections');
+      if (!res.ok) throw new Error('Failed to load realms');
       const data = await res.json();
-      setConnections(data.connections ?? []);
-      setIsAdmin(data.isAdmin);
+      setRealmsState(data.realms ?? []);
+      setIsAdminState(data.isAdmin ?? false);
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : 'Failed to load connections',
+        e instanceof Error ? e.message : 'Failed to load realms',
       );
-      setConnections([]);
+      setRealmsState([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (open) fetchConnections();
-  }, [open, fetchConnections]);
+    if (open && !useProps) fetchFromRealm();
+  }, [open, useProps, fetchFromRealm]);
 
-  const handleConnect = useCallback(
-    (locationId?: string) => {
-      const baseUrl =
-        typeof window !== 'undefined'
-          ? window.location.origin
-          : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-      const returnTo = encodeURIComponent(pathname || '/locations');
-      window.location.href = `${baseUrl}/api/quickbooks/auth?${locationId ? `locationId=${encodeURIComponent(locationId)}` : ''}&returnTo=${returnTo}`;
-    },
-    [pathname],
-  );
+  /** Connect or Reconnect: OAuth without locationId (QB connection is per realm). */
+  const handleConnect = useCallback(() => {
+    const baseUrl =
+      typeof window !== 'undefined'
+        ? window.location.origin
+        : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const returnTo = encodeURIComponent(pathname || '/locations');
+    window.location.href = `${baseUrl}/api/quickbooks/auth?returnTo=${returnTo}`;
+  }, [pathname]);
 
   const handleRefresh = useCallback(
-    async (realmId: string, locationId: string) => {
-      setRefreshingId(locationId);
+    async (realmId: string) => {
+      setRefreshingId(realmId);
       try {
         const res = await fetch('/api/quickbooks/auth/refresh', {
           method: 'POST',
@@ -99,14 +108,18 @@ export function ManageRealmsDialog({
           throw new Error(data.error ?? 'Refresh failed');
         }
         toast.success('Tokens refreshed');
-        await fetchConnections();
+        if (useProps) {
+          onRealmsRefetch?.();
+        } else {
+          await fetchFromRealm();
+        }
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Refresh failed');
       } finally {
         setRefreshingId(null);
       }
     },
-    [fetchConnections],
+    [useProps, onRealmsRefetch, fetchFromRealm],
   );
 
   return (
@@ -121,57 +134,51 @@ export function ManageRealmsDialog({
       <DialogContent className="sm:max-w-xl" showCloseButton={false}>
         <DialogHeader className="flex-row items-center justify-between">
           <DialogTitle>Manage Realms</DialogTitle>
-          <Button size="sm" onClick={() => handleConnect()}>
+          <Button size="sm" onClick={handleConnect}>
             Connect New Realm
           </Button>
         </DialogHeader>
-        {loading ? (
+        {!useProps && loading ? (
           <div className="flex justify-center py-8">
             <Spinner className="size-8" />
           </div>
-        ) : connections.length === 0 ? (
+        ) : realms.length === 0 ? (
           <p className="text-muted-foreground text-sm py-4">
-            No locations available. You can connect QuickBooks per location from
-            the Locations table.
+            No realms. Add a location and assign a realm, or connect QuickBooks
+            to add a new company.
           </p>
         ) : (
           <div className="space-y-2 max-h-[60vh] overflow-auto">
-            {connections.map((conn) => {
+            {realms.map((realm) => {
               const showRefresh =
-                conn.hasTokens &&
-                conn.realmId &&
-                (isAdmin
-                  ? !conn.refreshTokenExpired
-                  : conn.refreshTokenExpired);
+                realm.hasTokens &&
+                (isAdmin ? !realm.refreshTokenExpired : realm.refreshTokenExpired);
               const showReconnect =
-                conn.hasTokens && (isAdmin || conn.refreshTokenExpired);
-              const hint = conn.hasTokens
-                ? conn.refreshTokenExpired
+                realm.hasTokens && (isAdmin || realm.refreshTokenExpired);
+              const hint = realm.hasTokens
+                ? realm.refreshTokenExpired
                   ? 'Refresh token expired — reconnect to get new tokens.'
-                  : conn.accessTokenExpired
+                  : realm.accessTokenExpired
                     ? 'Access token expired — refresh to get new access token.'
                     : 'Tokens valid.'
                 : null;
 
               return (
                 <div
-                  key={conn.locationId}
+                  key={realm.id}
                   className="flex items-center justify-between gap-4 rounded-lg border p-3"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="font-medium truncate">
-                      {conn.realmName ??
-                        (conn.qbRealmId
-                          ? `Realm ${conn.qbRealmId}`
-                          : 'QuickBooks')}
+                      {realm.name || `Realm ${realm.realmId}`}
                     </p>
                     <p className="text-muted-foreground text-sm">
-                      {conn.hasTokens ? (
-                        conn.refreshExpiresAt ? (
+                      {realm.hasTokens ? (
+                        realm.refreshExpiresAt ? (
                           <>
                             Connected · Refresh expires{' '}
                             {new Date(
-                              conn.refreshExpiresAt,
+                              realm.refreshExpiresAt,
                             ).toLocaleDateString()}
                           </>
                         ) : (
@@ -184,9 +191,9 @@ export function ManageRealmsDialog({
                     {isAdmin && hint && (
                       <p
                         className={
-                          conn.refreshTokenExpired
+                          realm.refreshTokenExpired
                             ? 'text-destructive text-xs mt-1'
-                            : conn.accessTokenExpired
+                            : realm.accessTokenExpired
                               ? 'text-amber-600 dark:text-amber-500 text-xs mt-1'
                               : 'text-muted-foreground text-xs mt-1'
                         }
@@ -196,15 +203,15 @@ export function ManageRealmsDialog({
                     )}
                   </div>
                   <div className="flex shrink-0 gap-2">
-                    {conn.hasTokens ? (
+                    {realm.hasTokens ? (
                       <>
                         {showReconnect && (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleConnect(conn.locationId)}
+                            onClick={handleConnect}
                             className={
-                              conn.refreshTokenExpired
+                              realm.refreshTokenExpired
                                 ? 'border-1 border-destructive ring-2 ring-destructive/20'
                                 : ''
                             }
@@ -216,18 +223,15 @@ export function ManageRealmsDialog({
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() =>
-                              conn.realmId &&
-                              handleRefresh(conn.realmId, conn.locationId)
-                            }
-                            disabled={refreshingId === conn.locationId}
+                            onClick={() => handleRefresh(realm.id)}
+                            disabled={refreshingId === realm.id}
                             className={
-                              conn.accessTokenExpired
+                              realm.accessTokenExpired
                                 ? 'border-1 border-amber-600 ring-2 ring-amber-600/20'
                                 : ''
                             }
                           >
-                            {refreshingId === conn.locationId ? (
+                            {refreshingId === realm.id ? (
                               <Spinner className="size-4" />
                             ) : (
                               <>
@@ -242,7 +246,7 @@ export function ManageRealmsDialog({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleConnect(conn.locationId)}
+                        onClick={handleConnect}
                       >
                         <Link2 className="size-4 mr-1" />
                         Connect QuickBooks

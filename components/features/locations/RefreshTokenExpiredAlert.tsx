@@ -10,10 +10,13 @@ type RefreshTokenExpiredAlertProps = {
   isOfficeOrAdmin: boolean;
 };
 
-type ConnectionItem = {
-  locationId: string;
-  realmId: string | null;
-  realmName: string | null;
+type RealmWithConnection = {
+  id: string;
+  name: string;
+  realmId: string;
+  hasTokens: boolean;
+  refreshExpiresAt: string | null;
+  accessTokenExpired: boolean;
   refreshTokenExpired: boolean;
 };
 
@@ -26,13 +29,13 @@ export function RefreshTokenExpiredAlert({
     let cancelled = false;
     fetch('/api/realm')
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { connections?: ConnectionItem[] } | null) => {
-        if (cancelled || !data?.connections) {
+      .then((data: { realms?: RealmWithConnection[] } | null) => {
+        if (cancelled || !data?.realms) {
           setHasExpired(false);
           return;
         }
-        const anyExpired = (data.connections as ConnectionItem[]).some(
-          (c) => c.refreshTokenExpired,
+        const anyExpired = (data.realms as RealmWithConnection[]).some(
+          (r) => r.refreshTokenExpired,
         );
         setHasExpired(anyExpired);
       })

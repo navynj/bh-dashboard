@@ -1,27 +1,21 @@
 /**
  * GET /api/realm
- * Returns realm connection status for locations the logged-in user can see.
- * Office/Admin: all locations with their realm. Manager: only their location.
- * Includes token expiry so UI can show Refresh (access expired) vs Reconnect (refresh expired).
+ * Returns realm list with QB connection status per realm (connection is per realm, not per location).
+ * Office/Admin: all realms. Manager: only realm(s) used by their location(s).
  */
-
 const ACCESS_TOKEN_BUFFER_MS = 5 * 60 * 1000;
 
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
 import { NextResponse } from 'next/server';
 
-export type RealmConnectionItem = {
-  /** Used for Connect/Reconnect auth flow. */
-  locationId: string;
-  realmId: string | null;
-  qbRealmId: string | null;
-  realmName: string | null;
+export type RealmWithConnection = {
+  id: string;
+  name: string;
+  realmId: string;
   hasTokens: boolean;
   refreshExpiresAt: string | null;
-  /** True if access token is expired or within buffer (use Refresh to get new access token). */
   accessTokenExpired: boolean;
-  /** True if refresh token is expired (use Reconnect to get new refresh token). */
   refreshTokenExpired: boolean;
 };
 
@@ -35,37 +29,34 @@ export async function GET() {
   const isAdmin = session.user.role === 'admin';
   const managerLocationId = session.user.locationId ?? undefined;
 
-  const locations = await prisma.location.findMany({
+  const realms = await prisma.realm.findMany({
     where: isOfficeOrAdmin
       ? undefined
       : managerLocationId
-        ? { id: managerLocationId }
+        ? {
+            locations: {
+              some: { id: managerLocationId },
+            },
+          }
         : { id: 'none' },
     select: {
       id: true,
+      name: true,
       realmId: true,
-      realm: {
-        select: {
-          id: true,
-          realmId: true,
-          name: true,
-          refreshToken: true,
-          expiresAt: true,
-          refreshExpiresAt: true,
-        },
-      },
+      refreshToken: true,
+      expiresAt: true,
+      refreshExpiresAt: true,
     },
-    orderBy: { code: 'asc' },
+    orderBy: { name: 'asc' },
   });
 
   const now = Date.now();
   const accessExpiryThreshold = now + ACCESS_TOKEN_BUFFER_MS;
 
-  const connections: RealmConnectionItem[] = locations.map((loc) => {
-    const realm = loc.realm;
-    const hasTokens = Boolean(realm?.refreshToken);
-    const expiresAt = realm?.expiresAt;
-    const refreshExpiresAt = realm?.refreshExpiresAt;
+  const realmsWithConnection: RealmWithConnection[] = realms.map((r) => {
+    const hasTokens = Boolean(r.refreshToken);
+    const expiresAt = r.expiresAt;
+    const refreshExpiresAt = r.refreshExpiresAt;
     const accessTokenExpired =
       hasTokens &&
       (expiresAt == null || expiresAt.getTime() <= accessExpiryThreshold);
@@ -75,10 +66,9 @@ export async function GET() {
       new Date(refreshExpiresAt).getTime() < now;
 
     return {
-      locationId: loc.id,
-      realmId: realm?.id ?? null,
-      qbRealmId: realm?.realmId ?? null,
-      realmName: realm?.name ?? null,
+      id: r.id,
+      name: r.name,
+      realmId: r.realmId,
       hasTokens,
       refreshExpiresAt: refreshExpiresAt?.toISOString() ?? null,
       accessTokenExpired,
@@ -86,5 +76,5 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ connections, isAdmin });
+  return NextResponse.json({ realms: realmsWithConnection, isAdmin });
 }

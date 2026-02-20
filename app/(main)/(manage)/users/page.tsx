@@ -53,7 +53,7 @@ const STATUS_OPTIONS: { value: UserStatus; label: string }[] = [
 const NO_LOCATION_VALUE = '__none__';
 
 async function patchUser(id: string, body: Record<string, unknown>) {
-  const res = await fetch(`/api/users/${id}`, {
+  const res = await fetch(`/api/user/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -70,14 +70,14 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
 
   const fetchUsers = useCallback(async () => {
-    const res = await fetch('/api/users');
+    const res = await fetch('/api/user');
     if (!res.ok) throw new Error('Failed to load users');
     const data = await res.json();
     setUsers(data);
   }, []);
 
   const fetchLocations = useCallback(async () => {
-    const res = await fetch('/api/locations');
+    const res = await fetch('/api/location');
     if (!res.ok) return;
     const data = await res.json();
     setLocations(data);

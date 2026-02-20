@@ -20,9 +20,7 @@ const HeaderNav = ({
     >
       <div className="flex items-center gap-2">
         <NavItem href="/budget">Budget</NavItem>
-        <NavItem href="https://bhpnl.vercel.app" target="_blank">
-          Reports
-        </NavItem>
+        <NavItem href="/report">Reports</NavItem>
       </div>
       {isOfficeOrAdmin && (
         <div className="flex items-center gap-2">

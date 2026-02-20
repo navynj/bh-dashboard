@@ -76,10 +76,13 @@ export async function fetchProfitAndLossReportFromQb(
   accountingMethod: 'Accrual' | 'Cash',
   accessToken: string,
   classId?: string,
+  summarizeColumnsBy?: string,
 ): Promise<QuickBooksProfitAndLossRaw> {
   const resolvedRealmId = decryptRefreshToken(realmId);
   const base = getQuickBooksReportBaseUrl();
-  const url = `${base}/v3/company/${resolvedRealmId}/reports/ProfitAndLoss?start_date=${startDate}&end_date=${endDate}&accounting_method=${accountingMethod}${classId ? `&class=${classId}` : ''}`;
+  let url = `${base}/v3/company/${resolvedRealmId}/reports/ProfitAndLoss?start_date=${startDate}&end_date=${endDate}&accounting_method=${accountingMethod}`;
+  if (classId) url += `&class=${encodeURIComponent(classId)}`;
+  if (summarizeColumnsBy) url += `&summarize_column_by=${encodeURIComponent(summarizeColumnsBy)}`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), QB_REPORT_TIMEOUT_MS);

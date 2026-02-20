@@ -283,7 +283,7 @@ export async function getBudgetsByMonth(
   yearMonth: string,
 ): Promise<BudgetDataType[]> {
   const raw = await prisma.budget.findMany({
-    where: { yearMonth },
+    where: { yearMonth, location: { showBudget: true } },
     include: { location: true },
     orderBy: { location: { createdAt: 'asc' } },
   });
@@ -302,13 +302,14 @@ export async function ensureBudgetsForMonth(
 ): Promise<void> {
   if (!isValidYearMonth(yearMonth)) return;
   const locations = await prisma.location.findMany({
-    select: { id: true, startYearMonth: true },
+    select: { id: true, startYearMonth: true, showBudget: true },
     orderBy: { createdAt: 'asc' },
   });
 
   const locationsInScope = locations.filter(
     (loc) =>
-      loc.startYearMonth == null || yearMonth >= loc.startYearMonth,
+      loc.showBudget &&
+      (loc.startYearMonth == null || yearMonth >= loc.startYearMonth),
   );
 
   await Promise.all(
