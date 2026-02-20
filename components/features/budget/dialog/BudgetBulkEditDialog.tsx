@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { YearMonthPicker } from '@/components/ui/year-month-picker';
 import { toast } from 'sonner';
 import { formatYearMonth, getCurrentYearMonth } from '@/lib/utils';
+import { usePathname } from 'next/navigation';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const BULK_EDIT_YEARS = Array.from(
@@ -25,6 +26,10 @@ const BULK_EDIT_YEARS = Array.from(
 const EARLIEST_YEAR_MONTH = formatYearMonth(CURRENT_YEAR - 10, 0);
 
 export function BudgetBulkEditDialog() {
+  const pathname = usePathname();
+  const isLocationPage = pathname.includes('/budget/location');
+  if (isLocationPage) return null;
+
   const currentYearMonth = getCurrentYearMonth();
   const [open, setOpen] = useState(false);
   const [selectAllPeriod, setSelectAllPeriod] = useState(false);

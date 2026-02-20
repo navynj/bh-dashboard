@@ -4,8 +4,7 @@ import MonthNav from '@/components/layout/MonthNav';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { getOrCreateBudgetSettings } from '@/lib/budget';
 import { getCurrentYearMonth } from '@/lib/utils';
-import React from 'react';
-import { Suspense } from 'react';
+import React, { Suspense } from 'react';
 
 const BudgetLayout = async ({ children }: { children: React.ReactNode }) => {
   const yearMonth = getCurrentYearMonth();

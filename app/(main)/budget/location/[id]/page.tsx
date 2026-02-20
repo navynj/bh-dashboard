@@ -14,6 +14,7 @@ import { getCurrentYearMonth, isValidYearMonth } from '@/lib/utils';
 import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import CategoryBudgetBarChart from '@/components/features/budget/chart/CategoryBudgetBarChart';
+import BackButton from '@/components/layout/BackButton';
 
 const LocationPage = async ({
   params,
@@ -103,33 +104,36 @@ const LocationPage = async ({
   }
 
   return (
-    <div className="flex flex-col md:flex-row gap-4">
-      <div className='className="w-full md:w-2/3'>
-        <TotalBudgetChart
-          className="max-h-[450px]"
-          size="lg"
-          totalAmount={budget.totalAmount}
-          currentCosByCategory={budget.currentCosByCategory ?? []}
-          referencePeriodMonthsUsed={budget.referencePeriodMonthsUsed}
-        />
-        <CategoryBudgetBarChart
-          className="w-full md:w-2/3 md:mx-auto"
-          totalBudget={budget.totalAmount}
-          currentCosByCategory={budget.currentCosByCategory ?? []}
-          referenceCosByCategory={budget.referenceCosByCategory ?? []}
-          referenceCosTotal={budget.referenceCosTotal}
-          referencePeriodMonthsUsed={budget.referencePeriodMonthsUsed}
+    <>
+      <BackButton />
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="w-full md:w-2/3">
+          <TotalBudgetChart
+            className="max-h-[450px]"
+            size="lg"
+            totalAmount={budget.totalAmount}
+            currentCosByCategory={budget.currentCosByCategory ?? []}
+            referencePeriodMonthsUsed={budget.referencePeriodMonthsUsed}
+          />
+          <CategoryBudgetBarChart
+            className="w-full md:w-2/3 md:mx-auto"
+            totalBudget={budget.totalAmount}
+            currentCosByCategory={budget.currentCosByCategory ?? []}
+            referenceCosByCategory={budget.referenceCosByCategory ?? []}
+            referenceCosTotal={budget.referenceCosTotal}
+            referencePeriodMonthsUsed={budget.referencePeriodMonthsUsed}
+          />
+        </div>
+        <BudgetCardList
+          yearMonth={yearMonth}
+          isOfficeOrAdmin={false}
+          budget={budget}
+          budgets={[]}
+          locationId={id}
+          hideChart={true}
         />
       </div>
-      <BudgetCardList
-        yearMonth={yearMonth}
-        isOfficeOrAdmin={false}
-        budget={budget}
-        budgets={[]}
-        locationId={id}
-        hideChart={true}
-      />
-    </div>
+    </>
   );
 };
 
