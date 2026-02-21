@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import { getTargetPercentagesWithDefaults } from '@/lib/report/targetPercentages';
 import { MONTHLY_MODE_CONSTANTS, PERIOD_MODE_CONSTANTS } from './constants';
 import { BaseRenderer, type RenderConfig } from './renderers/BaseRenderer';
 import { MonthlyModeRenderer } from './renderers/MonthlyModeRenderer';
@@ -29,8 +30,8 @@ export function generatePDFFromReportData(
     profit?: number;
   },
 ): Uint8Array {
-  // Debug: Log target percentages
-  console.log('[PDF Generator] Target percentages:', targetPercentages);
+  // Apply defaults so COS, Payroll, Profit targets always print (e.g. when Notion has no values)
+  const resolvedTargets = getTargetPercentagesWithDefaults(targetPercentages);
 
   const doc = new jsPDF();
 
@@ -78,18 +79,18 @@ export function generatePDFFromReportData(
   // Determine rendering strategy based on mode
   if (monthlyMode && months.length > 0) {
     // Monthly mode rendering
-  const parsed = parseReportDataMonthly(reportData, months.length);
+    const parsed = parseReportDataMonthly(reportData, months.length);
     const strategy = new MonthlyModeRenderer(months);
     strategy.render(
       pdfRenderer,
       parsed as MonthlyReportData,
-      targetPercentages,
-          );
-        } else {
+      resolvedTargets,
+    );
+  } else {
     // Period mode rendering
     const parsed = parseReportData(reportData);
     const strategy = new PeriodModeRenderer();
-    strategy.render(pdfRenderer, parsed as PeriodReportData, targetPercentages);
+    strategy.render(pdfRenderer, parsed as PeriodReportData, resolvedTargets);
   }
 
   // Return PDF as Uint8Array

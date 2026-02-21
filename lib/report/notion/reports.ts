@@ -1,5 +1,6 @@
 import { Client } from '@notionhq/client';
 import { prisma } from '@/lib/core/prisma';
+import { getTargetPercentagesWithDefaults } from '@/lib/report/targetPercentages';
 
 /**
  * Normalize Notion database ID - remove hyphens if present
@@ -21,7 +22,7 @@ export function extractNotionDatabaseIdFromUrl(url: string): string | null {
   try {
     // Match 32-character hex string (with or without hyphens) in the URL
     const match = url.match(
-      /([0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12})/i
+      /([0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12})/i,
     );
     if (match) {
       return normalizeNotionId(match[1]) || null;
@@ -40,7 +41,7 @@ function formatNotionId(id: string): string {
   if (cleanId.length !== 32) return id; // Invalid UUID format
   return `${cleanId.slice(0, 8)}-${cleanId.slice(8, 12)}-${cleanId.slice(
     12,
-    16
+    16,
   )}-${cleanId.slice(16, 20)}-${cleanId.slice(20, 32)}`;
 }
 
@@ -84,7 +85,7 @@ function getNotionClient(): Client & {
               filter: args.filter,
               sorts: args.sorts,
             }),
-          }
+          },
         );
 
         if (!response.ok) {
@@ -92,7 +93,7 @@ function getNotionClient(): Client & {
             .json()
             .catch(() => ({ message: 'Unknown error' }));
           throw new Error(
-            `Notion API error: ${error.message || response.statusText}`
+            `Notion API error: ${error.message || response.statusText}`,
           );
         }
 
@@ -121,7 +122,7 @@ function getNotionDatabaseId(): string {
   // Log the database ID being used (formatted for readability)
   if (rawDatabaseId) {
     console.log(
-      `Using Notion Database ID: ${formatNotionId(notionDatabaseId)}`
+      `Using Notion Database ID: ${formatNotionId(notionDatabaseId)}`,
     );
   }
 
@@ -163,7 +164,7 @@ export async function createReportInNotion(
     payroll?: number;
     profit?: number;
   },
-  userName?: string
+  userName?: string,
 ): Promise<NotionReport> {
   const notion = getNotionClient();
   const notionDatabaseId = getNotionDatabaseId();
@@ -191,6 +192,11 @@ export async function createReportInNotion(
     const startDateStr = formatLocalDate(startDate);
     const endDateStr = formatLocalDate(endDate);
     const dateRange = `(${startDateStr} to ${endDateStr})`;
+
+    // Resolve target % (COS 30, Payroll 25, Profit 15 when blank) so we always save to Notion
+    const savedTargetPercentages = getTargetPercentagesWithDefaults(
+      targetPercentages,
+    );
 
     // Create a page in the Notion database
     const response = await notion.pages.create({
@@ -256,21 +262,9 @@ export async function createReportInNotion(
         Monthly: {
           checkbox: isMonthly || false,
         },
-        ...(targetPercentages?.costOfSales !== undefined && {
-          'Cost of Sales Target %': {
-            number: targetPercentages.costOfSales,
-          },
-        }),
-        ...(targetPercentages?.payroll !== undefined && {
-          'Payroll Target %': {
-            number: targetPercentages.payroll,
-          },
-        }),
-        ...(targetPercentages?.profit !== undefined && {
-          'Profit Target %': {
-            number: targetPercentages.profit,
-          },
-        }),
+        'Cost of Sales Target %': { number: savedTargetPercentages.costOfSales },
+        'Payroll Target %': { number: savedTargetPercentages.payroll },
+        'Profit Target %': { number: savedTargetPercentages.profit },
       },
     });
 
@@ -314,7 +308,7 @@ export async function createReportInNotion(
       // If "Report" property doesn't exist, just log the error and continue
       console.warn(
         'Could not update Report property (may not exist):',
-        updateError.message
+        updateError.message,
       );
     }
 
@@ -360,27 +354,27 @@ export async function createReportInNotion(
       pdfUrl,
       months: parsedMonths || months,
       isMonthly: isMonthlyProp,
-      targetPercentages,
+      targetPercentages: savedTargetPercentages,
     };
   } catch (error: any) {
     // Provide more helpful error messages
     if (error.code === 'object_not_found') {
       throw new Error(
         `Could not find Notion database with ID: ${formatNotionId(
-          notionDatabaseId
+          notionDatabaseId,
         )}. ` +
           `Please verify that:\n` +
           `1. The database ID is correct\n` +
           `2. Your Notion integration has access to this database\n` +
-          `3. The database exists in your Notion workspace`
+          `3. The database exists in your Notion workspace`,
       );
     }
     if (error.code === 'unauthorized') {
       throw new Error(
         `Notion API key does not have access to database: ${formatNotionId(
-          notionDatabaseId
+          notionDatabaseId,
         )}. ` +
-          `Please ensure your Notion integration is connected to this database.`
+          `Please ensure your Notion integration is connected to this database.`,
       );
     }
     throw error;
@@ -392,7 +386,7 @@ export async function createReportInNotion(
  */
 export async function getReportsFromNotion(
   userId: string,
-  locationCode?: string
+  locationCode?: string,
 ): Promise<NotionReport[]> {
   const notion = getNotionClient();
   const notionDatabaseId = getNotionDatabaseId();
@@ -518,20 +512,20 @@ export async function getReportsFromNotion(
     if (error.code === 'object_not_found') {
       throw new Error(
         `Could not find Notion database with ID: ${formatNotionId(
-          notionDatabaseId
+          notionDatabaseId,
         )}. ` +
           `Please verify that:\n` +
           `1. The database ID is correct\n` +
           `2. Your Notion integration has access to this database\n` +
-          `3. The database exists in your Notion workspace`
+          `3. The database exists in your Notion workspace`,
       );
     }
     if (error.code === 'unauthorized') {
       throw new Error(
         `Notion API key does not have access to database: ${formatNotionId(
-          notionDatabaseId
+          notionDatabaseId,
         )}. ` +
-          `Please ensure your Notion integration is connected to this database.`
+          `Please ensure your Notion integration is connected to this database.`,
       );
     }
     throw error;
@@ -543,7 +537,7 @@ export async function getReportsFromNotion(
  */
 export async function getReportFromNotionById(
   pageId: string,
-  userId: string
+  userId: string,
 ): Promise<NotionReport | null> {
   const notion = getNotionClient();
 
