@@ -1,6 +1,6 @@
 /**
  * PDF Generator Constants
- * 
+ *
  * This file contains all constants used for PDF generation,
  * including layout constants for period and monthly modes,
  * exclusion patterns, and keywords.
@@ -48,7 +48,12 @@ export const MONTHLY_MODE_CONSTANTS = {
   lineHeight: 6,
   lineSpacing: 4,
   sectionSpacing: 6,
-  labelWidthRatio: { singleMonth: 0.8, fewColumns: 0.4, manyColumns: 0.35, manyColumnsAlt: 0.3 },
+  labelWidthRatio: {
+    singleMonth: 0.8,
+    fewColumns: 0.4,
+    manyColumns: 0.35,
+    manyColumnsAlt: 0.3,
+  },
   columnWidthCalculation: 0.5,
   textPaddingMultiplier: { singleMonth: 1.5, multiMonth: 3 },
   boldTextPaddingMultiplier: { singleMonth: 1.5, multiMonth: 2.5 },
@@ -66,6 +71,8 @@ export const MONTHLY_MODE_CONSTANTS = {
 export const EXCLUSION_PATTERNS = {
   /** Match E17 Payroll Expenses (exact or with minor variation) */
   e17PayrollExpenses: /E17\s*[-–]?\s*PAYROLL\s+EXPENSES/i,
+  /** Match deleted items/sections (e.g. "E17 Payroll Expenses (deleted-1)") */
+  deleted: /\(deleted/i,
   /** Match Online Subscription */
   onlineSubscription: /ONLINE\s+SUBSCRIPTION/i,
   /** Match Travel and Conference (both required for Expense E exclusion) */

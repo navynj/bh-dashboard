@@ -8,8 +8,10 @@ import { EXCLUSION_PATTERNS, INCOME_KEYWORDS } from '../constants';
 
 /**
  * Check if a label should be excluded based on E17 Payroll Expenses pattern
+ * or "(deleted)" in the name (e.g. "E17 Payroll Expenses (deleted-1)").
  */
 export function isE17PayrollExpenses(label: string): boolean {
+  if (EXCLUSION_PATTERNS.deleted.test(label)) return true;
   return (
     EXCLUSION_PATTERNS.e17PayrollExpenses.test(label) ||
     (label.toUpperCase().startsWith('E17') &&

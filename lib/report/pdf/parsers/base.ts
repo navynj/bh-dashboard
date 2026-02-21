@@ -10,6 +10,7 @@ import type {
   QuickBooksColData,
   MonthlyTransformContext,
 } from '../types';
+import { EXCLUSION_PATTERNS } from '../constants';
 
 /**
  * Section type identifiers
@@ -78,12 +79,13 @@ export function identifySectionType(row: QuickBooksRow): SectionType | null {
 }
 
 /**
- * Check if expense header should be excluded (E17 Payroll Expenses)
+ * Check if expense header should be excluded (E17 Payroll Expenses or any "(deleted)" section)
  */
 export function shouldExcludeExpenseSection(
   expenseHeader: string,
 ): boolean {
   const upperExpenseHeader = expenseHeader.toUpperCase();
+  if (EXCLUSION_PATTERNS.deleted.test(expenseHeader)) return true;
   return (
     upperExpenseHeader === 'E17 PAYROLL EXPENSES' ||
     (upperExpenseHeader.startsWith('E17') &&
