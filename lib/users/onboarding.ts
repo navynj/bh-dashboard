@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/core/prisma';
-import type { UserRole } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 
 export type PendingUser = {
   id: string;
@@ -9,15 +9,13 @@ export type PendingUser = {
   location: string | null;
 };
 
-export async function getPendingApprovals(
-  approverRole: UserRole,
-): Promise<PendingUser[]> {
+export async function getPendingApprovals(): Promise<PendingUser[]> {
+  const roles = Object.values(UserRole).filter((r) => r !== 'admin');
+
   const users = await prisma.user.findMany({
     where: {
       status: 'pending_approval',
-      ...(approverRole === 'office'
-        ? { role: 'manager' }
-        : { role: { in: ['office', 'manager'] } }),
+      ...{ role: { in: roles } },
     },
     select: {
       id: true,

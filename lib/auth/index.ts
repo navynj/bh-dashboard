@@ -86,3 +86,17 @@ export function requireActiveSession(
 export function getOfficeOrAdmin(role: string | null | undefined): boolean {
   return role === 'admin' || role === 'office';
 }
+
+/** Can see Delivery and Cost in nav (admin, office, assistant). */
+export function getCanSeeDeliveryAndCost(
+  role: string | null | undefined,
+): boolean {
+  return role === 'admin' || role === 'office' || role === 'assistant';
+}
+
+/** Can see Budget and Reports in nav (admin, office, manager). Assistant cannot. */
+export function getCanSeeBudgetAndReports(
+  role: string | null | undefined,
+): boolean {
+  return role === 'admin' || role === 'office' || role === 'manager';
+}

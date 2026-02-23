@@ -19,10 +19,7 @@ const layout = async ({ children }: { children: ReactNode }) => {
   // =================
   const canApprove =
     session?.user?.role === 'admin' || session?.user?.role === 'office';
-  const pending =
-    canApprove && session?.user?.role
-      ? await getPendingApprovals(session.user.role)
-      : [];
+  const pending = canApprove ? await getPendingApprovals() : [];
 
   const isOfficeOrAdmin = getOfficeOrAdmin(session?.user?.role);
 

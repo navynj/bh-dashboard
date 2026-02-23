@@ -1,5 +1,5 @@
 import { Spinner } from '@/components/ui/spinner';
-import { auth } from '@/lib/auth';
+import { auth, getCanSeeBudgetAndReports } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 
 type Props = { searchParams: Promise<{ yearMonth?: string }> };
@@ -11,7 +11,9 @@ export default async function HomePage() {
   const session = await auth();
   switch (session?.user?.status) {
     case 'active':
-      redirect('/budget');
+      redirect(
+        getCanSeeBudgetAndReports(session.user.role) ? '/budget' : '/delivery',
+      );
     case 'pending_approval':
       redirect('/waiting');
     case 'pending_onboarding':

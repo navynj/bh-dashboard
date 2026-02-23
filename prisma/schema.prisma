@@ -112,6 +112,7 @@ enum UserRole {
   admin
   office
   manager
+  assistant
 
   @@schema("public")
 }

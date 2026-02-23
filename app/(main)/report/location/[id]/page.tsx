@@ -3,6 +3,7 @@ import { getConnections } from '@/lib/quickbooks/connections';
 import { getReportsFromNotion } from '@/features/report/notion/reports';
 import { ReportFormSection } from '@/components/features/report/ReportFormSection';
 import { ReportTable } from '@/components/features/report/ReportTable';
+import { redirect } from 'next/navigation';
 
 export default async function ReportLocationPage({
   params,
@@ -12,6 +13,7 @@ export default async function ReportLocationPage({
   const { id: locationId } = await params;
 
   const session = await auth();
+  if (session?.user?.role === 'assistant') redirect('/delivery');
   const isOfficeOrAdmin = getOfficeOrAdmin(session?.user?.role);
 
   const connections = await getConnections(session ?? null);

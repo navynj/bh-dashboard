@@ -1,8 +1,7 @@
 'use client';
 
-import { DataTable } from '@/components/ui/data-table';
-import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
+import { DataTable } from '@/components/ui/data-table';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -11,18 +10,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
+import { UserRole, UserStatus } from '@prisma/client';
 import { type ColumnDef, type Row } from '@tanstack/react-table';
 import { Check, Pencil, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
-
-type UserRole = 'admin' | 'office' | 'manager' | null;
-type UserStatus =
-  | 'pending_onboarding'
-  | 'pending_approval'
-  | 'active'
-  | 'rejected';
 
 type UserRow = {
   id: string;
@@ -36,18 +29,19 @@ type UserRow = {
 
 type LocationOption = { id: string; code: string; name: string };
 
-const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
-  { value: 'admin', label: 'Admin' },
-  { value: 'office', label: 'Office' },
-  { value: 'manager', label: 'Manager' },
-];
+const ROLE_OPTIONS: { value: UserRole; label: string }[] = Object.values(
+  UserRole,
+).map((r) => ({
+  value: r as UserRole,
+  label: r.charAt(0).toUpperCase() + r.slice(1),
+}));
 
-const STATUS_OPTIONS: { value: UserStatus; label: string }[] = [
-  { value: 'pending_onboarding', label: 'Pending onboarding' },
-  { value: 'pending_approval', label: 'Pending approval' },
-  { value: 'active', label: 'Active' },
-  { value: 'rejected', label: 'Rejected' },
-];
+const STATUS_OPTIONS: { value: UserStatus; label: string }[] = Object.values(
+  UserStatus,
+).map((s) => ({
+  value: s as UserStatus,
+  label: s.charAt(0).toUpperCase() + s.slice(1),
+}));
 
 /** Sentinel for "no location" so we never use empty string as SelectItem value. */
 const NO_LOCATION_VALUE = '__none__';
@@ -106,7 +100,7 @@ export default function UsersPage() {
           next.locationId = value as string | null;
           next.location =
             value != null
-              ? locations.find((l) => l.id === value) ?? null
+              ? (locations.find((l) => l.id === value) ?? null)
               : null;
         }
         return next;
@@ -124,9 +118,7 @@ export default function UsersPage() {
         await patchUser(row.id, body);
         toast.success('Updated');
       } catch (e) {
-        setUsers((prev) =>
-          prev.map((u) => (u.id === row.id ? previous : u)),
-        );
+        setUsers((prev) => prev.map((u) => (u.id === row.id ? previous : u)));
         toast.error(e instanceof Error ? e.message : 'Update failed');
       }
     },
@@ -201,13 +193,12 @@ export default function UsersPage() {
       id: 'location',
       header: 'Location',
       cell: ({ row }: { row: Row<UserRow> }) => {
-        const isOfficeOrAdmin =
-          row.original.role === 'office' || row.original.role === 'admin';
+        const isManager = row.original.role === 'manager';
         const hasLocation = row.original.locationId != null;
         // Office/admin with location: enable so they can set to none only. Office/admin without: keep disabled. Manager: full list.
-        const onlyAllowNone = isOfficeOrAdmin && hasLocation;
-        const shouldSetLocation = !isOfficeOrAdmin && !hasLocation;
-        const disabled = isOfficeOrAdmin && !hasLocation;
+        const onlyAllowNone = !isManager && hasLocation;
+        const shouldSetLocation = isManager && !hasLocation;
+        const disabled = !isManager && !hasLocation;
         return (
           <Select
             value={row.original.locationId ?? NO_LOCATION_VALUE}

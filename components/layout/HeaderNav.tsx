@@ -10,7 +10,15 @@ import { Button } from '../ui/button';
 const HeaderNav = ({
   className,
   isOfficeOrAdmin,
-}: PropsWithChildren<ClassName & { isOfficeOrAdmin: boolean }>) => {
+  showBudgetAndReports,
+  showDeliveryAndCost,
+}: PropsWithChildren<
+  ClassName & {
+    isOfficeOrAdmin: boolean;
+    showBudgetAndReports: boolean;
+    showDeliveryAndCost: boolean;
+  }
+>) => {
   return (
     <nav
       className={cn(
@@ -19,14 +27,16 @@ const HeaderNav = ({
       )}
     >
       <div className="flex items-center gap-2">
-        <NavItem href="/budget">Budget</NavItem>
-        <NavItem href="/report">Reports</NavItem>
-        {isOfficeOrAdmin && (
+        {showBudgetAndReports && (
           <>
-            {/* <NavItem href="/cost">Cost</NavItem> */}
+            <NavItem href="/budget">Budget</NavItem>
+            <NavItem href="/report">Reports</NavItem>
+          </>
+        )}
+        {showDeliveryAndCost && (
+          <>
+            <NavItem href="/cost">Cost</NavItem>
             <NavItem href="/delivery">Delivery</NavItem>
-            {/* <NavItem href="/inventory">Inventory</NavItem> */}
-            {/* <NavItem href="/audit">Audit</NavItem> */}
           </>
         )}
       </div>

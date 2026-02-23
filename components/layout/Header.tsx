@@ -1,8 +1,13 @@
-import { auth, getOfficeOrAdmin } from '@/lib/auth';
+import {
+  auth,
+  getCanSeeBudgetAndReports,
+  getCanSeeDeliveryAndCost,
+  getOfficeOrAdmin,
+} from '@/lib/auth';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import React from 'react';
 import SignOutButton from '../features/auth/SignOutButton';
-import Link from 'next/link';
 import HeaderNav from './HeaderNav';
 
 type HeaderProps = {
@@ -16,13 +21,15 @@ const Header = async ({ isOfficeOrAdmin }: HeaderProps) => {
   const isActive = session.user.status === 'active';
   const isOfficeOrAdminFlag =
     isOfficeOrAdmin ?? getOfficeOrAdmin(session.user.role);
+  const showBudgetAndReports = getCanSeeBudgetAndReports(session.user.role);
+  const showDeliveryAndCost = getCanSeeDeliveryAndCost(session.user.role);
 
   return (
     isActive && (
       <header className="flex items-center justify-between gap-4 border-b pb-6 mb-5 flex-wrap md:flex-nowrap">
         <div className="shrink-0 flex items-center gap-6 md:w-full md:max-w-3xs">
           <div>
-            <Link href="/budget">
+            <Link href={showBudgetAndReports ? '/budget' : '/delivery'}>
               <h1 className="text-xl font-semibold">BH Hub</h1>
             </Link>
             <p className="text-muted-foreground text-sm">
@@ -43,6 +50,8 @@ const Header = async ({ isOfficeOrAdmin }: HeaderProps) => {
         <HeaderNav
           className="hidden md:flex w-full"
           isOfficeOrAdmin={isOfficeOrAdminFlag}
+          showBudgetAndReports={showBudgetAndReports}
+          showDeliveryAndCost={showDeliveryAndCost}
         />
         <div className="flex items-center gap-2">
           <SignOutButton size="sm" />
@@ -50,6 +59,8 @@ const Header = async ({ isOfficeOrAdmin }: HeaderProps) => {
         <HeaderNav
           className="md:hidden w-full"
           isOfficeOrAdmin={isOfficeOrAdminFlag}
+          showBudgetAndReports={showBudgetAndReports}
+          showDeliveryAndCost={showDeliveryAndCost}
         />
       </header>
     )
