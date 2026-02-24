@@ -1,4 +1,4 @@
-import { UNIT_PRICE } from '@/constants/cost';
+import { UNIT_PRICE } from '@/constants/cost/cost';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
 import { NextRequest, NextResponse } from 'next/server';
@@ -15,10 +15,10 @@ function logCostHistoryCreate(
   costId: string,
   userId: string,
   action: 'created' | 'updated' | 'locked' | 'unlocked',
-  changes?: Record<string, unknown>
+  changes?: Record<string, unknown>,
 ) {
   logCostHistory(costId, userId, action, changes).catch((e) =>
-    console.error('Failed to log cost history', e)
+    console.error('Failed to log cost history', e),
   );
 }
 
@@ -39,7 +39,10 @@ export async function GET(req: NextRequest) {
     const reverse = searchParams.get('reverse') === 'true';
     const countOnly = searchParams.get('countOnly') === 'true';
 
-    const where: { title?: { contains: string; mode: 'insensitive' }; tags?: { some: { tagId: { in: string[] } } } } = {};
+    const where: {
+      title?: { contains: string; mode: 'insensitive' };
+      tags?: { some: { tagId: { in: string[] } } };
+    } = {};
     if (search) {
       where.title = { contains: search, mode: 'insensitive' };
     }
@@ -49,7 +52,11 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    let orderBy: { createdAt?: 'asc' | 'desc'; updatedAt?: 'asc' | 'desc'; title?: 'asc' | 'desc' } = { createdAt: 'desc' };
+    let orderBy: {
+      createdAt?: 'asc' | 'desc';
+      updatedAt?: 'asc' | 'desc';
+      title?: 'asc' | 'desc';
+    } = { createdAt: 'desc' };
     if (sortKey === 'TITLE') {
       orderBy = { title: reverse ? 'desc' : 'asc' };
     } else if (sortKey === 'CREATED_AT') {
@@ -61,10 +68,7 @@ export async function GET(req: NextRequest) {
     if (countOnly) {
       const totalCount = await prisma.cost.count({ where });
       const totalPages = Math.ceil(totalCount / pageSize);
-      return NextResponse.json(
-        { totalCount, totalPages },
-        { status: 200 }
-      );
+      return NextResponse.json({ totalCount, totalPages }, { status: 200 });
     }
 
     const skip = (page - 1) * pageSize;
@@ -99,13 +103,13 @@ export async function GET(req: NextRequest) {
         totalPages,
         totalCount,
       },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (error) {
     console.error(error);
     return NextResponse.json(
       { message: 'Failed to fetch costs' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -145,7 +149,7 @@ export async function POST(req: NextRequest) {
         ({ id, ...item }: IngredientPayloadType & { id?: string }) => ({
           ...item,
           costId,
-        })
+        }),
       ),
     });
 
@@ -154,7 +158,7 @@ export async function POST(req: NextRequest) {
         ({ id, ...item }: IngredientPayloadType & { id?: string }) => ({
           ...item,
           costId,
-        })
+        }),
       ),
     });
 
@@ -163,7 +167,7 @@ export async function POST(req: NextRequest) {
         ({ id, ...item }: LaborApiRequest & { id?: string }) => ({
           ...item,
           costId,
-        })
+        }),
       ),
     });
 
@@ -172,7 +176,7 @@ export async function POST(req: NextRequest) {
         ({ id, ...item }: OtherApiRequest & { id?: string }) => ({
           ...item,
           costId,
-        })
+        }),
       ),
     });
 
@@ -183,15 +187,15 @@ export async function POST(req: NextRequest) {
     };
 
     const pricesWithFinalPrice = (pricesPayload || []).filter(
-      (p: PriceApiRequest & { isFinalPrice?: boolean }) => p.isFinalPrice === true
+      (p: PriceApiRequest & { isFinalPrice?: boolean }) =>
+        p.isFinalPrice === true,
     );
     if (pricesWithFinalPrice.length > 1) {
       return NextResponse.json(
         {
-          message:
-            'Only one price can have isFinalPrice set to true per cost',
+          message: 'Only one price can have isFinalPrice set to true per cost',
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -247,7 +251,7 @@ export async function POST(req: NextRequest) {
         prices: finalPrices,
         tags: costTags.map((ct) => ct.Tag),
       },
-      { status: 200 }
+      { status: 200 },
     );
   } catch (error) {
     console.error(error);
@@ -260,7 +264,7 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json(
       { message: (error as Error)?.message || 'Error occurred' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

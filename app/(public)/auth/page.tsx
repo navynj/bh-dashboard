@@ -1,4 +1,4 @@
-import SignInButton from '@/components/features/auth/SignInButton';
+import SignInButton from '@/components/control/SignInButton';
 
 export default async function SignInPage() {
   return (

@@ -1,6 +1,6 @@
 import BudgetCardSkeleton, {
   ChartSkeleton,
-} from '@/components/features/budget/card/BudgetCardSkeleton';
+} from '@/features/budget/components/card/BudgetCardSkeleton';
 import { cn } from '@/lib/utils';
 
 export default function LocationBudgetLoading() {

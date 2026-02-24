@@ -1,4 +1,4 @@
-import { UNIT_PRICE } from '@/constants/cost';
+import { UNIT_PRICE } from '@/constants/cost/cost';
 import type { PriceApiResponse } from '@/features/cost/types/cost';
 import { prisma } from '@/lib/core/prisma';
 
@@ -16,10 +16,10 @@ interface PriceCreateItem {
 export async function processPrices(
   prevPrices: Array<{ id: string }>,
   pricesPayload: PriceApiResponse[] | undefined,
-  costId: string
+  costId: string,
 ): Promise<Array<{ id: string; [key: string]: unknown }>> {
   const pricesPayloadMap = new Map(
-    (pricesPayload || []).map((item) => [item.id, item])
+    (pricesPayload || []).map((item) => [item.id, item]),
   );
   const prevPriceIds = new Set(prevPrices.map((p) => p.id));
 
@@ -45,11 +45,11 @@ export async function processPrices(
   }
 
   const pricesWithFinalPrice = (pricesPayload || []).filter(
-    (p) => (p as { isFinalPrice?: boolean }).isFinalPrice === true
+    (p) => (p as { isFinalPrice?: boolean }).isFinalPrice === true,
   );
   if (pricesWithFinalPrice.length > 1) {
     throw new Error(
-      'Only one price can have isFinalPrice set to true per cost'
+      'Only one price can have isFinalPrice set to true per cost',
     );
   }
 
@@ -70,8 +70,8 @@ export async function processPrices(
             rank: data.rank,
             isFinalPrice: data.isFinalPrice ?? false,
           },
-        })
-      )
+        }),
+      ),
     ),
     Promise.all(
       priceToCreate.map(({ data }) =>
@@ -85,8 +85,8 @@ export async function processPrices(
             rank: data.rank,
             isFinalPrice: data.isFinalPrice ?? false,
           },
-        })
-      )
+        }),
+      ),
     ),
     priceToDeleteIds.length > 0
       ? prisma.price.deleteMany({
@@ -105,7 +105,7 @@ export async function processPrices(
   const finalPrices = await Promise.all(
     [...updatedPrices, ...createdPrices].map(async (price) => {
       const payloadPrice = pricesPayload?.find(
-        (p) => priceIdMap[p.id] === price.id
+        (p) => priceIdMap[p.id] === price.id,
       );
       const updateData: { base?: string; isFinalPrice?: boolean } = {};
 
@@ -145,7 +145,7 @@ export async function processPrices(
         });
       }
       return price;
-    })
+    }),
   );
 
   return finalPrices;

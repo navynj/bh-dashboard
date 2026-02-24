@@ -1,5 +1,5 @@
-import BudgetCardList from '@/components/features/budget/card/BudgetCardList';
-import TotalBudgetChart from '@/components/features/budget/chart/TotalBudgetChart';
+import BudgetCardList from '@/features/budget/components/card/BudgetCardList';
+import TotalBudgetChart from '@/features/budget/components/chart/TotalBudgetChart';
 import {
   attachCurrentMonthCosToBudgets,
   attachReferenceCosToBudgets,
@@ -13,8 +13,8 @@ import { prisma } from '@/lib/core/prisma';
 import { getCurrentYearMonth, isValidYearMonth } from '@/lib/utils';
 import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
-import CategoryBudgetBarChart from '@/components/features/budget/chart/CategoryBudgetBarChart';
-import BackButton from '@/components/layout/BackButton';
+import CategoryBudgetBarChart from '@/features/budget/components/chart/CategoryBudgetBarChart';
+import BackButton from '@/components/control/BackButton';
 
 const LocationPage = async ({
   params,

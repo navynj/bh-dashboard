@@ -1,0 +1,51 @@
+import { cn } from '@/lib/utils';
+import { ClassName } from '@/types/className';
+import { UserRole } from '@prisma/client';
+import { PropsWithChildren } from 'react';
+import HeaderNavItem from './HeaderNavItem';
+import {
+  getCanSeeBudgetAndReports,
+  getCanSeeDeliveryAndCost,
+  getOfficeOrAdmin,
+} from '@/lib/auth';
+
+const HeaderNav = ({
+  className,
+  role,
+}: PropsWithChildren<
+  ClassName & {
+    role: UserRole | null;
+  }
+>) => {
+  return (
+    <nav
+      className={cn(
+        'flex items-center flex-wrap md:justify-between gap-2 md:gap-6',
+        className,
+      )}
+    >
+      <div className="flex items-center gap-2">
+        {getCanSeeBudgetAndReports(role) && (
+          <>
+            <HeaderNavItem href="/budget">Budget</HeaderNavItem>
+            <HeaderNavItem href="/report">Reports</HeaderNavItem>
+          </>
+        )}
+        {getCanSeeDeliveryAndCost(role) && (
+          <>
+            <HeaderNavItem href="/delivery">Delivery</HeaderNavItem>
+            <HeaderNavItem href="/cost">Cost</HeaderNavItem>
+          </>
+        )}
+      </div>
+      {getOfficeOrAdmin(role) && (
+        <div className="flex items-center gap-2">
+          <HeaderNavItem href="/users">Users</HeaderNavItem>
+          <HeaderNavItem href="/locations">Locations</HeaderNavItem>
+        </div>
+      )}
+    </nav>
+  );
+};
+
+export default HeaderNav;

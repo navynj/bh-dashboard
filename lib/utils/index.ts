@@ -10,9 +10,3 @@ export {
   listYearMonthsInRange,
 } from './date';
 export { formatCurrency } from './format';
-export {
-  parseCategoryPath,
-  isTopLevelCategory,
-  getTopLevelCategoryIndex,
-  getTopLevelCategories,
-} from './category';

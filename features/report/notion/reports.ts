@@ -1,6 +1,6 @@
 import { Client } from '@notionhq/client';
 import { prisma } from '@/lib/core/prisma';
-import { getTargetPercentagesWithDefaults } from '@/features/report/targetPercentages';
+import { getTargetPercentagesWithDefaults } from '@/features/report/utils/targetPercentages';
 
 /**
  * Normalize Notion database ID - remove hyphens if present

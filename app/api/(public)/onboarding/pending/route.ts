@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth';
-import { getPendingApprovals } from '@/lib/users';
+import { getPendingApprovals } from '@/features/onboard/utils/onboarding';
 import { UserRole } from '@prisma/client';
 import { NextResponse } from 'next/server';
 
@@ -16,6 +16,6 @@ export async function GET() {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const list = await getPendingApprovals(role);
+  const list = await getPendingApprovals();
   return NextResponse.json(list);
 }

@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { getTargetPercentagesWithDefaults } from '@/features/report/targetPercentages';
+import { getTargetPercentagesWithDefaults } from '@/features/report/utils/targetPercentages';
 import { MONTHLY_MODE_CONSTANTS, PERIOD_MODE_CONSTANTS } from './constants';
 import { BaseRenderer, type RenderConfig } from './renderers/BaseRenderer';
 import { MonthlyModeRenderer } from './renderers/MonthlyModeRenderer';

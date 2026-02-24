@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import { Suspense } from 'react';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { QueryProvider } from '@/components/providers/QueryProvider';
 import { NavigationProgressProvider } from '@/components/providers/NavigationProgress';
 import './globals.css';
 
@@ -42,12 +43,14 @@ export default async function RootLayout({
             </>
           }
         >
-          <TooltipProvider>
-            <NavigationProgressProvider>
-              {children}
-              <Toaster position="top-center" />
-            </NavigationProgressProvider>
-          </TooltipProvider>
+          <QueryProvider>
+            <TooltipProvider>
+              <NavigationProgressProvider>
+                {children}
+                <Toaster position="top-center" />
+              </NavigationProgressProvider>
+            </TooltipProvider>
+          </QueryProvider>
         </Suspense>
       </body>
     </html>

@@ -1,4 +1,4 @@
-import BudgetCardList from '@/components/features/budget/card/BudgetCardList';
+import BudgetCardList from '@/features/budget/components/card/BudgetCardList';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import {
   attachCurrentMonthCosToBudgets,

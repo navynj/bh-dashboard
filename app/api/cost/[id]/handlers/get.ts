@@ -16,6 +16,8 @@ export async function GET(
 
     const { id } = await params;
 
+    const shopifyConfig = await prisma.shopifyConfig.findFirst();
+
     const data = await prisma.cost.findUnique({
       where: { id },
       include: {
@@ -32,15 +34,25 @@ export async function GET(
       return NextResponse.json({ message: 'Not found' }, { status: 404 });
     }
 
+    const configForEnhance = shopifyConfig
+      ? {
+          id: shopifyConfig.id,
+          shopifyUrl: shopifyConfig.shopifyUrl,
+          adminToken: shopifyConfig.adminToken,
+          apiVersion: shopifyConfig.apiVersion,
+          query: shopifyConfig.query,
+        }
+      : null;
+
     const [ingredients, packagings] = await Promise.all([
       processItemsWithShopifyData(
         data.ingredients as unknown as EnhanceableItem[],
-        null,
+        configForEnhance,
         'ingredient'
       ),
       processItemsWithShopifyData(
         data.packagings as unknown as EnhanceableItem[],
-        null,
+        configForEnhance,
         'packaging'
       ),
     ]);

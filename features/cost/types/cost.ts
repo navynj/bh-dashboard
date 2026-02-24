@@ -39,6 +39,33 @@ export interface CostApiResponse extends CostBase {
   tags: TagBase[];
 }
 
+/** Alias for tag used in cost editor UI. */
+export type TagApiResponse = TagBase;
+
+/** Cost state shape used by the cost editor (API response shape). */
+export type CostEditorStateWithHandlers = CostApiResponse;
+
+/** Price row in the editor. */
+export type PriceEditorItem = PriceApiResponse;
+
+/** Ingredient/packaging row in the editor. */
+export type IngredientEditorItem = IngredientApiResponse | PackagingApiResponse;
+
+/** Ingredient row with handler fields in the editor. */
+export type IngredientEditorItemWithHandlers = IngredientApiResponse & { _handlers?: unknown };
+
+/** Other row in the editor. */
+export type OtherEditorItem = OtherApiResponse;
+
+/** Other row with handler fields in the editor. */
+export type OtherEditorItemWithHandlers = OtherApiResponse & { _handlers?: unknown };
+
+/** Labor row in the editor. */
+export type LaborEditorItem = LaborApiResponse;
+
+/** Labor row with handler fields in the editor. */
+export type LaborEditorItemWithHandlers = LaborApiResponse & { _handlers?: unknown };
+
 export interface LaborApiRequest extends Omit<LaborBase, 'costId'> {}
 export interface OtherApiRequest extends Omit<OtherBase, 'costId'> {}
 export type PriceApiRequest = Omit<PriceBase, 'costId' | 'isFinalPrice'> & {

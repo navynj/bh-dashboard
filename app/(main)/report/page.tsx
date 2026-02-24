@@ -1,7 +1,7 @@
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { getConnections } from '@/lib/quickbooks/connections';
 import { redirect } from 'next/navigation';
-import { ReportLocationSelect } from '@/components/features/report/ReportLocationSelect';
+import { ReportLocationSelect } from '@/features/report/components/ReportLocationSelect';
 
 /**
  * /report — Office/Admin: show Location Select Cards.

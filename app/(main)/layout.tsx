@@ -1,8 +1,8 @@
-import OnboardingList from '@/components/features/onboard/OnboardingList';
-import { RefreshTokenExpiredAlert } from '@/components/features/locations/RefreshTokenExpiredAlert';
-import Header from '@/components/layout/Header';
+import OnboardingList from '@/features/onboard/components/OnboardingList';
+import { RefreshTokenExpiredAlert } from '@/features/locations/components/RefreshTokenExpiredAlert';
+import Header from '@/components/control/Header';
 import { auth, getOfficeOrAdmin, requireActiveSession } from '@/lib/auth';
-import { getPendingApprovals } from '@/lib/users';
+import { getPendingApprovals } from '@/features/onboard/utils/onboarding';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 

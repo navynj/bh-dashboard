@@ -1,8 +1,8 @@
 import { UserRole } from '@prisma/client';
 
-export const ROLES: { value: UserRole; label: string }[] = [
-  { value: 'manager', label: 'Manager (view own location only)' },
-  { value: 'assistant', label: 'Assistant (Delivery & Cost only)' },
-  { value: 'office', label: 'Office (set budget, view all locations)' },
-  { value: 'admin', label: 'Admin (developer, full config)' },
-];
+export const ROLES: { value: UserRole; label: string }[] = Object.values(
+  UserRole,
+).map((role) => ({
+  value: role,
+  label: role,
+}));

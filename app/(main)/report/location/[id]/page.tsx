@@ -1,8 +1,8 @@
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { getConnections } from '@/lib/quickbooks/connections';
 import { getReportsFromNotion } from '@/features/report/notion/reports';
-import { ReportFormSection } from '@/components/features/report/ReportFormSection';
-import { ReportTable } from '@/components/features/report/ReportTable';
+import { ReportFormSection } from '@/features/report/components/ReportFormSection';
+import { ReportTable } from '@/features/report/components/ReportTable';
 import { redirect } from 'next/navigation';
 
 export default async function ReportLocationPage({

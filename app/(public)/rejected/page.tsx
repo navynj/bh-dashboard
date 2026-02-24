@@ -1,5 +1,5 @@
-import ApprovalPolling from '@/components/features/onboard/ApprovalPolling';
-import SignOutButton from '@/components/features/auth/SignOutButton';
+import ApprovalPolling from '@/features/onboard/components/ApprovalPolling';
+import SignOutButton from '@/components/control/SignOutButton';
 import {
   Card,
   CardContent,

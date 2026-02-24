@@ -1,6 +1,6 @@
-import { BudgetBulkEditDialog } from '@/components/features/budget/dialog/BudgetBulkEditDialog';
-import { BudgetSettingsDialog } from '@/components/features/budget/dialog/BudgetSettingsDialog';
-import MonthNav from '@/components/layout/MonthNav';
+import { BudgetBulkEditDialog } from '@/features/budget/components/dialog/BudgetBulkEditDialog';
+import { BudgetSettingsDialog } from '@/features/budget/components/dialog/BudgetSettingsDialog';
+import MonthNav from '@/components/control/MonthNav';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { getOrCreateBudgetSettings } from '@/features/budget';
 import { getCurrentYearMonth } from '@/lib/utils';

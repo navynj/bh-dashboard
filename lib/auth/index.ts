@@ -91,12 +91,12 @@ export function getOfficeOrAdmin(role: string | null | undefined): boolean {
 export function getCanSeeDeliveryAndCost(
   role: string | null | undefined,
 ): boolean {
-  return role === 'admin' || role === 'office' || role === 'assistant';
+  return getOfficeOrAdmin(role) || role === 'assistant';
 }
 
 /** Can see Budget and Reports in nav (admin, office, manager). Assistant cannot. */
 export function getCanSeeBudgetAndReports(
   role: string | null | undefined,
 ): boolean {
-  return role === 'admin' || role === 'office' || role === 'manager';
+  return getOfficeOrAdmin(role) || role === 'manager';
 }

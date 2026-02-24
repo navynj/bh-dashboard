@@ -35,7 +35,13 @@ export async function PATCH(
     locationId?: string | null;
   } = {};
   if (body.name !== undefined) updateData.name = body.name || null;
-  if (body.role !== undefined) updateData.role = body.role;
+  if (body.role !== undefined) {
+    const validRole: 'admin' | 'office' | 'manager' | undefined =
+      body.role === 'admin' || body.role === 'office' || body.role === 'manager'
+        ? body.role
+        : undefined;
+    if (validRole) updateData.role = validRole;
+  }
   if (body.status !== undefined) updateData.status = body.status;
   if (body.locationId !== undefined) updateData.locationId = body.locationId ?? null;
 

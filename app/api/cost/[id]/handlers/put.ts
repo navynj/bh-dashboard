@@ -156,15 +156,26 @@ export async function PUT(
         processPrices(cost.prices, pricesPayload, costId),
       ]);
 
+    const shopifyConfig = await prisma.shopifyConfig.findFirst();
+    const configForEnhance = shopifyConfig
+      ? {
+          id: shopifyConfig.id,
+          shopifyUrl: shopifyConfig.shopifyUrl,
+          adminToken: shopifyConfig.adminToken,
+          apiVersion: shopifyConfig.apiVersion,
+          query: shopifyConfig.query,
+        }
+      : null;
+
     const [enhancedIngredients, enhancedPackagings] = await Promise.all([
       processItemsWithShopifyData(
         ingredients as unknown as EnhanceableItem[],
-        null,
+        configForEnhance,
         'ingredient'
       ),
       processItemsWithShopifyData(
         packagings as unknown as EnhanceableItem[],
-        null,
+        configForEnhance,
         'packaging'
       ),
     ]);
