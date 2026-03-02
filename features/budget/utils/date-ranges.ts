@@ -7,11 +7,13 @@
  * Compute start_date and end_date (YYYY-MM-DD) for a reference period of the last N months
  * *before* endYearMonth (i.e. ending at the previous month, not including endYearMonth).
  * Example: endYearMonth=2025-02, months=6 → 2024-08-01 ~ 2025-01-31 (Aug through Jan).
+ * monthRange is clamped to at least 1 so startDate is never after endDate.
  */
 export function referencePreviousMonthRange(
   endYearMonth: string,
   monthRange: number,
 ): { startDate: string; endDate: string } {
+  const range = Math.max(1, monthRange);
   const [y, m] = endYearMonth.split('-').map(Number);
   const month0 = (m ?? 1) - 1;
   const endOfRef = new Date(y, month0, 0);
@@ -19,7 +21,7 @@ export function referencePreviousMonthRange(
   const endMonth0 = endOfRef.getMonth();
   const lastDay = endOfRef.getDate();
   const start = new Date(endYear, endMonth0, 1);
-  start.setMonth(start.getMonth() - monthRange + 1);
+  start.setMonth(start.getMonth() - range + 1);
   const pad = (n: number) => String(n).padStart(2, '0');
   return {
     startDate: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-01`,
