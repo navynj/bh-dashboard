@@ -74,9 +74,10 @@ const Draggable = <T extends { id: string }>({
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
+    flexShrink: 0, // prevent item from squeezing when dragging in a flex context
   };
 
   return (

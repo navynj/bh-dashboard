@@ -1,5 +1,7 @@
+import { redirect } from 'next/navigation';
+
 const DeliveryPage = () => {
-  return <div>Work in progress..</div>;
+  redirect('/delivery/overview');
 };
 
 export default DeliveryPage;

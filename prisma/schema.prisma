@@ -113,6 +113,7 @@ enum UserRole {
   office
   manager
   assistant
+  employee
 
   @@schema("public")
 }
@@ -343,4 +344,129 @@ model PriceConfig {
 
   @@map("price_config")
   @@schema("cost")
+}
+
+// ===============================
+// DELIVERY (driver scheduling)
+// DeliveryLocation: main locations for everyday schedule (can reference public Location).
+// Occasional locations for one-time events are stored inline in DailyScheduleStop (name/address/lat/lng).
+// ===============================
+model DeliveryLocation {
+  id         String   @id @default(cuid())
+  name       String
+  address    String?
+  lat        Float?
+  lng        Float?
+  locationId String?  @map("location_id") // optional FK to public.Location for future 물류/재고
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  dailyStops    DailyScheduleStop[]
+  fixedStops    FixedScheduleStop[]
+
+  @@map("delivery_locations")
+  @@schema("delivery")
+}
+
+model Driver {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id") // User (public) who is this driver
+  name      String?  @map("name") // display name override
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  fixedSchedules DriverFixedSchedule[]
+  dailyStops     DailyScheduleStop[]
+
+  @@map("drivers")
+  @@schema("delivery")
+}
+
+// Day of week: 0=Sunday, 1=Monday, ..., 6=Saturday. Recurring: e.g. TUE=3, THU=5.
+// Template stops/tasks define the recurring schedule; when the date comes, daily schedule is created from this template.
+model DriverFixedSchedule {
+  id        String   @id @default(cuid())
+  driverId  String   @map("driver_id")
+  dayOfWeek Int      @map("day_of_week") // 0-6
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  templateStops FixedScheduleStop[]
+
+  @@unique([driverId, dayOfWeek])
+  @@map("driver_fixed_schedules")
+  @@schema("delivery")
+}
+
+// Template stop for a recurring weekday (same shape as DailyScheduleStop for copy-to-daily).
+model FixedScheduleStop {
+  id                 String   @id @default(cuid())
+  fixedScheduleId    String   @map("fixed_schedule_id")
+  sequence           Int      @map("sequence")
+  deliveryLocationId String?  @map("delivery_location_id")
+  name               String   @map("name")
+  address            String?  @map("address")
+  lat                Float?   @map("lat")
+  lng                Float?   @map("lng")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  fixedSchedule DriverFixedSchedule @relation(fields: [fixedScheduleId], references: [id], onDelete: Cascade)
+  deliveryLocation DeliveryLocation? @relation(fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  tasks            FixedScheduleTask[]
+
+  @@map("fixed_schedule_stops")
+  @@schema("delivery")
+}
+
+model FixedScheduleTask {
+  id                   String   @id @default(cuid())
+  fixedScheduleStopId  String   @map("fixed_schedule_stop_id")
+  title                String   @map("title")
+  sequence             Int      @map("sequence")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  fixedScheduleStop FixedScheduleStop @relation(fields: [fixedScheduleStopId], references: [id], onDelete: Cascade)
+
+  @@map("fixed_schedule_tasks")
+  @@schema("delivery")
+}
+
+// Daily stops are keyed by date + driver; no separate Schedule table. Query by date (and driverId) to get a "schedule".
+model DailyScheduleStop {
+  id                 String    @id @default(cuid())
+  date               DateTime  @db.Date
+  driverId           String    @map("driver_id")
+  sequence           Int       @map("sequence")
+  deliveryLocationId String?   @map("delivery_location_id")
+  name               String    @map("name") // from location or occasional
+  address            String?   @map("address")
+  lat                Float?    @map("lat")
+  lng                Float?    @map("lng")
+  arrivedAt          DateTime? @map("arrived_at") @db.Timestamptz
+  departedAt         DateTime? @map("departed_at") @db.Timestamptz
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  driver           Driver             @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  deliveryLocation DeliveryLocation? @relation(fields: [deliveryLocationId], references: [id], onDelete: SetNull)
+  tasks            DailyScheduleTask[]
+
+  @@index([date, driverId])
+  @@map("daily_schedule_stops")
+  @@schema("delivery")
+}
+
+model DailyScheduleTask {
+  id                  String    @id @default(cuid())
+  dailyScheduleStopId String    @map("daily_schedule_stop_id")
+  title               String    @map("title")
+  sequence            Int       @map("sequence")
+  assignedById        String?   @map("assigned_by_id")
+  assignedAt          DateTime? @map("assigned_at") @db.Timestamptz
+  completedAt         DateTime? @map("completed_at") @db.Timestamptz
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  dailyScheduleStop DailyScheduleStop @relation(fields: [dailyScheduleStopId], references: [id], onDelete: Cascade)
+
+  @@map("daily_schedule_tasks")
+  @@schema("delivery")
 }

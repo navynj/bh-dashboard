@@ -195,6 +195,140 @@ export type UserPatchBody = z.infer<typeof userPatchSchema>;
 export type LocationPostBody = z.infer<typeof locationPostSchema>;
 export type LocationPatchBody = z.infer<typeof locationPatchSchema>;
 
+// ===============================
+// DELIVERY
+// ===============================
+/** POST /api/delivery/location */
+export const deliveryLocationPostSchema = z.object({
+  name: z
+    .string()
+    .min(1, 'Name is required')
+    .transform((s) => s.trim()),
+  address: z
+    .string()
+    .transform((s) => s.trim())
+    .optional(),
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+  locationId: z.string().nullish(),
+});
+/** PATCH /api/delivery/location/[id] */
+export const deliveryLocationPatchSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .transform((s) => s.trim())
+    .optional(),
+  address: z
+    .string()
+    .transform((s) => s.trim())
+    .optional(),
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+  locationId: z.string().nullish(),
+});
+
+/** POST /api/delivery/driver */
+export const deliveryDriverPostSchema = z.object({
+  userId: z.string().min(1, 'User is required'),
+  name: z
+    .string()
+    .transform((s) => s.trim())
+    .optional(),
+});
+/** PATCH /api/delivery/driver/[id] */
+export const deliveryDriverPatchSchema = z.object({
+  name: z
+    .string()
+    .transform((s) => s.trim())
+    .optional(),
+});
+
+/** POST /api/delivery/fixed-schedule */
+export const deliveryFixedSchedulePostSchema = z.object({
+  driverId: z.string().min(1),
+  dayOfWeek: z.number().int().min(0).max(6),
+});
+/** DELETE by driverId + dayOfWeek in body or query */
+
+/** PUT /api/delivery/fixed-schedule/template - set recurring schedule template (stops + tasks) for a driver+weekday */
+const fixedScheduleStopSchema = z.object({
+  deliveryLocationId: z.string().nullish(),
+  name: z.string().min(1),
+  address: z.string().optional(),
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+  tasks: z.array(z.object({ title: z.string().min(1) })).default([]),
+});
+export const deliveryFixedScheduleTemplatePutSchema = z.object({
+  driverId: z.string().min(1),
+  dayOfWeek: z.number().int().min(0).max(6),
+  stops: z.array(fixedScheduleStopSchema),
+});
+
+/** POST /api/delivery/daily-schedule */
+export const deliveryDailySchedulePostSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD'),
+  driverId: z.string().min(1),
+  stops: z.array(
+    z.object({
+      deliveryLocationId: z.string().nullish(),
+      name: z.string().min(1),
+      address: z.string().optional(),
+      lat: z.number().optional(),
+      lng: z.number().optional(),
+      tasks: z.array(z.object({ title: z.string().min(1) })).default([]),
+    }),
+  ),
+});
+/** POST /api/delivery/daily-schedule/from-fixed - create daily schedules from fixed templates for a date */
+export const deliveryDailyScheduleFromFixedPostSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD'),
+});
+
+/** PATCH /api/delivery/daily-schedule/[id] - update stops/tasks order and content */
+export const deliveryDailySchedulePatchSchema = z.object({
+  stops: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        deliveryLocationId: z.string().nullish(),
+        name: z.string().min(1),
+        address: z.string().optional(),
+        lat: z.number().optional(),
+        lng: z.number().optional(),
+        tasks: z.array(
+          z.object({
+            id: z.string().optional(),
+            title: z.string().min(1),
+          }),
+        ),
+      }),
+    )
+    .optional(),
+});
+
+export type DeliveryLocationPostBody = z.infer<
+  typeof deliveryLocationPostSchema
+>;
+export type DeliveryLocationPatchBody = z.infer<
+  typeof deliveryLocationPatchSchema
+>;
+export type DeliveryDriverPostBody = z.infer<typeof deliveryDriverPostSchema>;
+export type DeliveryDriverPatchBody = z.infer<typeof deliveryDriverPatchSchema>;
+export type DeliveryFixedSchedulePostBody = z.infer<
+  typeof deliveryFixedSchedulePostSchema
+>;
+export type DeliveryFixedScheduleTemplatePutBody = z.infer<
+  typeof deliveryFixedScheduleTemplatePutSchema
+>;
+export type DeliveryDailySchedulePostBody = z.infer<
+  typeof deliveryDailySchedulePostSchema
+>;
+export type DeliveryDailySchedulePatchBody = z.infer<
+  typeof deliveryDailySchedulePatchSchema
+>;
+
 /**
  * Parse and validate JSON body. Returns either { data } or { error: NextResponse }.
  * Use: const result = await parseBody(request, schema); if (result.error) return result.error;

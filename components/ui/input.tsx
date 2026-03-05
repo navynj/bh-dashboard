@@ -11,9 +11,10 @@ export interface InputProps extends Omit<
   error?: boolean | string;
 }
 
-function Input({ className, type, error, ...props }: InputProps) {
-  return (
+const Input = React.forwardRef<HTMLInputElement, InputProps>(
+  ({ className, type, error, ...props }, ref) => (
     <input
+      ref={ref}
       type={type}
       data-slot="input"
       aria-invalid={error ? true : undefined}
@@ -26,7 +27,8 @@ function Input({ className, type, error, ...props }: InputProps) {
       )}
       {...props}
     />
-  );
-}
+  ),
+);
+Input.displayName = 'Input';
 
 export { Input };
