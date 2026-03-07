@@ -1,3 +1,4 @@
+import { parseCategoryPath } from '@/features/report/utils/category';
 import {
   CollapsibleCategoryRow,
   StaticCategoryRow,
@@ -34,6 +35,13 @@ function BudgetCategoryList({
   const actualCosByCategoryId = cosByCategoryToMap(currentCosByCategory);
   const groups = groupCategoriesWithSubs(categories);
   const treeRoots = buildCategoryTree(categories);
+  const sortedTopLevelIndices = [
+    ...new Set(
+      categories
+        .map((c) => parseCategoryPath(c.categoryId)[0])
+        .filter((i) => i >= 0),
+    ),
+  ].sort((a, b) => a - b);
 
   return (
     <ul className="mt-3 space-y-0 border-t pt-3 text-sm">
@@ -50,6 +58,7 @@ function BudgetCategoryList({
               node={treeRoot}
               totalBudget={totalBudget}
               actualCosByCategoryId={actualCosByCategoryId}
+              sortedTopLevelIndices={sortedTopLevelIndices}
             />
           );
         }
@@ -61,6 +70,7 @@ function BudgetCategoryList({
               subcategories={subcategories}
               totalBudget={totalBudget}
               actualCosByCategoryId={actualCosByCategoryId}
+              sortedTopLevelIndices={sortedTopLevelIndices}
             />
           );
         }
@@ -70,6 +80,7 @@ function BudgetCategoryList({
             category={category}
             totalBudget={totalBudget}
             actualCosByCategoryId={actualCosByCategoryId}
+            sortedTopLevelIndices={sortedTopLevelIndices}
           />
         );
       })}

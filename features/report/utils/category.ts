@@ -46,10 +46,9 @@ export const getTopLevelCategories = (
         fromTopLevel: true,
       });
     } else {
-      const name =
-        existing?.fromTopLevel
-          ? existing.name
-          : existing?.name ?? topLevelNameFromSub(c.name);
+      const name = existing?.fromTopLevel
+        ? existing.name
+        : (existing?.name ?? topLevelNameFromSub(c.name));
       byTopIdx.set(topIdx, {
         name,
         cos: (existing?.cos ?? 0) + amount,
@@ -61,3 +60,78 @@ export const getTopLevelCategories = (
     .sort(([a], [b]) => a - b)
     .map(([, v]) => ({ category: v.name, cos: v.cos }));
 };
+
+type CosCategory = { categoryId: string; name: string; amount: number };
+
+/** Top-level categories only (path.length === 1), no summing of children. Use this so donut and bar chart show the same COS amounts per category. */
+export function getTopLevelCategoryRows(
+  categories: CosCategory[],
+): CosCategory[] {
+  return [...(categories ?? [])]
+    .filter((c) => isTopLevelCategory(c.categoryId))
+    .sort(
+      (a, b) =>
+        getTopLevelCategoryIndex(a.categoryId) -
+        getTopLevelCategoryIndex(b.categoryId),
+    );
+}
+
+/** Same shape as getTopLevelCategories but from top-level rows only (no aggregation). Use for donut so it matches bar chart and list. */
+export function getTopLevelCategoriesTopLevelOnly(
+  categories: CosCategory[],
+): { category: string; cos: number }[] {
+  return getTopLevelCategoryRows(categories ?? []).map((r) => ({
+    category: r.name,
+    cos: Number.isFinite(r.amount) ? r.amount : 0,
+  }));
+}
+
+/**
+ * Top-level rows for charts: union of current + reference top-level so all COS categories appear.
+ * Amount = direct top-level row when API has it; else sum of children (e.g. COS3 = 602 when only subcategory rows exist).
+ */
+export function getTopLevelCategoriesForCharts(
+  currentCosByCategory: CosCategory[] | undefined,
+  referenceCosByCategory: CosCategory[] | undefined,
+): CosCategory[] {
+  const current = currentCosByCategory ?? [];
+  const reference = referenceCosByCategory ?? [];
+
+  const topIndices = new Set<number>();
+  for (const c of current) {
+    const path = parseCategoryPath(c.categoryId);
+    if (path.length > 0) topIndices.add(path[0]);
+  }
+  for (const c of reference) {
+    const path = parseCategoryPath(c.categoryId);
+    if (path.length === 1) topIndices.add(path[0]);
+  }
+
+  const byIdx = new Map<
+    number,
+    { categoryId: string; name: string; amount: number }
+  >();
+  for (const idx of topIndices) {
+    const refRow = reference.find((c) => parseCategoryPath(c.categoryId)[0] === idx && parseCategoryPath(c.categoryId).length === 1);
+    const curRow = current.find((c) => parseCategoryPath(c.categoryId)[0] === idx && parseCategoryPath(c.categoryId).length === 1);
+    const name = refRow?.name ?? curRow?.name ?? `COS${idx + 1}`;
+    const categoryId = curRow?.categoryId ?? refRow?.categoryId ?? `qb-${idx}`;
+
+    let amount = 0;
+    if (curRow != null && Number.isFinite(curRow.amount)) {
+      amount = curRow.amount;
+    } else {
+      for (const c of current) {
+        const path = parseCategoryPath(c.categoryId);
+        if (path.length > 0 && path[0] === idx && Number.isFinite(c.amount))
+          amount += c.amount;
+      }
+    }
+
+    byIdx.set(idx, { categoryId, name, amount });
+  }
+
+  return [...byIdx.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, row]) => row);
+}

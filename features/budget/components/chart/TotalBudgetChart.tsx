@@ -6,15 +6,17 @@ import { type ChartConfig } from '@/components/ui/chart';
 import { CHART_COLORS } from '@/constants/color';
 import { cn, formatCurrency } from '@/lib/utils';
 import {
-  isTopLevelCategory,
-  getTopLevelCategoryIndex,
   getTopLevelCategories,
+  getTopLevelCategoriesForCharts,
+  getTopLevelCategoriesTopLevelOnly,
 } from '@/features/report/utils/category';
 import { ClassName } from '@/types/className';
 
 interface TotalBudgetChartProps extends ClassName {
   totalAmount: number; // Budget total; all chart percentages are share of budget
   currentCosByCategory?: { categoryId: string; name: string; amount: number }[];
+  /** Reference COS categories (used to show top-level categories that only have children in current, e.g. COS3). */
+  referenceCosByCategory?: { categoryId: string; name: string; amount: number }[];
   /** When <= 0, no reference income: show current COS only (100% = current COS total). */
   referencePeriodMonthsUsed?: number | null;
   size?: 'sm' | 'md' | 'lg';
@@ -24,6 +26,7 @@ const TotalBudgetChart = ({
   size = 'md',
   totalAmount,
   currentCosByCategory,
+  referenceCosByCategory,
   referencePeriodMonthsUsed,
   className,
 }: TotalBudgetChartProps) => {
@@ -31,7 +34,10 @@ const TotalBudgetChart = ({
   const noReference =
     referencePeriodMonthsUsed != null && referencePeriodMonthsUsed <= 0;
   const cosOnlyMode = noReference;
-  const currentCosSum = (currentCosByCategory ?? []).reduce((s, c) => s + c.amount, 0);
+  const currentCosSum = (currentCosByCategory ?? []).reduce(
+    (s, c) => s + c.amount,
+    0,
+  );
   const hasNoChartData =
     !currentCosByCategory?.length ||
     (!cosOnlyMode && (!Number.isFinite(totalAmount) || totalAmount <= 0)) ||
@@ -52,7 +58,22 @@ const TotalBudgetChart = ({
     ) : null;
   }
 
-  const topLevelCategories = getTopLevelCategories(currentCosByCategory);
+  // Merged top-level (current + reference) with roll-up: so COS3 etc. appear when they only have children in current
+  const forCharts = getTopLevelCategoriesForCharts(
+    currentCosByCategory,
+    referenceCosByCategory,
+  );
+  const topLevelCategories =
+    forCharts.length > 0
+      ? forCharts.map((r) => ({ category: r.name, cos: r.amount }))
+      : getTopLevelCategories(currentCosByCategory);
+
+  if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_DEBUG_COS === 'true') {
+    console.log('[DEBUG_COS] currentCosByCategory', JSON.stringify(currentCosByCategory ?? [], null, 2));
+    console.log('[DEBUG_COS] referenceCosByCategory', JSON.stringify(referenceCosByCategory ?? [], null, 2));
+    console.log('[DEBUG_COS] forCharts (merged top-level)', JSON.stringify(forCharts, null, 2));
+    console.log('[DEBUG_COS] topLevelCategories (donut)', JSON.stringify(topLevelCategories, null, 2));
+  }
 
   if (topLevelCategories.length === 0) {
     return (
@@ -75,29 +96,43 @@ const TotalBudgetChart = ({
     0,
   );
 
-  let categoryData: { category: string; amount: number; cos: number; fill: string }[];
+  let categoryData: {
+    category: string;
+    amount: number;
+    cos: number;
+    fill: string;
+  }[];
   let currentPercent: string;
-  let chartData: { category: string; amount: number; cos: number; fill: string }[];
+  let chartData: {
+    category: string;
+    amount: number;
+    cos: number;
+    fill: string;
+  }[];
 
   if (cosOnlyMode) {
     // No reference: 100% = current COS total; segments = category share of current COS
     const totalCos = currentAmount > 0 ? currentAmount : 1;
-    categoryData = topLevelCategories.map((category: TopLevelItem, index: number) => ({
-      category: category.category,
-      amount: category.cos,
-      cos: Number(((category.cos / totalCos) * 100).toFixed(2)),
-      fill: CHART_COLORS[index % CHART_COLORS.length],
-    }));
+    categoryData = topLevelCategories.map(
+      (category: TopLevelItem, index: number) => ({
+        category: category.category,
+        amount: category.cos,
+        cos: Number(((category.cos / totalCos) * 100).toFixed(2)),
+        fill: CHART_COLORS[index % CHART_COLORS.length],
+      }),
+    );
     currentPercent = '100';
     chartData = categoryData;
   } else {
     // Normal: percentages are share of budget
-    categoryData = topLevelCategories.map((category: TopLevelItem, index: number) => ({
-      category: category.category,
-      amount: category.cos,
-      cos: Number(((category.cos / totalAmount) * 100).toFixed(2)),
-      fill: CHART_COLORS[index % CHART_COLORS.length],
-    }));
+    categoryData = topLevelCategories.map(
+      (category: TopLevelItem, index: number) => ({
+        category: category.category,
+        amount: category.cos,
+        cos: Number(((category.cos / totalAmount) * 100).toFixed(2)),
+        fill: CHART_COLORS[index % CHART_COLORS.length],
+      }),
+    );
     const currentPercentValue = (currentAmount / totalAmount) * 100;
     currentPercent = currentPercentValue.toFixed(1);
     const isOverBudget = currentAmount > totalAmount;

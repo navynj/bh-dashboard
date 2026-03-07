@@ -3,7 +3,10 @@
 import { ChartBarStacked } from '@/components/chart/BarStackedChart';
 import { ChartConfig } from '@/components/ui/chart';
 import { CHART_COLORS } from '@/constants/color';
-import { getTopLevelCategoryIndex, isTopLevelCategory } from '@/features/report/utils/category';
+import {
+  getTopLevelCategoriesForCharts,
+  getTopLevelCategoryRows,
+} from '@/features/report/utils/category';
 import { ClassName } from '@/types/className';
 
 type CosCategory = { categoryId: string; name: string; amount: number };
@@ -17,17 +20,6 @@ interface CategoryBudgetBarChartProps extends ClassName {
   /** When <= 0, no reference: show current COS only (no budget/over segments). */
   referencePeriodMonthsUsed?: number | null;
   chartConfig?: ChartConfig;
-}
-
-/** Top-level categories only, sorted by category index. */
-function getTopLevelCategoryRows(categories: CosCategory[]): CosCategory[] {
-  return [...categories]
-    .filter((c) => isTopLevelCategory(c.categoryId))
-    .sort(
-      (a, b) =>
-        getTopLevelCategoryIndex(a.categoryId) -
-        getTopLevelCategoryIndex(b.categoryId),
-    );
 }
 
 const CategoryBudgetBarChart = ({
@@ -60,7 +52,11 @@ const CategoryBudgetBarChart = ({
     referencePeriodMonthsUsed != null && referencePeriodMonthsUsed <= 0;
   const cosOnlyMode = noReference;
 
-  const currentTop = getTopLevelCategoryRows(currentCosByCategory ?? []);
+  // Merged top-level (current + reference) with roll-up so COS3 etc. appear when they only have children in current
+  const currentTop = getTopLevelCategoriesForCharts(
+    currentCosByCategory ?? [],
+    referenceCosByCategory ?? [],
+  );
   const refTop = referenceCosByCategory
     ? getTopLevelCategoryRows(referenceCosByCategory)
     : [];
@@ -69,20 +65,22 @@ const CategoryBudgetBarChart = ({
   const currentByCategoryId = new Map(
     currentTop.map((c) => [c.categoryId, c.amount]),
   );
-  const rowsToShow =
-    refTop.length > 0 && !cosOnlyMode
-      ? refTop
-      : currentTop;
+  const rowsToShow = refTop.length > 0 && !cosOnlyMode ? refTop : currentTop;
 
   const chartData = rowsToShow.map((row, index) => {
-    const current = currentByCategoryId.get(row.categoryId) ?? (refTop.length > 0 && !cosOnlyMode ? 0 : row.amount);
-    const refCos = refTop.find((r) => r.categoryId === row.categoryId)?.amount ?? 0;
+    const current =
+      currentByCategoryId.get(row.categoryId) ??
+      (refTop.length > 0 && !cosOnlyMode ? 0 : row.amount);
+    const refCos =
+      refTop.find((r) => r.categoryId === row.categoryId)?.amount ?? 0;
     const categoryBudget =
       !cosOnlyMode && refTopTotal > 0 && totalBudget > 0
         ? (totalBudget * refCos) / refTopTotal
         : 0;
 
-    const currentSeg = cosOnlyMode ? current : Math.min(current, categoryBudget);
+    const currentSeg = cosOnlyMode
+      ? current
+      : Math.min(current, categoryBudget);
     const budgetSeg = cosOnlyMode ? 0 : Math.max(0, categoryBudget - current);
     const overSeg = cosOnlyMode ? 0 : Math.max(0, current - categoryBudget);
 

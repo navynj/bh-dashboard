@@ -97,24 +97,31 @@ function cosNumberFromName(name: string): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
+/**
+ * Recurse COS section: use raw report structure. Top-level id = qb-${cosNum-1} when name is "COSn"; child id = parentId + "-" + idx so children attach to the correct COS parent (e.g. L3 MAIN COS 6 under COS6 = qb-5-0, not qb-2-0).
+ */
 function sectionCosLineItemsRecurse(
   row: PlRow,
   path: number[],
+  parentId: string | null,
   out: { id: string; name: string; amount: number }[],
 ): void {
   const name = categoryOrLineName(row);
   if (!name) return;
   if (!row?.Header && /^cost of (goods )?sold$/i.test(name.trim())) return;
   const cosNum = cosNumberFromName(name);
+  const isTopLevel = path.length === 1;
   const id =
-    cosNum != null && path.length === 1
+    cosNum != null && isTopLevel
       ? `qb-${cosNum - 1}`
-      : `qb-${path.join('-')}`;
+      : parentId != null
+        ? `${parentId}-${path[path.length - 1] ?? 0}`
+        : `qb-${path.join('-')}`;
   out.push({ id, name, amount: rowTotal(row) });
   const subRows = row?.Rows?.Row;
   if (!Array.isArray(subRows) || subRows.length === 0) return;
   subRows.forEach((sub, idx) => {
-    sectionCosLineItemsRecurse(sub, [...path, idx], out);
+    sectionCosLineItemsRecurse(sub, [...path, idx], id, out);
   });
 }
 
@@ -125,7 +132,7 @@ function sectionCosLineItems(
   const out: { id: string; name: string; amount: number }[] = [];
   const rowList = Array.isArray(r?.Rows?.Row) ? r.Rows.Row : [];
   rowList.forEach((category, catIdx) => {
-    sectionCosLineItemsRecurse(category, [catIdx], out);
+    sectionCosLineItemsRecurse(category, [catIdx], null, out);
   });
   return out;
 }

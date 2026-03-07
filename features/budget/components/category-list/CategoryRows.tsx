@@ -6,6 +6,7 @@ import {
 import { TruncateWithTooltip } from '@/components/ui/truncate-with-tooltip';
 import { ChevronRight } from 'lucide-react';
 import AmountPercent from './AmountPercent';
+import { parseCategoryPath } from '@/features/report/utils/category';
 import {
   BudgetCategoryRow,
   type CategoryTreeNode,
@@ -16,12 +17,20 @@ function CategoryLabel({
   categoryId,
   name,
   textClassName = '',
+  sortedTopLevelIndices,
+  colorCategoryId,
 }: {
   categoryId: string;
   name: string;
   textClassName?: string;
+  sortedTopLevelIndices?: number[];
+  /** When set, use this category for color (e.g. display parent so L1 HQ COS6 uses COS6 color). */
+  colorCategoryId?: string;
 }) {
-  const color = getCategoryColor(categoryId);
+  const color = getCategoryColor(
+    colorCategoryId ?? categoryId,
+    sortedTopLevelIndices,
+  );
   return (
     <>
       <span
@@ -43,10 +52,15 @@ function SubcategoryRow({
   sub,
   totalBudget,
   actualCosByCategoryId,
+  sortedTopLevelIndices,
+  parentCategoryId,
 }: {
   sub: BudgetCategoryRow;
   totalBudget?: number;
   actualCosByCategoryId: Record<string, number>;
+  sortedTopLevelIndices?: number[];
+  /** Use display parent's color (e.g. L1 HQ COS6 under COS6 uses COS6 color). */
+  parentCategoryId?: string;
 }) {
   const displayAmount =
     actualCosByCategoryId[sub.categoryId] ?? Number(sub.amount);
@@ -57,6 +71,9 @@ function SubcategoryRow({
     hasActualCos
       ? (displayAmount / totalBudget) * 100
       : sub.percent;
+  const color = parentCategoryId
+    ? getCategoryColor(parentCategoryId, sortedTopLevelIndices)
+    : getCategoryColor(sub.categoryId, sortedTopLevelIndices);
   return (
     <li key={sub.id} className="flex justify-between gap-2 py-0.5">
       <TruncateWithTooltip
@@ -65,7 +82,7 @@ function SubcategoryRow({
       >
         <span
           className="mr-1 inline-block size-2 rounded-[2px]"
-          style={{ backgroundColor: getCategoryColor(sub.categoryId) }}
+          style={{ backgroundColor: color }}
           aria-hidden
         />
         {sub.name}
@@ -86,11 +103,13 @@ export function CollapsibleCategoryRow({
   subcategories,
   totalBudget,
   actualCosByCategoryId = {},
+  sortedTopLevelIndices,
 }: {
   category: BudgetCategoryRow;
   subcategories: BudgetCategoryRow[];
   totalBudget?: number;
   actualCosByCategoryId?: Record<string, number>;
+  sortedTopLevelIndices?: number[];
 }) {
   const directAmount = actualCosByCategoryId[category.categoryId];
   const hasDirectCos = category.categoryId in actualCosByCategoryId;
@@ -101,8 +120,12 @@ export function CollapsibleCategoryRow({
           0,
         )
       : 0;
-  const displayAmount =
-    hasDirectCos ? (directAmount ?? 0) : (subSum ?? Number(category.amount));
+  const isTopLevel = parseCategoryPath(category.categoryId).length === 1;
+  const displayAmount = hasDirectCos
+    ? (directAmount ?? 0)
+    : isTopLevel && Number(category.amount) > 0
+      ? Number(category.amount)
+      : subSum ?? Number(category.amount);
   const displayPercent =
     totalBudget != null && totalBudget > 0
       ? (displayAmount / totalBudget) * 100
@@ -113,7 +136,7 @@ export function CollapsibleCategoryRow({
         <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 rounded-md py-1 pr-1 text-left hover:bg-muted/50">
           <span className="flex min-w-0 items-center gap-1">
             <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-            <CategoryLabel categoryId={category.categoryId} name={category.name} />
+            <CategoryLabel categoryId={category.categoryId} name={category.name} sortedTopLevelIndices={sortedTopLevelIndices} />
           </span>
           <span className="shrink-0">
             <AmountPercent
@@ -130,6 +153,8 @@ export function CollapsibleCategoryRow({
                 sub={sub}
                 totalBudget={totalBudget}
                 actualCosByCategoryId={actualCosByCategoryId}
+                sortedTopLevelIndices={sortedTopLevelIndices}
+                parentCategoryId={category.categoryId}
               />
             ))}
           </ul>
@@ -159,11 +184,16 @@ export function TreeCategoryRow({
   node,
   totalBudget,
   actualCosByCategoryId = {},
+  sortedTopLevelIndices,
+  parentCategoryIdForColor,
   depth = 0,
 }: {
   node: CategoryTreeNode;
   totalBudget?: number;
   actualCosByCategoryId?: Record<string, number>;
+  sortedTopLevelIndices?: number[];
+  /** Parent categoryId for color (children use parent's color). */
+  parentCategoryIdForColor?: string;
   depth?: number;
 }) {
   const { category, children } = node;
@@ -172,9 +202,12 @@ export function TreeCategoryRow({
     children.length > 0
       ? sumChildrenCos(children, actualCosByCategoryId)
       : 0;
+  const isTopLevel = parseCategoryPath(category.categoryId).length === 1;
   const displayAmount = hasDirectCos
     ? (actualCosByCategoryId[category.categoryId] ?? 0)
-    : (childrenSum ?? Number(category.amount));
+    : isTopLevel && Number(category.amount) > 0
+      ? Number(category.amount)
+      : childrenSum ?? Number(category.amount);
   const displayPercent =
     totalBudget != null && totalBudget > 0
       ? (displayAmount / totalBudget) * 100
@@ -186,6 +219,8 @@ export function TreeCategoryRow({
         category={category}
         totalBudget={totalBudget}
         actualCosByCategoryId={actualCosByCategoryId}
+        sortedTopLevelIndices={sortedTopLevelIndices}
+        colorCategoryId={parentCategoryIdForColor}
       />
     );
   }
@@ -196,7 +231,7 @@ export function TreeCategoryRow({
         <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 rounded-md py-1 pr-1 text-left hover:bg-muted/50">
           <span className="flex min-w-0 items-center gap-1">
             <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-            <CategoryLabel categoryId={category.categoryId} name={category.name} />
+            <CategoryLabel categoryId={category.categoryId} name={category.name} sortedTopLevelIndices={sortedTopLevelIndices} colorCategoryId={parentCategoryIdForColor} />
           </span>
           <span className="shrink-0">
             <AmountPercent
@@ -213,6 +248,8 @@ export function TreeCategoryRow({
                 node={child}
                 totalBudget={totalBudget}
                 actualCosByCategoryId={actualCosByCategoryId}
+                sortedTopLevelIndices={sortedTopLevelIndices}
+                parentCategoryIdForColor={category.categoryId}
                 depth={depth + 1}
               />
             ))}
@@ -227,10 +264,14 @@ export function StaticCategoryRow({
   category,
   totalBudget,
   actualCosByCategoryId = {},
+  sortedTopLevelIndices,
+  colorCategoryId,
 }: {
   category: BudgetCategoryRow;
   totalBudget?: number;
   actualCosByCategoryId?: Record<string, number>;
+  sortedTopLevelIndices?: number[];
+  colorCategoryId?: string;
 }) {
   const displayAmount =
     actualCosByCategoryId[category.categoryId] ?? Number(category.amount);
@@ -245,7 +286,7 @@ export function StaticCategoryRow({
     <li key={category.id} className="flex items-center justify-between gap-2 py-1 pr-1">
       <span className="flex min-w-0 flex-1 items-center gap-1">
         <span className="size-4 shrink-0" aria-hidden />
-        <CategoryLabel categoryId={category.categoryId} name={category.name} />
+        <CategoryLabel categoryId={category.categoryId} name={category.name} sortedTopLevelIndices={sortedTopLevelIndices} colorCategoryId={colorCategoryId} />
       </span>
       <span className="shrink-0">
         <AmountPercent

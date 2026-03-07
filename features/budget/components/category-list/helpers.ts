@@ -21,7 +21,7 @@ export function parseCategoryId(categoryId: string): {
   return { catIdx, subIdx, path };
 }
 
-/** Group flat categories into parent + direct subcategories (by path length 1 vs 2). */
+/** Group flat categories into parent + direct subcategories by path (path length 1 = top-level, 2 = direct child). Keeps QuickBooks names: COS2 shows "L1 - HQ COS2", COS6 shows "L3 MAIN COS 6". */
 export function groupCategoriesWithSubs(
   categories: BudgetCategoryRow[],
 ): { category: BudgetCategoryRow; subcategories: BudgetCategoryRow[] }[] {
@@ -115,9 +115,20 @@ export function formatPercent(percent: number | null): string | null {
   return `${percent.toFixed(1)}%`;
 }
 
-export function getCategoryColor(categoryId: string): string {
+/**
+ * Color for a category. Use sortedTopLevelIndices when provided so list colors match chart (by display order, not path index).
+ * Charts use CHART_COLORS[index] where index = position in sorted top-level list; without sortedTopLevelIndices we use catIdx so COS6 (idx 5) could mismatch.
+ */
+export function getCategoryColor(
+  categoryId: string,
+  sortedTopLevelIndices?: number[],
+): string {
   const { catIdx } = parseCategoryId(categoryId);
-  return catIdx >= 0
-    ? CHART_COLORS[catIdx % CHART_COLORS.length]
-    : 'var(--muted)';
+  if (catIdx < 0) return 'var(--muted)';
+  if (sortedTopLevelIndices?.length) {
+    const pos = sortedTopLevelIndices.indexOf(catIdx);
+    if (pos >= 0)
+      return CHART_COLORS[pos % CHART_COLORS.length];
+  }
+  return CHART_COLORS[catIdx % CHART_COLORS.length];
 }

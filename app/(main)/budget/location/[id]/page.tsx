@@ -118,6 +118,7 @@ const LocationPage = async ({
             size="lg"
             totalAmount={budget.totalAmount}
             currentCosByCategory={budget.currentCosByCategory ?? []}
+            referenceCosByCategory={budget.referenceCosByCategory ?? []}
             referencePeriodMonthsUsed={budget.referencePeriodMonthsUsed}
           />
           <CategoryBudgetBarChart

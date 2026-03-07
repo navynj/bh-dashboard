@@ -12,10 +12,14 @@ import TotalBudgetChart from '../chart/TotalBudgetChart';
 import BudgetAmountSummary from '../summary/BudgetAmountSummary';
 import Link from 'next/link';
 import { ArrowRightIcon } from 'lucide-react';
+import {
+  getTopLevelCategoryIndex,
+  parseCategoryPath,
+} from '@/features/report/utils/category';
 import { cn } from '@/lib/utils';
 import CategoryBudgetBarChart from '../chart/CategoryBudgetBarChart';
 
-/** Derive display categories: merge current month COS with reference so categories with 0 current (e.g. COS5-Liquor) still show. Percent = category amount / Budget total (or current COS total when no reference). */
+/** Derive display categories: union of current + reference by categoryId. Use current-month data (name, amount) when available so displayed names match QuickBooks raw data; fall back to reference only for structure (e.g. category present in reference but not current). */
 function deriveDisplayCategories(
   currentCosByCategory:
     | { categoryId: string; name: string; amount: number }[]
@@ -30,7 +34,25 @@ function deriveDisplayCategories(
   const currentMap = new Map(
     (currentCosByCategory ?? []).map((c) => [c.categoryId, c]),
   );
-  const refList = referenceCosByCategory ?? currentCosByCategory ?? [];
+  const refMap = new Map(
+    (referenceCosByCategory ?? []).map((c) => [c.categoryId, c]),
+  );
+  const allIds = new Set([
+    ...currentMap.keys(),
+    ...refMap.keys(),
+  ]);
+  // Prefer current so name/structure come from raw current data; use reference only when current has no row for that categoryId
+  const refList = [...allIds]
+    .map((categoryId) => {
+      const cur = currentMap.get(categoryId);
+      const ref = refMap.get(categoryId);
+      return cur ?? ref!;
+    })
+    .sort(
+      (a, b) =>
+        getTopLevelCategoryIndex(a.categoryId) -
+        getTopLevelCategoryIndex(b.categoryId),
+    );
   if (!refList.length) return [];
   const hasBudget = Number.isFinite(totalBudget) && totalBudget > 0;
   const totalForPercent = hasBudget
@@ -41,9 +63,29 @@ function deriveDisplayCategories(
       ? currentCosTotal!
       : 0;
   const hasPercent = hasBudget || (noReference && totalForPercent > 0);
+  const currentList = currentCosByCategory ?? [];
   return refList.map((ref) => {
-    const current = currentMap.get(ref.categoryId);
-    const amount = current?.amount ?? 0;
+    const direct = currentMap.get(ref.categoryId)?.amount;
+    const path = parseCategoryPath(ref.categoryId);
+    const isTopLevel = path.length === 1;
+    const topIdx = path[0];
+    let amount: number;
+    if (direct != null && Number.isFinite(direct)) {
+      amount = direct;
+    } else if (isTopLevel && topIdx != null) {
+      // No direct row from API: use sum of children so COS3 shows 602 when only subcategory rows exist
+      amount = currentList.reduce(
+        (sum, c) =>
+          sum +
+          (parseCategoryPath(c.categoryId)[0] === topIdx &&
+          Number.isFinite(c.amount)
+            ? c.amount
+            : 0),
+        0,
+      );
+    } else {
+      amount = 0;
+    }
     return {
       id: ref.categoryId,
       categoryId: ref.categoryId,
@@ -188,6 +230,7 @@ function BudgetCard({
           <TotalBudgetChart
             totalAmount={totalAmount}
             currentCosByCategory={budget.currentCosByCategory}
+            referenceCosByCategory={budget.referenceCosByCategory}
             referencePeriodMonthsUsed={budget.referencePeriodMonthsUsed}
           />
         )}
