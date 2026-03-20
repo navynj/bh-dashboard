@@ -54,9 +54,7 @@ export function issueDriverToken(driverId: string, userId: string): string {
   const headerB64 = base64UrlEncode(JSON.stringify(header));
   const payloadB64 = base64UrlEncode(JSON.stringify(payload));
   const message = `${headerB64}.${payloadB64}`;
-  const sig = createHmac('sha256', secret)
-    .update(message)
-    .digest();
+  const sig = createHmac('sha256', secret).update(message).digest();
   const sigB64 = base64UrlEncode(sig);
   return `${message}.${sigB64}`;
 }
@@ -76,7 +74,10 @@ export function verifyDriverToken(
     const message = `${headerB64}.${payloadB64}`;
     const expectedSig = createHmac('sha256', secret).update(message).digest();
     const sig = Buffer.from(base64UrlDecode(sigB64));
-    if (sig.length !== expectedSig.length || !timingSafeEqual(sig, expectedSig)) {
+    if (
+      sig.length !== expectedSig.length ||
+      !timingSafeEqual(sig, expectedSig)
+    ) {
       return null;
     }
     const payloadJson = base64UrlDecode(payloadB64).toString('utf8');
@@ -87,7 +88,10 @@ export function verifyDriverToken(
       aud?: string;
       exp?: number;
     };
-    if (payload.aud !== 'bh-driver' || (payload.exp && payload.exp < Math.floor(Date.now() / 1000))) {
+    if (
+      payload.aud !== 'bh-driver' ||
+      (payload.exp && payload.exp < Math.floor(Date.now() / 1000))
+    ) {
       return null;
     }
     const driverId = payload.driverId ?? payload.sub;

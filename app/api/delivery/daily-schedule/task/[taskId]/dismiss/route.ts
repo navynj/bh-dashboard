@@ -1,6 +1,6 @@
 /**
- * PATCH /api/delivery/daily-schedule/task/[taskId]/complete
- * Auth: Bearer driver JWT. Sets completedAt = now for the task (if stop belongs to this driver).
+ * PATCH /api/delivery/daily-schedule/task/[taskId]/dismiss
+ * Auth: Bearer driver JWT. Marks task as dismissed (isDismissed=true) and sets completedAt=now.
  */
 
 import { verifyDriverToken } from '@/lib/delivery/driver-auth';
@@ -18,6 +18,7 @@ export async function PATCH(
   }
 
   const { taskId } = await params;
+
   const task = await prisma.dailyScheduleTask.findFirst({
     where: {
       id: taskId,
@@ -25,14 +26,17 @@ export async function PATCH(
     },
     select: { id: true },
   });
+
   if (!task) {
     return NextResponse.json({ error: 'Task not found' }, { status: 404 });
   }
 
   const updated = await prisma.dailyScheduleTask.update({
     where: { id: taskId },
-    data: { completedAt: new Date(), isDismissed: false },
+    data: { isDismissed: true, completedAt: new Date() },
     select: { id: true, completedAt: true, isDismissed: true },
   });
+
   return NextResponse.json(updated);
 }
+

@@ -127,8 +127,7 @@ export function getCategoryColor(
   if (catIdx < 0) return 'var(--muted)';
   if (sortedTopLevelIndices?.length) {
     const pos = sortedTopLevelIndices.indexOf(catIdx);
-    if (pos >= 0)
-      return CHART_COLORS[pos % CHART_COLORS.length];
+    if (pos >= 0) return CHART_COLORS[pos % CHART_COLORS.length];
   }
   return CHART_COLORS[catIdx % CHART_COLORS.length];
 }

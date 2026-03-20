@@ -61,6 +61,7 @@ export async function GET(
           assignedById: true,
           assignedAt: true,
           completedAt: true,
+          isDismissed: true,
           createdAt: true,
         },
       },

@@ -4,10 +4,7 @@
  */
 
 import { verifyDriverToken } from '@/lib/delivery/driver-auth';
-import {
-  parseBody,
-  deliveryDriverLocationPostSchema,
-} from '@/lib/api/schemas';
+import { parseBody, deliveryDriverLocationPostSchema } from '@/lib/api/schemas';
 import { prisma } from '@/lib/core/prisma';
 import { NextResponse } from 'next/server';
 

@@ -464,6 +464,7 @@ model DailyScheduleTask {
   assignedById        String?   @map("assigned_by_id")
   assignedAt          DateTime? @map("assigned_at") @db.Timestamptz
   completedAt         DateTime? @map("completed_at") @db.Timestamptz
+  isDismissed         Boolean   @default(false) @map("is_dismissed")
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   dailyScheduleStop DailyScheduleStop @relation(fields: [dailyScheduleStopId], references: [id], onDelete: Cascade)

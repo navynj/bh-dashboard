@@ -27,6 +27,8 @@ type StopForm = {
   address: string;
   lat?: number | null;
   lng?: number | null;
+  /** When set, driver has arrived — no reorder / remove in hub UI. */
+  arrivedAt: string | null;
   tasks: TaskForm[];
 };
 type DeliveryLocationOption = { id: string; name: string; address: string | null };
@@ -56,8 +58,9 @@ function SortableStopCard({
   onRemoveTask,
   lastTaskInputRefs,
 }: SortableStopCardProps) {
+  const hasArrived = stop.arrivedAt != null;
   const { attributes, listeners, setNodeRef, transform, transition } =
-    useSortable({ id: stop.id });
+    useSortable({ id: stop.id, disabled: hasArrived });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -69,24 +72,28 @@ function SortableStopCard({
     <div ref={setNodeRef} style={style} className="w-full min-w-0">
       <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
         <div className="flex items-center gap-2">
-          <span
-            className="cursor-grab active:cursor-grabbing touch-none p-1 -m-1 rounded"
-            {...attributes}
-            {...listeners}
-            aria-label="Drag to reorder"
-          >
-            <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
-          </span>
+          {!hasArrived && (
+            <span
+              className="cursor-grab active:cursor-grabbing touch-none p-1 -m-1 rounded"
+              {...attributes}
+              {...listeners}
+              aria-label="Drag to reorder"
+            >
+              <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+            </span>
+          )}
           <span className="text-sm font-medium">Stop {i + 1}</span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="ml-auto text-destructive"
-            onClick={() => onRemoveStop(i)}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          {!hasArrived && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="ml-auto text-destructive"
+              onClick={() => onRemoveStop(i)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
         </div>
         {locations.length > 0 && (
           <div>
@@ -236,6 +243,12 @@ export default function EditDailySchedulePage() {
         address: s.address ?? '',
         lat: s.lat,
         lng: s.lng,
+        arrivedAt:
+          s.arrivedAt == null
+            ? null
+            : typeof s.arrivedAt === 'string'
+              ? s.arrivedAt
+              : new Date(s.arrivedAt).toISOString(),
         tasks: (s.tasks ?? []).map((t: any) => ({
           id: t.id,
           title: t.title ?? '',
@@ -281,6 +294,7 @@ export default function EditDailySchedulePage() {
         deliveryLocationId: null,
         name: '',
         address: '',
+        arrivedAt: null,
         tasks: [],
       },
     ]);

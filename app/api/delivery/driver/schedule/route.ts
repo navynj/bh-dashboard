@@ -1,5 +1,5 @@
 /**
- * GET /api/delivery/driver/me/schedule?date=YYYY-MM-DD
+ * GET /api/delivery/driver/schedule?date=YYYY-MM-DD
  * Auth: Authorization: Bearer <driver JWT>
  * Returns today's schedule (stops + tasks) for the authenticated driver.
  */
@@ -9,11 +9,14 @@ import { prisma } from '@/lib/core/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
+  console.log('[schedule] GET', request.url);
   const authHeader = request.headers.get('authorization');
   const payload = verifyDriverToken(authHeader);
   if (!payload) {
+    console.log('[schedule] Unauthorized: no or invalid Bearer token');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  console.log('[schedule] driverId', payload.driverId);
 
   const { searchParams } = new URL(request.url);
   const dateStr = searchParams.get('date');
@@ -49,10 +52,12 @@ export async function GET(request: NextRequest) {
           sequence: true,
           title: true,
           completedAt: true,
+          isDismissed: true,
         },
       },
     },
   });
+  console.log('[schedule] stops count', stops.length);
 
   return NextResponse.json({
     date: dateStr,

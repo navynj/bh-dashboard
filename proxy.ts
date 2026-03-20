@@ -38,6 +38,7 @@ export const proxy = auth((req) => {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/auth|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // Exclude static assets, next-auth, and driver app API routes (Bearer token auth, no session).
+    '/((?!_next/static|_next/image|favicon.ico|api/auth|api/delivery/driver-auth|api/delivery/driver/schedule|api/delivery/driver/location|api/delivery/daily-schedule/stop|api/delivery/daily-schedule/task|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
           assignedById: true,
           assignedAt: true,
           completedAt: true,
+          isDismissed: true,
           createdAt: true,
         },
       },

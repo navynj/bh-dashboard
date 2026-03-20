@@ -51,6 +51,7 @@ export function SortableStopRow({
   defaultCollapsedWhenCompleted?: boolean;
 }) {
   const completed = isStopCompleted(stop);
+  const hasArrived = stop.arrivedAt != null;
   const [collapsed, setCollapsed] = useState(
     defaultCollapsedWhenCompleted && completed,
   );
@@ -61,7 +62,7 @@ export function SortableStopRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: stop.id });
+  } = useSortable({ id: stop.id, disabled: hasArrived });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -72,14 +73,16 @@ export function SortableStopRow({
   const showCollapseChevron = completed;
   const summaryLine = (chevronAsTrigger: boolean) => (
     <div className="flex items-start gap-2">
-      <span
-        className="flex h-6 w-6 shrink-0 cursor-grab active:cursor-grabbing touch-none items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-medium"
-        {...attributes}
-        {...listeners}
-        aria-label="Drag to reorder"
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </span>
+      {!hasArrived && (
+        <span
+          className="flex h-6 w-6 shrink-0 cursor-grab active:cursor-grabbing touch-none items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-medium"
+          {...attributes}
+          {...listeners}
+          aria-label="Drag to reorder"
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <p className="font-medium">{stop.name}</p>
         {stop.address && (
@@ -137,39 +140,45 @@ export function SortableStopRow({
             )}
           </span>
         ))}
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="shrink-0 h-7 w-7 p-0"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onEditStop(schedule, idx);
-        }}
-        aria-label="Edit stop"
-      >
-        <Pencil className="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="shrink-0 h-7 w-7 p-0 text-destructive hover:text-destructive"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onDeleteStop(schedule, idx);
-        }}
-        aria-label="Delete stop"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </Button>
+      {!hasArrived && (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="shrink-0 h-7 w-7 p-0"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onEditStop(schedule, idx);
+            }}
+            aria-label="Edit stop"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="shrink-0 h-7 w-7 p-0 text-destructive hover:text-destructive"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDeleteStop(schedule, idx);
+            }}
+            aria-label="Delete stop"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </>
+      )}
     </div>
   );
 
   const tasksBlock = stop.tasks && stop.tasks.length > 0 && (
-    <ul className="ml-8 mt-2 space-y-1 border-l-2 border-muted pl-2">
+    <ul
+      className={`${hasArrived ? 'ml-0' : 'ml-8'} mt-2 space-y-1 border-l-2 border-muted pl-2`}
+    >
       {stop.tasks.map((t: Task) => (
         <li
           key={t.id}
