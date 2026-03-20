@@ -147,7 +147,7 @@ export default function DeliveryDriversPage() {
       header: 'Name',
       cell: ({ row }) => (
         <Link
-          href={`/delivery/drivers/${row.original.id}`}
+          href={`/delivery/overview?driverId=${encodeURIComponent(row.original.id)}`}
           className="font-medium text-primary hover:underline"
         >
           {row.original.name || row.original.email || row.original.id}

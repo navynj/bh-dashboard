@@ -372,6 +372,8 @@ model Driver {
   id        String   @id @default(cuid())
   userId    String   @unique @map("user_id") // User (public) who is this driver
   name      String?  @map("name") // display name override
+  /// Set when office requests a fresh GPS fix; cleared when the driver app POSTs location.
+  locationPingRequestedAt DateTime? @map("location_ping_requested_at") @db.Timestamptz
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 

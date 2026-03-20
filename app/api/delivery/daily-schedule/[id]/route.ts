@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import {
   parseBody,
@@ -6,6 +7,50 @@ import {
 import { prisma } from '@/lib/core/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 import { parseScheduleId } from '../route';
+
+type PatchStopTask = { id?: string; title: string };
+
+/** Update task rows in place so completedAt / isDismissed / arrival state on the stop are preserved. */
+async function syncDailyStopTasks(
+  tx: Prisma.TransactionClient,
+  stopId: string,
+  payloadTasks: PatchStopTask[],
+  officeUserId: string | null,
+) {
+  const existing = await tx.dailyScheduleTask.findMany({
+    where: { dailyScheduleStopId: stopId },
+  });
+  const existingById = new Map(existing.map((t) => [t.id, t]));
+  const incomingIds = new Set(
+    payloadTasks.map((t) => t.id).filter((id): id is string => Boolean(id)),
+  );
+
+  for (const t of existing) {
+    if (!incomingIds.has(t.id)) {
+      await tx.dailyScheduleTask.delete({ where: { id: t.id } });
+    }
+  }
+
+  for (let ti = 0; ti < payloadTasks.length; ti++) {
+    const pt = payloadTasks[ti];
+    if (pt.id && existingById.has(pt.id)) {
+      await tx.dailyScheduleTask.update({
+        where: { id: pt.id },
+        data: { sequence: ti, title: pt.title },
+      });
+    } else {
+      await tx.dailyScheduleTask.create({
+        data: {
+          dailyScheduleStopId: stopId,
+          sequence: ti,
+          title: pt.title,
+          assignedById: officeUserId,
+          assignedAt: new Date(),
+        },
+      });
+    }
+  }
+}
 
 export async function GET(
   _request: NextRequest,
@@ -128,35 +173,78 @@ export async function PATCH(
   const { stops } = body.data;
 
   if (stops && stops.length > 0) {
+    const officeUserId = session.user?.id ?? null;
     await prisma.$transaction(async (tx) => {
-      await tx.dailyScheduleTask.deleteMany({
-        where: { dailyScheduleStop: { date: dateOnly, driverId } },
-      });
-      await tx.dailyScheduleStop.deleteMany({
-        where: { date: dateOnly, driverId },
-      });
-      for (let idx = 0; idx < stops.length; idx++) {
-        const s = stops[idx];
-        const stop = await tx.dailyScheduleStop.create({
-          data: {
+      const payloadStopIds = stops
+        .map((s) => s.id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+      if (payloadStopIds.length > 0) {
+        await tx.dailyScheduleStop.deleteMany({
+          where: {
             date: dateOnly,
             driverId,
-            sequence: idx,
-            deliveryLocationId: s.deliveryLocationId ?? null,
-            name: s.name,
-            address: s.address ?? null,
-            lat: s.lat ?? null,
-            lng: s.lng ?? null,
-            tasks: {
-              create: (s.tasks ?? []).map((t, tidx) => ({
-                sequence: tidx,
-                title: t.title,
-                assignedById: session.user?.id ?? null,
-                assignedAt: new Date(),
-              })),
-            },
+            id: { notIn: payloadStopIds },
           },
         });
+      } else {
+        await tx.dailyScheduleTask.deleteMany({
+          where: { dailyScheduleStop: { date: dateOnly, driverId } },
+        });
+        await tx.dailyScheduleStop.deleteMany({
+          where: { date: dateOnly, driverId },
+        });
+      }
+
+      for (let idx = 0; idx < stops.length; idx++) {
+        const s = stops[idx];
+        const existing =
+          s.id != null && s.id.length > 0
+            ? await tx.dailyScheduleStop.findFirst({
+                where: { id: s.id, date: dateOnly, driverId },
+              })
+            : null;
+
+        if (existing) {
+          await tx.dailyScheduleStop.update({
+            where: { id: s.id! },
+            data: {
+              sequence: idx,
+              deliveryLocationId: s.deliveryLocationId ?? null,
+              name: s.name,
+              ...(s.address !== undefined
+                ? { address: s.address ?? null }
+                : {}),
+              ...(s.lat !== undefined ? { lat: s.lat ?? null } : {}),
+              ...(s.lng !== undefined ? { lng: s.lng ?? null } : {}),
+            },
+          });
+          await syncDailyStopTasks(
+            tx,
+            s.id!,
+            s.tasks ?? [],
+            officeUserId,
+          );
+        } else {
+          const created = await tx.dailyScheduleStop.create({
+            data: {
+              date: dateOnly,
+              driverId,
+              sequence: idx,
+              deliveryLocationId: s.deliveryLocationId ?? null,
+              name: s.name,
+              address: s.address ?? null,
+              lat: s.lat ?? null,
+              lng: s.lng ?? null,
+            },
+          });
+          await syncDailyStopTasks(
+            tx,
+            created.id,
+            s.tasks ?? [],
+            officeUserId,
+          );
+        }
       }
     });
   } else {

@@ -160,7 +160,10 @@ export default function DriverFixedSchedulePage() {
           Drivers
         </Link>
         <span>/</span>
-        <Link href={`/delivery/drivers/${driverId}`} className="hover:underline">
+        <Link
+          href={`/delivery/overview?driverId=${encodeURIComponent(driverId)}`}
+          className="hover:underline"
+        >
           {driverName}
         </Link>
         <span>/</span>

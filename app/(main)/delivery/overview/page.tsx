@@ -1,29 +1,36 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { format } from 'date-fns';
 import {
   type DailySchedule,
   type DriverRow,
   DeliveryDatePicker,
+  DeliveryOverviewDriverToolbar,
+  DeliveryOverviewMapPanel,
+  DeliveryOverviewSchedulePanel,
   DriverNoScheduleCard,
   DriverScheduleCard,
-  MapPlaceholder,
-  mapPlaceholderTitle,
   StopDialog,
 } from '@/features/delivery/components';
 import { DELETE_STOP_CONFIRM_MESSAGE } from '@/features/delivery/lib/constants';
 import {
   useDeliveryDatePicker,
+  useDeliveryOverviewTracking,
   useDeliverySchedules,
   useStopDialog,
   useConfirmDialog,
 } from '@/features/delivery/hooks';
 
 export default function DeliveryOverviewPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const driverIdFromUrl = searchParams.get('driverId');
+
   const {
     dateStr,
     setDateStr,
@@ -38,15 +45,8 @@ export default function DeliveryOverviewPage() {
   const confirmDialog = useConfirmDialog();
   const schedules = useDeliverySchedules(dateStr);
 
-  if (schedules.mode !== 'overview') {
-    return null;
-  }
-
   const {
     loading,
-    drivers,
-    schedulesByDriverId,
-    fixedScheduleDriverIdsByDay,
     fetchData,
     handleReorderStops,
     handleDeleteStop,
@@ -54,9 +54,47 @@ export default function DeliveryOverviewPage() {
     handleAddStopWhenNoSchedule,
   } = schedules;
 
+  const drivers = schedules.mode === 'overview' ? schedules.drivers : [];
+  const schedulesByDriverId =
+    schedules.mode === 'overview' ? schedules.schedulesByDriverId : {};
+  const fixedScheduleDriverIdsByDay =
+    schedules.mode === 'overview' ? schedules.fixedScheduleDriverIdsByDay : {};
+
+  const selectedDriverId = useMemo((): string | null => {
+    if (loading || drivers.length === 0) return null;
+    if (
+      driverIdFromUrl != null &&
+      drivers.some((d) => d.id === driverIdFromUrl)
+    ) {
+      return driverIdFromUrl;
+    }
+    return drivers[0].id;
+  }, [loading, drivers, driverIdFromUrl]);
+
   const dayOfWeek = new Date(dateStr + 'T00:00:00.000Z').getUTCDay();
   const driverIdsWithFixedForSelectedDate =
     fixedScheduleDriverIdsByDay[dayOfWeek] ?? new Set<string>();
+
+  const {
+    tracking,
+    loadingTracking,
+    focusDriverLocationRequest,
+    requestFreshDriverLocation,
+  } = useDeliveryOverviewTracking(selectedDriverId, dateStr);
+
+  const handleDriverChange = useCallback(
+    (id: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (id) {
+        params.set('driverId', id);
+      } else {
+        params.delete('driverId');
+      }
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
 
   const onAddStopWhenNoSchedule = useCallback(
     async (driver: DriverRow) => {
@@ -86,6 +124,24 @@ export default function DeliveryOverviewPage() {
     [confirmDialog, handleDeleteStop],
   );
 
+  if (schedules.mode !== 'overview') {
+    return null;
+  }
+
+  const selectedDriver =
+    selectedDriverId != null
+      ? drivers.find((d) => d.id === selectedDriverId)
+      : undefined;
+  const scheduleForSelected = selectedDriver
+    ? schedulesByDriverId[selectedDriver.id]
+    : undefined;
+  const selectedDriverHasFixed =
+    selectedDriver != null &&
+    driverIdsWithFixedForSelectedDate.has(selectedDriver.id);
+  const selectedDriverDisplayName = selectedDriver
+    ? (selectedDriver.name ?? selectedDriver.email ?? selectedDriver.id)
+    : '';
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -106,66 +162,69 @@ export default function DeliveryOverviewPage() {
         isSameDay={isSameDay}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MapPlaceholder
-          titleLabel={mapPlaceholderTitle(isToday, selectedDate)}
-          subtitle="(To be developed — 지도에 오늘 배송 기사 이동경로 및 현재 위치 표시)"
+      <DeliveryOverviewDriverToolbar
+        drivers={drivers}
+        loading={loading}
+        selectedDriverId={selectedDriverId}
+        onDriverChange={handleDriverChange}
+        loadingTracking={loadingTracking}
+        lastTrackedAt={tracking?.currentLocation?.updatedAt ?? null}
+        onTrackCurrentLocation={requestFreshDriverLocation}
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        <DeliveryOverviewMapPanel
+          loadingTracking={loadingTracking}
+          tracking={tracking}
+          selectedDriverId={selectedDriverId}
+          dateStr={dateStr}
+          focusDriverLocationRequest={focusDriverLocationRequest}
         />
 
-        <div className="border rounded-lg flex flex-col min-h-[400px]">
-          <div className="p-4 border-b">
-            <h2 className="font-medium">Drivers&apos; current status</h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              {isToday ? "Today's" : format(selectedDate, 'MMM d')} schedules.
-              Unfold to see all stops and tasks.
+        <DeliveryOverviewSchedulePanel
+          selectedDriver={selectedDriver}
+          isToday={isToday}
+          selectedDate={selectedDate}
+        >
+          {loading ? (
+            <p className="text-muted-foreground text-sm py-4">Loading…</p>
+          ) : drivers.length === 0 ? (
+            <p className="text-muted-foreground text-sm py-4">
+              No drivers. Add drivers from Manage drivers.
             </p>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-            {loading ? (
-              <p className="text-muted-foreground text-sm py-4">Loading…</p>
-            ) : drivers.length === 0 ? (
-              <p className="text-muted-foreground text-sm py-4">
-                No drivers. Add drivers from Manage drivers.
-              </p>
-            ) : (
-              drivers.map((driver) => {
-                const schedule = schedulesByDriverId[driver.id];
-                const hasFixedForDate = driverIdsWithFixedForSelectedDate.has(
-                  driver.id,
-                );
-                const driverDisplayName =
-                  driver.name ?? driver.email ?? driver.id;
-                if (schedule) {
-                  return (
-                    <DriverScheduleCard
-                      key={schedule.id}
-                      schedule={schedule}
-                      driverDisplayName={driverDisplayName}
-                      dateStr={dateStr}
-                      onRefresh={fetchData}
-                      hasFixedScheduleForDate={hasFixedForDate}
-                      onEditStop={stopDialog.openEdit}
-                      onAddStop={stopDialog.openAdd}
-                      onReorderStops={handleReorderStops}
-                      onDeleteStop={onDeleteStop}
-                    />
-                  );
-                }
-                return (
-                  <DriverNoScheduleCard
-                    key={driver.id}
-                    driver={driver}
-                    driverDisplayName={driverDisplayName}
-                    dateStr={dateStr}
-                    onRefresh={fetchData}
-                    hasFixedScheduleForDate={hasFixedForDate}
-                    onAddStop={onAddStopWhenNoSchedule}
-                  />
-                );
-              })
-            )}
-          </div>
-        </div>
+          ) : !selectedDriverId ? (
+            <p className="text-muted-foreground text-sm py-4">
+              Select a driver.
+            </p>
+          ) : !selectedDriver ? (
+            <p className="text-muted-foreground text-sm py-4">
+              Driver not found.
+            </p>
+          ) : scheduleForSelected ? (
+            <DriverScheduleCard
+              key={scheduleForSelected.id}
+              schedule={scheduleForSelected}
+              dateStr={dateStr}
+              onRefresh={fetchData}
+              hasFixedScheduleForDate={selectedDriverHasFixed}
+              onEditStop={stopDialog.openEdit}
+              onAddStop={stopDialog.openAdd}
+              onReorderStops={handleReorderStops}
+              onDeleteStop={onDeleteStop}
+            />
+          ) : (
+            <DriverNoScheduleCard
+              key={selectedDriver.id}
+              driver={selectedDriver}
+              driverDisplayName={selectedDriverDisplayName}
+              dateStr={dateStr}
+              onRefresh={fetchData}
+              hasFixedScheduleForDate={selectedDriverHasFixed}
+              onAddStop={onAddStopWhenNoSchedule}
+              contentOnly
+            />
+          )}
+        </DeliveryOverviewSchedulePanel>
       </div>
 
       {stopDialog.schedule && (

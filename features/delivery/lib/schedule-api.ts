@@ -10,6 +10,8 @@ export type StopPayload = {
   deliveryLocationId: string | null;
   name: string;
   address?: string;
+  lat?: number;
+  lng?: number;
   tasks: { id: string; title: string }[];
 };
 
@@ -19,6 +21,8 @@ export function stopsToPayload(stops: Stop[]): StopPayload[] {
     deliveryLocationId: s.deliveryLocationId ?? null,
     name: s.name,
     address: s.address ?? undefined,
+    ...(s.lat != null ? { lat: s.lat } : {}),
+    ...(s.lng != null ? { lng: s.lng } : {}),
     tasks: (s.tasks ?? []).map((t) => ({ id: t.id, title: t.title })),
   }));
 }

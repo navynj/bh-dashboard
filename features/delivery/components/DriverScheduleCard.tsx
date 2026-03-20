@@ -1,24 +1,12 @@
 'use client';
 
-import { useCallback, useState } from 'react';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import { Droppable } from '@/components/ui/drag-and-drop';
-import {
-  CalendarCheck,
-  ChevronDown,
-  ChevronRight,
-  Pencil,
-  Plus,
-} from 'lucide-react';
+import { CalendarCheck, Plus } from 'lucide-react';
+import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
-import { SortableStopRow } from './SortableStopRow';
 import type { DailySchedule, Stop } from '../types/delivery-schedule-types';
+import { SortableStopRow } from './SortableStopRow';
 
 function isStopCompleted(stop: Stop): boolean {
   if (!stop.departedAt) return false;
@@ -28,7 +16,6 @@ function isStopCompleted(stop: Stop): boolean {
 
 export function DriverScheduleCard({
   schedule,
-  driverDisplayName,
   dateStr,
   onRefresh,
   hasFixedScheduleForDate,
@@ -36,10 +23,8 @@ export function DriverScheduleCard({
   onAddStop,
   onReorderStops,
   onDeleteStop,
-  contentOnly = false,
 }: {
   schedule: DailySchedule;
-  driverDisplayName: string;
   dateStr: string;
   onRefresh: () => Promise<unknown>;
   hasFixedScheduleForDate: boolean;
@@ -47,18 +32,9 @@ export function DriverScheduleCard({
   onAddStop: (schedule: DailySchedule, atIndex?: number) => void;
   onReorderStops: (schedule: DailySchedule, newStops: Stop[]) => void;
   onDeleteStop: (schedule: DailySchedule, stopIndex: number) => void;
-  /** When true, render only the inner content (no collapsible header). */
-  contentOnly?: boolean;
 }) {
-  const [open, setOpen] = useState(true);
   const [adding, setAdding] = useState(false);
   const stops = schedule.stops ?? [];
-  const stopCount = stops.length;
-  const completedStops = stops.filter((s) => isStopCompleted(s));
-  const completedTaskCount = completedStops.reduce(
-    (sum, s) => sum + (s.tasks?.length ?? 0),
-    0,
-  );
 
   const handleSetItems = useCallback(
     (action: React.SetStateAction<Stop[]>) => {
@@ -89,12 +65,8 @@ export function DriverScheduleCard({
     }
   }, [dateStr, schedule.driverId, onRefresh]);
 
-  const content = (
-    <div
-      className={
-        contentOnly ? 'space-y-1' : 'border-t px-3 py-3 space-y-1 bg-muted/20'
-      }
-    >
+  return (
+    <div className={'space-y-1'}>
       <Droppable items={stops} setItems={handleSetItems}>
         {stops.map((stop, idx) => {
           const nextStopHasArrived = stop.arrivedAt != null;
@@ -156,44 +128,5 @@ export function DriverScheduleCard({
         </div>
       )}
     </div>
-  );
-
-  if (contentOnly) {
-    return content;
-  }
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <div className="border rounded-lg overflow-hidden">
-        <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="w-full flex items-center gap-2 p-3 text-left hover:bg-muted/50 transition-colors"
-          >
-            {open ? (
-              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-            )}
-            <span className="font-medium flex-1">
-              <Link
-                href={`/delivery/drivers/${schedule.driverId}/fixed-schedule`}
-                className="hover:underline"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {driverDisplayName}
-              </Link>
-            </span>
-            <span className="text-muted-foreground text-sm">
-              {stopCount} stop{stopCount !== 1 ? 's' : ''}
-              {!open &&
-                completedStops.length > 0 &&
-                ` (${completedStops.length} completed, ${completedTaskCount} tasks)`}
-            </span>
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>{content}</CollapsibleContent>
-      </div>
-    </Collapsible>
   );
 }

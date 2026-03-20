@@ -19,9 +19,15 @@ export async function POST(request: Request) {
   if ('error' in parsed) return parsed.error;
   const { lat, lng } = parsed.data;
 
-  await prisma.driverLocationUpdate.create({
-    data: { driverId: payload.driverId, lat, lng },
-  });
+  await prisma.$transaction([
+    prisma.driverLocationUpdate.create({
+      data: { driverId: payload.driverId, lat, lng },
+    }),
+    prisma.driver.update({
+      where: { id: payload.driverId },
+      data: { locationPingRequestedAt: null },
+    }),
+  ]);
 
   return NextResponse.json({ ok: true });
 }

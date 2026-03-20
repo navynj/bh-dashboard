@@ -1,15 +1,19 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   MapContainer,
   TileLayer,
   Marker,
   Popup,
   Polyline,
+  useMap,
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+
+/** Default map view when no GPS, stops, or path points exist (950 Seaborne Ave, Port Coquitlam, BC). */
+const DEFAULT_MAP_CENTER: [number, number] = [49.25616, -122.73944];
 
 export type TrackingPoint = { lat: number; lng: number; createdAt?: string };
 export type TrackingStop = {
@@ -28,13 +32,63 @@ export type DriverTrackingMapClientProps = {
   stops: TrackingStop[];
   path: TrackingPoint[];
   className?: string;
+  /** Increment (e.g. on button click) to pan/zoom the map to the driver's current position. */
+  focusDriverLocationRequest?: number;
 };
+
+function FlyToDriverLocationOnRequest({
+  currentLocation,
+  requestId,
+}: {
+  currentLocation: { lat: number; lng: number; updatedAt: string } | null;
+  requestId: number;
+}) {
+  const map = useMap();
+  const locationRef = useRef(currentLocation);
+  locationRef.current = currentLocation;
+
+  useEffect(() => {
+    if (requestId === 0) return;
+    const loc = locationRef.current;
+    if (!loc) return;
+    const id = window.setTimeout(() => {
+      map.invalidateSize({ animate: false });
+      map.flyTo([loc.lat, loc.lng], 15, { duration: 0.45 });
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [requestId, map]);
+
+  return null;
+}
+
+/** Recalculate map size after layout; required when the map mounts inside flex/grid with dynamic height. */
+function MapInvalidateSize() {
+  const map = useMap();
+  useEffect(() => {
+    const invalidate = () => {
+      map.invalidateSize({ animate: false });
+    };
+    invalidate();
+    const raf = requestAnimationFrame(invalidate);
+    const t1 = window.setTimeout(invalidate, 0);
+    const t2 = window.setTimeout(invalidate, 100);
+    window.addEventListener('resize', invalidate);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.removeEventListener('resize', invalidate);
+    };
+  }, [map]);
+  return null;
+}
 
 export default function DriverTrackingMapClient({
   currentLocation,
   stops,
   path,
   className,
+  focusDriverLocationRequest = 0,
 }: DriverTrackingMapClientProps) {
   const pointsWithCoords = useMemo(
     () =>
@@ -61,7 +115,7 @@ export default function DriverTrackingMapClient({
       const p = pointsWithCoords[Math.floor(pointsWithCoords.length / 2)];
       return [p.lat, p.lng];
     }
-    return [37.5665, 126.978];
+    return DEFAULT_MAP_CENTER;
   }, [currentLocation, stopPoints, pointsWithCoords]);
 
   const defaultIcon = L.icon({
@@ -90,6 +144,11 @@ export default function DriverTrackingMapClient({
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <MapInvalidateSize />
+        <FlyToDriverLocationOnRequest
+          currentLocation={currentLocation}
+          requestId={focusDriverLocationRequest}
         />
         {pointsWithCoords.length > 1 && (
           <Polyline
