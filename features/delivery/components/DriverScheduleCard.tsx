@@ -75,7 +75,7 @@ export function DriverScheduleCard({
       const res = await fetch('/api/delivery/daily-schedule/from-fixed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: dateStr }),
+        body: JSON.stringify({ date: dateStr, driverId: schedule.driverId }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -87,7 +87,7 @@ export function DriverScheduleCard({
     } finally {
       setAdding(false);
     }
-  }, [dateStr, onRefresh]);
+  }, [dateStr, schedule.driverId, onRefresh]);
 
   const content = (
     <div

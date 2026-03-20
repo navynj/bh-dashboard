@@ -27,7 +27,7 @@ import {
 export default function DriverDetailPage() {
   const params = useParams();
   const driverId = params.driverId as string;
-  const { dateStr, setDateStr, selectedDate, isToday, goPrevDay, goNextDay, weekDays, isSameDay } =
+  const { dateStr, setDateStr, selectedDate, isToday, goPrevWeek, goNextWeek, weekDays, isSameDay } =
     useDeliveryDatePicker();
   const stopDialog = useStopDialog();
   const confirmDialog = useConfirmDialog();
@@ -122,8 +122,8 @@ export default function DriverDetailPage() {
         setDateStr={setDateStr}
         selectedDate={selectedDate}
         isToday={isToday}
-        goPrevDay={goPrevDay}
-        goNextDay={goNextDay}
+        goPrevWeek={goPrevWeek}
+        goNextWeek={goNextWeek}
         weekDays={weekDays}
         isSameDay={isSameDay}
       />

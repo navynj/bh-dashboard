@@ -29,8 +29,8 @@ export default function DeliveryOverviewPage() {
     setDateStr,
     selectedDate,
     isToday,
-    goPrevDay,
-    goNextDay,
+    goPrevWeek,
+    goNextWeek,
     weekDays,
     isSameDay,
   } = useDeliveryDatePicker();
@@ -100,8 +100,8 @@ export default function DeliveryOverviewPage() {
         setDateStr={setDateStr}
         selectedDate={selectedDate}
         isToday={isToday}
-        goPrevDay={goPrevDay}
-        goNextDay={goNextDay}
+        goPrevWeek={goPrevWeek}
+        goNextWeek={goNextWeek}
         weekDays={weekDays}
         isSameDay={isSameDay}
       />

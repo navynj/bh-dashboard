@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseBody(request, deliveryDailyScheduleFromFixedPostSchema);
   if ('error' in parsed) return parsed.error;
-  const { date } = parsed.data;
+  const { date, driverId: filterDriverId } = parsed.data;
 
   const dateOnly = new Date(date + 'Z');
   if (Number.isNaN(dateOnly.getTime())) {
@@ -26,7 +26,9 @@ export async function POST(request: NextRequest) {
   const dayOfWeek = dateOnly.getUTCDay();
 
   const fixedWithTemplates = await prisma.driverFixedSchedule.findMany({
-    where: { dayOfWeek },
+    where: filterDriverId
+      ? { dayOfWeek, driverId: filterDriverId }
+      : { dayOfWeek },
     select: {
       id: true,
       driverId: true,
@@ -49,7 +51,9 @@ export async function POST(request: NextRequest) {
   });
 
   const existingStops = await prisma.dailyScheduleStop.findMany({
-    where: { date: dateOnly },
+    where: filterDriverId
+      ? { date: dateOnly, driverId: filterDriverId }
+      : { date: dateOnly },
     select: { driverId: true },
     distinct: ['driverId'],
   });

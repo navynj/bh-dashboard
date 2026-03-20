@@ -15,8 +15,8 @@ export type DeliveryDatePickerProps = {
   setDateStr: (s: string) => void;
   selectedDate: Date;
   isToday: boolean;
-  goPrevDay: () => void;
-  goNextDay: () => void;
+  goPrevWeek: () => void;
+  goNextWeek: () => void;
   weekDays: Date[];
   isSameDay: (a: Date, b: Date) => boolean;
 };
@@ -25,8 +25,8 @@ export function DeliveryDatePicker({
   dateStr,
   setDateStr,
   selectedDate,
-  goPrevDay,
-  goNextDay,
+  goPrevWeek,
+  goNextWeek,
   weekDays,
   isSameDay,
 }: DeliveryDatePickerProps) {
@@ -37,8 +37,8 @@ export function DeliveryDatePicker({
           variant="outline"
           size="icon"
           className="shrink-0 h-9 w-9"
-          onClick={goPrevDay}
-          aria-label="Previous day"
+          onClick={goPrevWeek}
+          aria-label="Previous week"
         >
           <ChevronLeft className="h-5 w-5" />
         </Button>
@@ -67,8 +67,8 @@ export function DeliveryDatePicker({
           variant="outline"
           size="icon"
           className="shrink-0 h-9 w-9"
-          onClick={goNextDay}
-          aria-label="Next day"
+          onClick={goNextWeek}
+          aria-label="Next week"
         >
           <ChevronRight className="h-5 w-5" />
         </Button>

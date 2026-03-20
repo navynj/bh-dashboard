@@ -284,6 +284,8 @@ export const deliveryDailySchedulePostSchema = z.object({
 /** POST /api/delivery/daily-schedule/from-fixed - create daily schedules from fixed templates for a date */
 export const deliveryDailyScheduleFromFixedPostSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD'),
+  /** When set, only this driver gets a daily schedule from their fixed template. */
+  driverId: z.string().min(1).optional(),
 });
 
 /** PATCH /api/delivery/daily-schedule/[id] - update stops/tasks order and content */
