@@ -13,6 +13,48 @@ import {
   getCategoryColor,
 } from './helpers';
 
+/** Same amount as SubcategoryRow / StaticCategoryRow (flat list under a parent). */
+function getFlatCategoryDisplayAmount(
+  row: BudgetCategoryRow,
+  actualCosByCategoryId: Record<string, number>,
+): number {
+  return actualCosByCategoryId[row.categoryId] ?? Number(row.amount);
+}
+
+function sumChildrenCos(
+  children: CategoryTreeNode[],
+  actualCosByCategoryId: Record<string, number>,
+): number {
+  return children.reduce(
+    (s, child) =>
+      s +
+      (actualCosByCategoryId[child.category.categoryId] ?? 0) +
+      (child.children.length > 0
+        ? sumChildrenCos(child.children, actualCosByCategoryId)
+        : 0),
+    0,
+  );
+}
+
+/** Same amount as the trigger row in TreeCategoryRow (COS1 nested tree). */
+function getTreeCategoryDisplayAmount(
+  node: CategoryTreeNode,
+  actualCosByCategoryId: Record<string, number>,
+): number {
+  const { category, children } = node;
+  const hasDirectCos = category.categoryId in actualCosByCategoryId;
+  const childrenSum =
+    children.length > 0
+      ? sumChildrenCos(children, actualCosByCategoryId)
+      : 0;
+  const isTopLevel = parseCategoryPath(category.categoryId).length === 1;
+  return hasDirectCos
+    ? (actualCosByCategoryId[category.categoryId] ?? 0)
+    : isTopLevel && Number(category.amount) > 0
+      ? Number(category.amount)
+      : childrenSum ?? Number(category.amount);
+}
+
 function CategoryLabel({
   categoryId,
   name,
@@ -147,35 +189,26 @@ export function CollapsibleCategoryRow({
         </CollapsibleTrigger>
         <CollapsibleContent>
           <ul className="ml-5 mt-0.5 space-y-0.5 border-l border-muted pl-3">
-            {subcategories.map((sub) => (
-              <SubcategoryRow
-                key={sub.id}
-                sub={sub}
-                totalBudget={totalBudget}
-                actualCosByCategoryId={actualCosByCategoryId}
-                sortedTopLevelIndices={sortedTopLevelIndices}
-                parentCategoryId={category.categoryId}
-              />
-            ))}
+            {subcategories
+              .filter(
+                (sub) =>
+                  getFlatCategoryDisplayAmount(sub, actualCosByCategoryId) !==
+                  0,
+              )
+              .map((sub) => (
+                <SubcategoryRow
+                  key={sub.id}
+                  sub={sub}
+                  totalBudget={totalBudget}
+                  actualCosByCategoryId={actualCosByCategoryId}
+                  sortedTopLevelIndices={sortedTopLevelIndices}
+                  parentCategoryId={category.categoryId}
+                />
+              ))}
           </ul>
         </CollapsibleContent>
       </li>
     </Collapsible>
-  );
-}
-
-function sumChildrenCos(
-  children: CategoryTreeNode[],
-  actualCosByCategoryId: Record<string, number>,
-): number {
-  return children.reduce(
-    (s, child) =>
-      s +
-      (actualCosByCategoryId[child.category.categoryId] ?? 0) +
-      (child.children.length > 0
-        ? sumChildrenCos(child.children, actualCosByCategoryId)
-        : 0),
-    0,
   );
 }
 
@@ -242,17 +275,25 @@ export function TreeCategoryRow({
         </CollapsibleTrigger>
         <CollapsibleContent>
           <ul className="ml-5 mt-0.5 space-y-0.5 border-l border-muted pl-3">
-            {children.map((child) => (
-              <TreeCategoryRow
-                key={child.category.id}
-                node={child}
-                totalBudget={totalBudget}
-                actualCosByCategoryId={actualCosByCategoryId}
-                sortedTopLevelIndices={sortedTopLevelIndices}
-                parentCategoryIdForColor={category.categoryId}
-                depth={depth + 1}
-              />
-            ))}
+            {children
+              .filter(
+                (child) =>
+                  getTreeCategoryDisplayAmount(
+                    child,
+                    actualCosByCategoryId,
+                  ) !== 0,
+              )
+              .map((child) => (
+                <TreeCategoryRow
+                  key={child.category.id}
+                  node={child}
+                  totalBudget={totalBudget}
+                  actualCosByCategoryId={actualCosByCategoryId}
+                  sortedTopLevelIndices={sortedTopLevelIndices}
+                  parentCategoryIdForColor={category.categoryId}
+                  depth={depth + 1}
+                />
+              ))}
           </ul>
         </CollapsibleContent>
       </li>
