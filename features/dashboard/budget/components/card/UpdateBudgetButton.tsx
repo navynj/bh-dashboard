@@ -46,7 +46,7 @@ function UpdateBudgetModal({
     try {
       let defaultBudgetRate: number | undefined;
       let defaultReferencePeriodMonths: number | undefined;
-      const settingsRes = await fetch('/api/budget/settings');
+      const settingsRes = await fetch('/api/dashboard/budget/settings');
       if (settingsRes.ok) {
         const { settings } = await settingsRes.json();
         if (settings) {
@@ -61,7 +61,7 @@ function UpdateBudgetModal({
         }
       }
 
-      const res = await fetch(`/api/budget/${locationId}`, {
+      const res = await fetch(`/api/dashboard/budget/${locationId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

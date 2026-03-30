@@ -39,7 +39,7 @@ export function BudgetSettingsForm({
     toast.dismiss();
     setLoading(true);
     try {
-      const res = await fetch('/api/budget/settings', {
+      const res = await fetch('/api/dashboard/budget/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

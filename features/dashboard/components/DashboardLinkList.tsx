@@ -8,9 +8,7 @@ const DashboardLinkList = () => {
   const linkClass = (path: string) =>
     pathname === path || pathname.startsWith(path + '/') ? '' : 'text-gray-300';
   const costPathActive =
-    pathname === '/dashboard/cost' ||
-    pathname.startsWith('/dashboard/cost/') ||
-    pathname.startsWith('/dashboard/location/');
+    pathname === '/dashboard/cost' || pathname.startsWith('/dashboard/cost/');
   return (
     <>
       <Link

@@ -56,7 +56,7 @@ const cosCategorySchema = z.object({
   amount: z.number(),
 });
 
-/** POST /api/budget */
+/** POST /api/dashboard/budget */
 export const budgetPostSchema = z.object({
   yearMonth: yearMonthSchema.optional(),
   locationIds: z.array(z.string()).optional(),
@@ -70,7 +70,7 @@ export const budgetPostSchema = z.object({
     .optional(),
 });
 
-/** PATCH /api/budget/[locationId] */
+/** PATCH /api/dashboard/budget/[locationId] */
 export const budgetPatchSchema = z.object({
   yearMonth: yearMonthSchema.optional(),
   budgetRate: z.number().min(0).max(1).optional(),
@@ -83,7 +83,7 @@ export const budgetPatchSchema = z.object({
     .optional(),
 });
 
-/** POST /api/budget/bulk — bulk update budgets in a year-month range */
+/** POST /api/dashboard/budget/bulk — bulk update budgets in a year-month range */
 export const budgetBulkPatchSchema = z
   .object({
     fromYearMonth: yearMonthSchema,
@@ -105,7 +105,7 @@ export const budgetBulkPatchSchema = z
     path: ['toYearMonth'],
   });
 
-/** PATCH /api/budget/settings */
+/** PATCH /api/dashboard/budget/settings */
 export const budgetSettingsPatchSchema = z
   .object({
     budgetRate: z

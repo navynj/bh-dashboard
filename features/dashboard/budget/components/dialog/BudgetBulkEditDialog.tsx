@@ -85,7 +85,7 @@ export function BudgetBulkEditDialog() {
       }
       if (periodNum !== undefined) body.referencePeriodMonths = periodNum;
 
-      const res = await fetch('/api/budget/bulk', {
+      const res = await fetch('/api/dashboard/budget/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

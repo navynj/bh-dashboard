@@ -15,9 +15,11 @@ export {
 export type { ProfitAndLossDataOption } from './parser';
 export {
   parseIncomeFromReportRows,
+  parseIncomeLineItemsFromReportRows,
   parseCosTotalFromReportRows,
   parseCosFromReportRows,
   getIncomeFromPnlReport,
+  getIncomeWithCategoriesFromPnlReport,
   getCosFromPnlReport,
   getBudgetDataFromPnlReport,
 } from './parser';

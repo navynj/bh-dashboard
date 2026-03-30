@@ -53,7 +53,12 @@ const ChartPieDonutText = ({
   return (
     <ChartContainer
       config={chartConfig}
-      className={cn('mx-auto aspect-square max-h-[250px] ', className ?? '')}
+      className={cn(
+        // min size: Recharts 3 ResponsiveContainer renders nothing until width/height are positive;
+        // flex parents (e.g. dashboard cards) often collapse to 0 without min-w/min-h.
+        'mx-auto aspect-square w-full min-h-[220px] min-w-[220px] shrink-0 max-h-[250px]',
+        className ?? '',
+      )}
     >
       <PieChart>
         <ChartTooltip

@@ -67,23 +67,21 @@ type CosCategory = { categoryId: string; name: string; amount: number };
 export function getTopLevelCategoryRows(
   categories: CosCategory[],
 ): CosCategory[] {
-  return [...(categories ?? [])]
-    .filter((c) => isTopLevelCategory(c.categoryId))
-    .sort(
-      (a, b) =>
-        getTopLevelCategoryIndex(a.categoryId) -
-        getTopLevelCategoryIndex(b.categoryId),
-    );
+  return [...(categories ?? [])].filter((c) =>
+    isTopLevelCategory(c.categoryId),
+  );
 }
 
 /** Same shape as getTopLevelCategories but from top-level rows only (no aggregation). Use for donut so it matches bar chart and list. */
 export function getTopLevelCategoriesTopLevelOnly(
   categories: CosCategory[],
 ): { category: string; cos: number }[] {
-  return getTopLevelCategoryRows(categories ?? []).map((r) => ({
-    category: r.name,
-    cos: Number.isFinite(r.amount) ? r.amount : 0,
-  }));
+  return getTopLevelCategoryRows(categories ?? [])
+    .sort((a, b) => a.categoryId.localeCompare(b.categoryId))
+    .map((r) => ({
+      category: r.name,
+      cos: Number.isFinite(r.amount) ? r.amount : 0,
+    }));
 }
 
 /**
@@ -117,8 +115,16 @@ export function getTopLevelCategoriesForCharts(
     { categoryId: string; name: string; amount: number }
   >();
   for (const idx of topIndices) {
-    const refRow = reference.find((c) => parseCategoryPath(c.categoryId)[0] === idx && parseCategoryPath(c.categoryId).length === 1);
-    const curRow = current.find((c) => parseCategoryPath(c.categoryId)[0] === idx && parseCategoryPath(c.categoryId).length === 1);
+    const refRow = reference.find(
+      (c) =>
+        parseCategoryPath(c.categoryId)[0] === idx &&
+        parseCategoryPath(c.categoryId).length === 1,
+    );
+    const curRow = current.find(
+      (c) =>
+        parseCategoryPath(c.categoryId)[0] === idx &&
+        parseCategoryPath(c.categoryId).length === 1,
+    );
     const name = refRow?.name ?? curRow?.name ?? `COS${idx + 1}`;
     const categoryId = curRow?.categoryId ?? refRow?.categoryId ?? `qb-${idx}`;
 
@@ -136,7 +142,5 @@ export function getTopLevelCategoriesForCharts(
     byIdx.set(idx, { categoryId, name, amount });
   }
 
-  return [...byIdx.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([, row]) => row);
+  return [...byIdx.entries()].sort(([a], [b]) => a - b).map(([, row]) => row);
 }

@@ -7,7 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import React, { useMemo } from 'react';
 import UpdateBudgetButton from './UpdateBudgetButton';
 import { ReconnectContent } from './BudgetReconnect';
-import BudgetCategoryList from '../category-list/BudgetCategoryList';
+import BudgetCategoryList from '../list/BudgetCategoryList';
 import TotalBudgetChart from '../chart/TotalBudgetChart';
 import BudgetAmountSummary from '../summary/BudgetAmountSummary';
 import Link from 'next/link';
@@ -30,7 +30,7 @@ function BudgetCard({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const isLocationPage = pathname.includes('/dashboard/cost/location/');
+  const isLocationPage = pathname.includes('location/');
 
   const [updating, setUpdating] = React.useState(false);
   const [optimisticRate, setOptimisticRate] = React.useState<number | null>(
@@ -101,24 +101,29 @@ function BudgetCard({
     <Card className="min-w-0 overflow-hidden">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-xl font-bold w-full">
-          <Link
-            href={
-              isLocationPage
-                ? '#'
-                : `/dashboard/budget/location/${budget.locationId}?yearMonth=${yearMonth}`
-            }
-            className={cn(
-              'group w-full link-underline-anim !flex items-center justify-between gap-2',
-              isLocationPage ? 'pointer-events-none' : '',
-            )}
-          >
-            <span>
-              {budget.location?.code ??
-                budget.location?.name ??
-                budget.locationId}
-            </span>
-            <ArrowRightIcon className="size-4 shrink-0 opacity-0 -translate-x-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-visible:opacity-100 group-focus-visible:translate-x-0" />
-          </Link>
+          {isLocationPage ? (
+            // TODO: add location cost page link
+            <h5>Cost</h5>
+          ) : (
+            <Link
+              href={
+                isLocationPage
+                  ? '#'
+                  : `/dashboard/cost/location/${budget.locationId}?yearMonth=${yearMonth}`
+              }
+              className={cn(
+                'group w-full link-underline-anim !flex items-center justify-between gap-2',
+                isLocationPage ? 'pointer-events-none' : '',
+              )}
+            >
+              <span>
+                {budget.location?.code ??
+                  budget.location?.name ??
+                  budget.locationId}
+              </span>
+              <ArrowRightIcon className="size-4 shrink-0 opacity-0 -translate-x-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-visible:opacity-100 group-focus-visible:translate-x-0" />
+            </Link>
+          )}
         </CardTitle>
         {isOfficeOrAdmin && !needsReconnect && (
           <UpdateBudgetButton

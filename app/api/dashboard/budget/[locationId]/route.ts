@@ -1,5 +1,5 @@
-// GET /api/budget/[locationId]?yearMonth=YYYY-MM — get budget for location and month.
-// PATCH /api/budget/[locationId] — update existing budget's rate and reference period (office/admin), then recalc.
+// GET /api/dashboard/budget/[locationId]?yearMonth=YYYY-MM — get budget for location and month.
+// PATCH /api/dashboard/budget/[locationId] — update existing budget's rate and reference period (office/admin), then recalc.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { parseBody, budgetPatchSchema } from '@/lib/api/schemas';
@@ -74,7 +74,7 @@ export async function GET(
 
     return NextResponse.json({ ok: true, yearMonth, budget });
   } catch (err: unknown) {
-    return toApiErrorResponse(err, 'GET /api/budget/[locationId] error:');
+    return toApiErrorResponse(err, 'GET /api/dashboard/budget/[locationId] error:');
   }
 }
 
@@ -144,6 +144,6 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true, yearMonth, budget });
   } catch (err: unknown) {
-    return toApiErrorResponse(err, 'PATCH /api/budget/[locationId] error:');
+    return toApiErrorResponse(err, 'PATCH /api/dashboard/budget/[locationId] error:');
   }
 }

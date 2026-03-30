@@ -1,5 +1,5 @@
-// GET /api/budget/settings — get default budget rate and reference period (office/admin can view; manager can view).
-// PATCH /api/budget/settings — update default budget rate and reference period (office/admin only).
+// GET /api/dashboard/budget/settings — get default budget rate and reference period (office/admin can view; manager can view).
+// PATCH /api/dashboard/budget/settings — update default budget rate and reference period (office/admin only).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { parseBody, budgetSettingsPatchSchema } from '@/lib/api/schemas';
@@ -30,7 +30,7 @@ export async function GET() {
       },
     });
   } catch (err: unknown) {
-    return toApiErrorResponse(err, 'GET /api/budget/settings error:');
+    return toApiErrorResponse(err, 'GET /api/dashboard/budget/settings error:');
   }
 }
 
@@ -80,6 +80,6 @@ export async function PATCH(request: NextRequest) {
       },
     });
   } catch (err: unknown) {
-    return toApiErrorResponse(err, 'PATCH /api/budget/settings error:');
+    return toApiErrorResponse(err, 'PATCH /api/dashboard/budget/settings error:');
   }
 }

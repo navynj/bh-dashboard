@@ -1,7 +1,7 @@
 // GET /api/quickbooks/pnl — Full Profit and Loss report from QuickBooks.
 // Query: locationId (required), startDate (YYYY-MM-DD), endDate (YYYY-MM-DD), accountingMethod (optional: Accrual | Cash).
 // Response.report is parsable for P&L PDF (same structure as bhpnl ReportData: Header, Rows, Columns).
-// Use getIncomeFromPnlReport(report) / getCosFromPnlReport(report) / getBudgetDataFromPnlReport(report) in lib for income/cos.
+// Use getIncomeFromPnlReport / getIncomeWithCategoriesFromPnlReport / getCosFromPnlReport / getBudgetDataFromPnlReport in lib for income/cos.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';

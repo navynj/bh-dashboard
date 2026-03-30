@@ -1,4 +1,4 @@
-// POST /api/budget/bulk — bulk update budgets in a year-month range (office/admin).
+// POST /api/dashboard/budget/bulk — bulk update budgets in a year-month range (office/admin).
 // Streams progress as NDJSON: { type: 'progress', yearMonth, locationCode, locationName, updated } then { type: 'done', updated }.
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -113,6 +113,6 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (err: unknown) {
-    return toApiErrorResponse(err, 'POST /api/budget/bulk error:');
+    return toApiErrorResponse(err, 'POST /api/dashboard/budget/bulk error:');
   }
 }

@@ -1,6 +1,6 @@
-// POST /api/budget — create or update budget for a month (office/admin).
+// POST /api/dashboard/budget — create or update budget for a month (office/admin).
 // Uses current budget settings (rate, reference period) or body overrides.
-// GET /api/budget?yearMonth=YYYY-MM — list budgets for that month (office/admin) or ensure budget exists for viewer's location.
+// GET /api/dashboard/budget?yearMonth=YYYY-MM — list budgets for that month (office/admin) or ensure budget exists for viewer's location.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { parseBody, budgetPostSchema } from '@/lib/api/schemas';
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     }
     return NextResponse.json({ ok: true, yearMonth, budget });
   } catch (err: unknown) {
-    return toApiErrorResponse(err, 'GET /api/budget error:');
+    return toApiErrorResponse(err, 'GET /api/dashboard/budget error:');
   }
 }
 
@@ -142,6 +142,6 @@ export async function POST(request: NextRequest) {
       created,
     });
   } catch (err: unknown) {
-    return toApiErrorResponse(err, 'POST /api/budget error:');
+    return toApiErrorResponse(err, 'POST /api/dashboard/budget error:');
   }
 }

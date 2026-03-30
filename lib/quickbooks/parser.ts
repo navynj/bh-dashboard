@@ -1,5 +1,5 @@
 /**
- * Parse QuickBooks P&L report JSON: income total, COS total, COS by category.
+ * Parse QuickBooks P&L report JSON: income total, income lines, COS total, COS by category.
  */
 
 /** Parsed P&L: total income and Cost of Goods Sold line items (category name + amount). */
@@ -161,6 +161,42 @@ function sectionCosLineItems(
   return out;
 }
 
+/**
+ * Recurse the Income section (same row shape as COS). Top-level ids use `income:${name}` in the stable hash so they never collide with COS qb- ids.
+ */
+function sectionIncomeLineItemsRecurse(
+  row: PlRow,
+  path: number[],
+  parentId: string | null,
+  out: { id: string; name: string; amount: number }[],
+): void {
+  const name = categoryOrLineName(row);
+  if (!name) return;
+  if (!row?.Header && /^income$/i.test(name.trim())) return;
+  const id =
+    parentId != null
+      ? `${parentId}-${path[path.length - 1] ?? 0}`
+      : stableQbIdForNonCosTopLevelName(`income:${name}`);
+  out.push({ id, name, amount: rowTotal(row) });
+  const subRows = row?.Rows?.Row;
+  if (!Array.isArray(subRows) || subRows.length === 0) return;
+  subRows.forEach((sub, idx) => {
+    sectionIncomeLineItemsRecurse(sub, [...path, idx], id, out);
+  });
+}
+
+function sectionIncomeLineItems(
+  row: unknown,
+): { id: string; name: string; amount: number }[] {
+  const r = row as { Rows?: { Row?: PlRow[] } };
+  const out: { id: string; name: string; amount: number }[] = [];
+  const rowList = Array.isArray(r?.Rows?.Row) ? r.Rows.Row : [];
+  rowList.forEach((category, catIdx) => {
+    sectionIncomeLineItemsRecurse(category, [catIdx], null, out);
+  });
+  return out;
+}
+
 export function parseIncomeFromReportRows(
   rows: { Row?: unknown[] } | undefined,
 ): number {
@@ -193,8 +229,35 @@ export function parseCosFromReportRows(
   }));
 }
 
+/** Income section line items (P&L Income accounts / subaccounts). */
+export function parseIncomeLineItemsFromReportRows(
+  rows: { Row?: unknown[] } | undefined,
+): { categoryId: string; name: string; amount: number }[] {
+  const incomeSection = findSection(rows, (t) => /^income$/i.test(t.trim()));
+  if (!incomeSection) return [];
+  return sectionIncomeLineItems(incomeSection).map((c) => ({
+    categoryId: c.id,
+    name: c.name,
+    amount: c.amount,
+  }));
+}
+
 export function getIncomeFromPnlReport(report: PnlReportData): number {
   return parseIncomeFromReportRows(report?.Rows);
+}
+
+/** Total income and per-line income accounts from the P&L Income section. */
+export function getIncomeWithCategoriesFromPnlReport(
+  report: PnlReportData,
+): {
+  incomeTotal: number;
+  incomeByCategory: { categoryId: string; name: string; amount: number }[];
+} {
+  const rows = report?.Rows;
+  return {
+    incomeTotal: parseIncomeFromReportRows(rows),
+    incomeByCategory: parseIncomeLineItemsFromReportRows(rows),
+  };
 }
 
 export function getCosFromPnlReport(report: PnlReportData): {
