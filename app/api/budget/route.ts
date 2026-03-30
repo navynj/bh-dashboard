@@ -9,8 +9,8 @@ import {
   ensureBudgetForMonth,
   getBudgetsByMonth,
   getBudgetByLocationAndMonth,
-} from '@/features/budget';
-import type { QuickBooksApiContext } from '@/features/budget';
+} from '@/features/dashboard/budget';
+import type { QuickBooksApiContext } from '@/features/dashboard/budget';
 import { toApiErrorResponse } from '@/lib/core/errors';
 import { prisma } from '@/lib/core/prisma';
 import { getCurrentYearMonth, isValidYearMonth } from '@/lib/utils';

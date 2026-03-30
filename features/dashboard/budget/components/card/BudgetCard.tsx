@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { BudgetWithLocationAndCategories } from '@/features/budget';
-import { deriveBudgetDisplayCategories } from '@/features/budget/utils/derive-display-categories';
+import type { BudgetWithLocationAndCategories } from '@/features/dashboard/budget';
+import { deriveBudgetDisplayCategories } from '@/features/dashboard/budget/utils/derive-display-categories';
 import { usePathname, useRouter } from 'next/navigation';
 import React, { useMemo } from 'react';
 import UpdateBudgetButton from './UpdateBudgetButton';
@@ -28,7 +28,7 @@ function BudgetCard({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const isLocationPage = pathname.includes('/budget/location/');
+  const isLocationPage = pathname.includes('/dashboard/budget/location/');
 
   const [updating, setUpdating] = React.useState(false);
   const [optimisticRate, setOptimisticRate] = React.useState<number | null>(
@@ -103,7 +103,7 @@ function BudgetCard({
             href={
               isLocationPage
                 ? '#'
-                : `/budget/location/${budget.locationId}?yearMonth=${yearMonth}`
+                : `/dashboard/budget/location/${budget.locationId}?yearMonth=${yearMonth}`
             }
             className={cn(
               'group w-full link-underline-anim !flex items-center justify-between gap-2',

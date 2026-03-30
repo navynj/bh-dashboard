@@ -27,7 +27,7 @@ const HeaderNav = ({
       <div className="flex items-center gap-2">
         {getCanSeeBudgetAndReports(role) && (
           <>
-            <HeaderNavItem href="/budget">Budget</HeaderNavItem>
+            <HeaderNavItem href="/dashboard">Dashboard</HeaderNavItem>
             <HeaderNavItem href="/report">Reports</HeaderNavItem>
           </>
         )}

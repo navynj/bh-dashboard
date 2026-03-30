@@ -1,19 +1,19 @@
-import BudgetCardList from '@/features/budget/components/card/BudgetCardList';
-import TotalBudgetChart from '@/features/budget/components/chart/TotalBudgetChart';
+import BudgetCardList from '@/features/dashboard/budget/components/card/BudgetCardList';
+import TotalBudgetChart from '@/features/dashboard/budget/components/chart/TotalBudgetChart';
 import {
   attachCurrentMonthCosToBudgets,
   attachReferenceCosToBudgets,
   ensureBudgetForMonth,
   getBudgetByLocationAndMonth,
   mapBudgetToDataType,
-} from '@/features/budget';
-import type { QuickBooksApiContext } from '@/features/budget';
+} from '@/features/dashboard/budget';
+import type { QuickBooksApiContext } from '@/features/dashboard/budget';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
 import { getCurrentYearMonth, isValidYearMonth } from '@/lib/utils';
 import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
-import CategoryBudgetBarChart from '@/features/budget/components/chart/CategoryBudgetBarChart';
+import CategoryBudgetBarChart from '@/features/dashboard/budget/components/chart/CategoryBudgetBarChart';
 import BackButton from '@/components/control/BackButton';
 
 const LocationPage = async ({
@@ -47,7 +47,9 @@ const LocationPage = async ({
   const { yearMonth: searchYearMonth } = await searchParams;
   const yearMonth = searchYearMonth ?? getCurrentYearMonth();
   if (!isValidYearMonth(yearMonth)) {
-    redirect(`/budget/location/${id}?yearMonth=${getCurrentYearMonth()}`);
+    redirect(
+      `/dashboard/budget/location/${id}?yearMonth=${getCurrentYearMonth()}`,
+    );
   }
 
   // ===============================

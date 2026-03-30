@@ -27,8 +27,9 @@ const EARLIEST_YEAR_MONTH = formatYearMonth(CURRENT_YEAR - 10, 0);
 
 export function BudgetBulkEditDialog() {
   const pathname = usePathname();
-  const isLocationPage = pathname.includes('/budget/location');
-  if (isLocationPage) return null;
+  const isBudgetPage = pathname === '/dashboard/budget';
+  const isLocationPage = pathname.includes('/dashboard/budget/location');
+  if (!isBudgetPage || isLocationPage) return null;
 
   const currentYearMonth = getCurrentYearMonth();
   const [open, setOpen] = useState(false);

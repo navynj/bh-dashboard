@@ -29,7 +29,7 @@ const Header = async ({ isOfficeOrAdmin }: HeaderProps) => {
       <header className="flex items-center justify-between gap-4 border-b pb-6 mb-5 flex-wrap md:flex-nowrap">
         <div className="shrink-0 flex items-center gap-6 md:w-full md:max-w-3xs">
           <div>
-            <Link href={showBudgetAndReports ? '/budget' : '/delivery'}>
+            <Link href={showBudgetAndReports ? '/dashboard' : '/delivery'}>
               <h1 className="text-xl font-semibold">BH Hub</h1>
             </Link>
             <p className="text-muted-foreground text-sm">

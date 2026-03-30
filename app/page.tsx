@@ -12,7 +12,9 @@ export default async function HomePage() {
   switch (session?.user?.status) {
     case 'active':
       redirect(
-        getCanSeeBudgetAndReports(session.user.role) ? '/budget' : '/delivery',
+        getCanSeeBudgetAndReports(session.user.role)
+          ? '/dashboard'
+          : '/delivery',
       );
     case 'pending_approval':
       redirect('/waiting');

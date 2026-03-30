@@ -1,6 +1,6 @@
 import { formatCurrency } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
-import { BudgetRateRefInfo } from '@/features/budget/components/summary/BudgetRateRefInfo';
+import { BudgetRateRefInfo } from '@/features/dashboard/budget/components/summary/BudgetRateRefInfo';
 
 type BudgetAmountSummaryProps = {
   isUpdating: boolean;

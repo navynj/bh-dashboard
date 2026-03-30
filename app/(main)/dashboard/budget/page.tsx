@@ -1,15 +1,15 @@
-import BudgetCardList from '@/features/budget/components/card/BudgetCardList';
+import BudgetCardList from '@/features/dashboard/budget/components/card/BudgetCardList';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import {
   attachCurrentMonthCosToBudgets,
   attachReferenceCosToBudgets,
   ensureBudgetsForMonth,
   getBudgetsByMonth,
-} from '@/features/budget';
+} from '@/features/dashboard/budget';
 import { AppError, GENERIC_ERROR_MESSAGE } from '@/lib/core/errors';
 import { getCurrentYearMonth, isValidYearMonth } from '@/lib/utils';
-import type { QuickBooksApiContext } from '@/features/budget';
-import type { BudgetDataType } from '@/features/budget';
+import type { QuickBooksApiContext } from '@/features/dashboard/budget';
+import type { BudgetDataType } from '@/features/dashboard/budget';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -22,7 +22,7 @@ export default async function BudgetPage({ searchParams }: Props) {
   const { yearMonth: searchYearMonth } = await searchParams;
   const yearMonth = searchYearMonth ?? getCurrentYearMonth();
   if (!isValidYearMonth(yearMonth)) {
-    redirect(`/budget?yearMonth=${getCurrentYearMonth()}`);
+    redirect(`/dashboard/budget?yearMonth=${getCurrentYearMonth()}`);
   }
 
   // ===============================
@@ -35,7 +35,9 @@ export default async function BudgetPage({ searchParams }: Props) {
 
   const managerLocationId = session?.user?.locationId ?? undefined;
   if (!getOfficeOrAdmin(session?.user?.role) && managerLocationId) {
-    redirect(`/budget/location/${managerLocationId}?yearMonth=${yearMonth}`);
+    redirect(
+      `/dashboard/budget/location/${managerLocationId}?yearMonth=${yearMonth}`,
+    );
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL

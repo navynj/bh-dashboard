@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseBody, budgetSettingsPatchSchema } from '@/lib/api/schemas';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
-import { getOrCreateBudgetSettings } from '@/features/budget';
+import { getOrCreateBudgetSettings } from '@/features/dashboard/budget';
 import { toApiErrorResponse } from '@/lib/core/errors';
 import { prisma } from '@/lib/core/prisma';
 

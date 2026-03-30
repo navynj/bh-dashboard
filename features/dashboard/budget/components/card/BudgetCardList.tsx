@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import type { BudgetViewProps } from '@/features/budget';
+import type { BudgetViewProps } from '@/features/dashboard/budget';
 import { PropsWithChildren, useMemo } from 'react';
 import BudgetCard from './BudgetCard';
 

@@ -1,7 +1,7 @@
 'use client';
 
 import ChartPieDonutText from '@/components/chart/DonutChart';
-import { ChartSkeleton } from '@/features/budget/components/card/BudgetCardSkeleton';
+import { ChartSkeleton } from '@/features/dashboard/budget/components/card/BudgetCardSkeleton';
 import { type ChartConfig } from '@/components/ui/chart';
 import { CHART_COLORS } from '@/constants/color';
 import { cn, formatCurrency } from '@/lib/utils';
@@ -16,7 +16,11 @@ interface TotalBudgetChartProps extends ClassName {
   totalAmount: number; // Budget total; all chart percentages are share of budget
   currentCosByCategory?: { categoryId: string; name: string; amount: number }[];
   /** Reference COS (unused for donut slices; current month is shown from QB current only). */
-  referenceCosByCategory?: { categoryId: string; name: string; amount: number }[];
+  referenceCosByCategory?: {
+    categoryId: string;
+    name: string;
+    amount: number;
+  }[];
   /** When <= 0, no reference income: show current COS only (100% = current COS total). */
   referencePeriodMonthsUsed?: number | null;
   size?: 'sm' | 'md' | 'lg';
@@ -59,20 +63,32 @@ const TotalBudgetChart = ({
   }
 
   // Current month QB only (no reference union) so slices match P&L / category list
-  const forCharts = getTopLevelCategoriesForCharts(
-    currentCosByCategory,
-    [],
-  );
+  const forCharts = getTopLevelCategoriesForCharts(currentCosByCategory, []);
   const topLevelCategories =
     forCharts.length > 0
       ? forCharts.map((r) => ({ category: r.name, cos: r.amount }))
       : getTopLevelCategories(currentCosByCategory);
 
-  if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_DEBUG_COS === 'true') {
-    console.log('[DEBUG_COS] currentCosByCategory', JSON.stringify(currentCosByCategory ?? [], null, 2));
-    console.log('[DEBUG_COS] referenceCosByCategory', JSON.stringify(referenceCosByCategory ?? [], null, 2));
-    console.log('[DEBUG_COS] forCharts (merged top-level)', JSON.stringify(forCharts, null, 2));
-    console.log('[DEBUG_COS] topLevelCategories (donut)', JSON.stringify(topLevelCategories, null, 2));
+  if (
+    typeof window !== 'undefined' &&
+    process.env.NEXT_PUBLIC_DEBUG_COS === 'true'
+  ) {
+    console.log(
+      '[DEBUG_COS] currentCosByCategory',
+      JSON.stringify(currentCosByCategory ?? [], null, 2),
+    );
+    console.log(
+      '[DEBUG_COS] referenceCosByCategory',
+      JSON.stringify(referenceCosByCategory ?? [], null, 2),
+    );
+    console.log(
+      '[DEBUG_COS] forCharts (merged top-level)',
+      JSON.stringify(forCharts, null, 2),
+    );
+    console.log(
+      '[DEBUG_COS] topLevelCategories (donut)',
+      JSON.stringify(topLevelCategories, null, 2),
+    );
   }
 
   if (topLevelCategories.length === 0) {

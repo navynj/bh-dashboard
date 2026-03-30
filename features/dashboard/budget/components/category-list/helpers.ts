@@ -1,6 +1,6 @@
 import { CHART_COLORS } from '@/constants/color';
 import { parseCategoryPath } from '@/features/report/utils/category';
-import type { BudgetWithLocationAndCategories } from '@/features/budget';
+import type { BudgetWithLocationAndCategories } from '@/features/dashboard/budget';
 
 export type BudgetCategoryRow =
   BudgetWithLocationAndCategories['categories'][number];

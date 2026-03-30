@@ -1,4 +1,4 @@
-import type { BudgetCategoryRow } from '@/features/budget/types';
+import type { BudgetCategoryRow } from '@/features/dashboard/budget/types';
 import {
   getTopLevelCategoriesForCharts,
   getTopLevelCategoryIndex,

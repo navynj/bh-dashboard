@@ -1,4 +1,4 @@
-import BudgetCardSkeleton from '@/features/budget/components/card/BudgetCardSkeleton';
+import BudgetCardSkeleton from '@/features/dashboard/budget/components/card/BudgetCardSkeleton';
 import { cn } from '@/lib/utils';
 
 export default function BudgetLoading() {

@@ -86,8 +86,7 @@ export async function GET(request: NextRequest) {
         qbRealmId,
         token.access_token,
       );
-      name =
-        companyName ?? `QuickBooks Company ${qbRealmId || 'Unknown'}`;
+      name = companyName ?? `QuickBooks Company ${qbRealmId || 'Unknown'}`;
     }
 
     const realm = await prisma.realm.upsert({
@@ -126,7 +125,7 @@ export async function GET(request: NextRequest) {
       const safe = safeRedirectPath(returnTo);
       redirectPath = safe ?? '/';
     } else if (locationId) {
-      redirectPath = `/budget/location/${locationId}`;
+      redirectPath = `/dashboard/budget/location/${locationId}`;
     } else {
       redirectPath = '/';
     }

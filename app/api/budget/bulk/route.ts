@@ -8,8 +8,8 @@ import {
   ensureBudgetForMonth,
   getBudgetsByMonth,
   getOrCreateBudgetSettings,
-} from '@/features/budget';
-import type { QuickBooksApiContext } from '@/features/budget';
+} from '@/features/dashboard/budget';
+import type { QuickBooksApiContext } from '@/features/dashboard/budget';
 import { toApiErrorResponse } from '@/lib/core/errors';
 import { listYearMonthsInRange } from '@/lib/utils';
 
