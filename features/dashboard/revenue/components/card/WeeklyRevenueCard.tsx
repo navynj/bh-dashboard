@@ -115,7 +115,7 @@ export default function WeeklyRevenueCard({
               <WeeklyRevenueSectionSkeleton />
             ) : (
               <>
-                <div className="flex flex-col gap-4 sm:items-center">
+                <div className="flex flex-col gap-4">
                   <RevenueSummary
                     totalRevenue={data.totalRevenue}
                     targetRevenue={data.targetRevenue}

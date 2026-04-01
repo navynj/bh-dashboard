@@ -105,14 +105,14 @@ function BudgetCard({
             // TODO: add location cost page link
             <h5>Cost</h5>
           ) : (
-            <div
-              // href={
-              //   isLocationPage
-              //     ? '#'
-              //     : `/dashboard/cost/location/${budget.locationId}?yearMonth=${yearMonth}`
-              // }
+            <Link
+              href={
+                isLocationPage
+                  ? '#'
+                  : `/dashboard/cost/location/${budget.locationId}?yearMonth=${yearMonth}`
+              }
               className={cn(
-                'group w-full !flex items-center justify-between gap-2',
+                'group w-full link-underline-anim !flex items-center justify-between gap-2',
                 isLocationPage ? 'pointer-events-none' : '',
               )}
             >
@@ -121,8 +121,8 @@ function BudgetCard({
                   budget.location?.name ??
                   budget.locationId}
               </span>
-              {/* <ArrowRightIcon className="size-4 shrink-0 opacity-0 -translate-x-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-visible:opacity-100 group-focus-visible:translate-x-0" /> */}
-            </div>
+              <ArrowRightIcon className="size-4 shrink-0 opacity-0 -translate-x-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-visible:opacity-100 group-focus-visible:translate-x-0" />
+            </Link>
           )}
         </CardTitle>
         {isOfficeOrAdmin && !needsReconnect && (

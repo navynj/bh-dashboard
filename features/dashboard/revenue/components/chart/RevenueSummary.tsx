@@ -8,19 +8,23 @@ type RevenueSummaryProps = {
 };
 
 function RevenueSummary({ totalRevenue, targetRevenue }: RevenueSummaryProps) {
+  const noTarget =
+    !Number.isFinite(targetRevenue) || targetRevenue <= 0;
   return (
-    <div className="w-full flex flex-col justify-center gap-3">
-      <div className="w-full flex items-start justify-between gap-4">
+    <div className="text-2xl font-semibold">
+      <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium">Total Revenue</p>
-          <p className="text-muted-foreground mt-2 text-sm">Target</p>
+          <p className="text-base font-normal">Total Revenue</p>
+          <p className="text-muted-foreground text-base font-normal">
+            {noTarget ? 'No target set' : 'Target'}
+          </p>
         </div>
-        <div className="text-right">
-          <p className="text-2xl font-extrabold tabular-nums">
+        <div className="inline-flex flex-col items-end">
+          <p className="font-extrabold tabular-nums">
             {formatCurrency(totalRevenue)}
           </p>
-          <p className="text-muted-foreground mt-1 text-base tabular-nums">
-            -{/* {formatCurrency(targetRevenue)} */}
+          <p className="text-muted-foreground text-base font-normal tabular-nums">
+            {noTarget ? '—' : `/${formatCurrency(targetRevenue)}`}
           </p>
         </div>
       </div>

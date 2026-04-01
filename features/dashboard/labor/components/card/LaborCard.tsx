@@ -104,7 +104,7 @@ export default function LaborCard({
       </CardHeader>
       <CardContent className="space-y-5">
         {/* <LaborTimeNeeded /> */}
-        <div className="flex flex-col gap-4 sm:items-center">
+        <div className="flex flex-col gap-4">
           <LaborSummary
             totalLabor={data.totalLabor}
             targetLabor={targetLabor}

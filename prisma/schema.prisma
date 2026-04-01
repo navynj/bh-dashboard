@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["audit", "budget", "cost", "delivery", "inventory", "public"]
+  schemas  = ["audit", "dashboard", "cost", "delivery", "inventory", "public"]
 }
 
 model Account {
@@ -131,7 +131,7 @@ enum UserStatus {
 }
 
 // ===============================
-// BUDGET
+// DASHBOARD (budget + labor targets)
 // ===============================
 model BudgetSettings {
   id                    String   @id @default(cuid())
@@ -142,7 +142,7 @@ model BudgetSettings {
   updatedBy             User?    @relation("BudgetSettingsUpdatedBy", fields: [updatedById], references: [id])
 
   @@map("budget_settings")
-  @@schema("budget")
+  @@schema("dashboard")
 }
 
 model Budget {
@@ -159,7 +159,7 @@ model Budget {
 
   @@unique([locationId, yearMonth])
   @@map("budgets")
-  @@schema("budget")
+  @@schema("dashboard")
 }
 
 /**
@@ -176,7 +176,7 @@ model LaborTarget {
 
   @@unique([locationId, yearMonth])
   @@map("labor_targets")
-  @@schema("budget")
+  @@schema("dashboard")
 }
 
 // ===============================

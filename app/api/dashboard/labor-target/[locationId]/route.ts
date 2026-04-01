@@ -57,11 +57,11 @@ export async function PATCH(
         { status: 400 },
       );
     }
-    if (rate <= 0 || months <= 0) {
+    if (rate <= 0 || months < 0) {
       return NextResponse.json(
         {
           error:
-            'laborBudgetRate and laborReferencePeriodMonths must be positive',
+            'laborBudgetRate must be positive; laborReferencePeriodMonths must be 0–24',
         },
         { status: 400 },
       );
