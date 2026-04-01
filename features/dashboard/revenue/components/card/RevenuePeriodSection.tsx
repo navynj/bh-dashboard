@@ -17,12 +17,14 @@ import type { RevenuePeriodData } from '../types';
 import WeeklyRevenueSectionSkeleton from './WeeklyRevenueSectionSkeleton';
 
 type RevenuePeriodSectionProps = {
-  title: 'Weekly' | 'Monthly';
+  title: string;
   data: RevenuePeriodData;
   /** When true, show prev/next week and date range in the header. */
   showWeekNavigation?: boolean;
   /** When true, render the daily stacked bar chart (weekly view). */
   showBarChart?: boolean;
+  /** When true, list income categories below the chart (monthly P&L view). */
+  showCategoryList?: boolean;
   defaultOpen?: boolean;
   className?: string;
   /** Required with `showWeekNavigation`: dashboard month (YYYY-MM) for week picker. */
@@ -39,6 +41,7 @@ export default function RevenuePeriodSection({
   data,
   showWeekNavigation = false,
   showBarChart = false,
+  showCategoryList = true,
   defaultOpen = true,
   className,
   yearMonth,
@@ -99,7 +102,9 @@ export default function RevenuePeriodSection({
                     targetRevenue={data.targetRevenue}
                   />
                 </div>
-                <RevenueCategoryList categories={data.categories} />
+                {showCategoryList && (
+                  <RevenueCategoryList categories={data.categories} />
+                )}
                 {showBarChart &&
                   data.dailyBars &&
                   data.dailyBars.length > 0 &&

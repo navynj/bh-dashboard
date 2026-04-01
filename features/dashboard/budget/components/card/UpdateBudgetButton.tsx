@@ -2,7 +2,43 @@ import { Button } from '@/components/ui/button';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { CircleHelp } from 'lucide-react';
 import React from 'react';
+
+function LabelWithHint({
+  htmlFor,
+  children,
+  tooltip,
+}: {
+  htmlFor: string;
+  children: React.ReactNode;
+  tooltip?: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <FieldLabel htmlFor={htmlFor}>{children}</FieldLabel>
+      {tooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground inline-flex shrink-0 rounded-full p-0.5 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              aria-label="More info"
+            >
+              <CircleHelp className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs text-balance">{tooltip}</TooltipContent>
+        </Tooltip>
+      ) : null}
+    </div>
+  );
+}
 
 function UpdateBudgetModal({
   locationId,
@@ -13,6 +49,15 @@ function UpdateBudgetModal({
   onUpdateStart,
   onUpdateSuccess,
   onUpdateError,
+  modalTitle = 'Update budget',
+  rateFieldLabel = 'Budget rate',
+  rateHint = '(% of income)',
+  periodFieldLabel = 'Reference period',
+  periodHint = '(months)',
+  rateTooltip,
+  periodTooltip,
+  submitButtonLabel = 'Update',
+  idPrefix = 'update-budget',
 }: {
   locationId: string;
   yearMonth: string;
@@ -22,6 +67,15 @@ function UpdateBudgetModal({
   onUpdateStart: (rate?: number, period?: number) => void;
   onUpdateSuccess: () => void;
   onUpdateError: () => void;
+  modalTitle?: string;
+  rateFieldLabel?: string;
+  rateHint?: string;
+  periodFieldLabel?: string;
+  periodHint?: string;
+  rateTooltip?: string;
+  periodTooltip?: string;
+  submitButtonLabel?: string;
+  idPrefix?: string;
 }) {
   const [rate, setRate] = React.useState(() =>
     currentBudgetRate != null && Number.isFinite(currentBudgetRate)
@@ -113,21 +167,24 @@ function UpdateBudgetModal({
         className="bg-background border-border w-full max-w-sm rounded-lg border p-4 shadow-lg"
       >
         <div className="flex items-center gap-2">
-          <h3 className="font-semibold text-lg">Update budget</h3>
+          <h3 className="font-semibold text-lg">{modalTitle}</h3>
           {yearMonth && (
             <p className="text-muted-foreground text-sm">for {yearMonth}</p>
           )}
         </div>
         <div className="mt-3 space-y-4">
           <Field>
-            <FieldLabel htmlFor="update-budget-rate">
-              Budget rate{' '}
+            <LabelWithHint
+              htmlFor={`${idPrefix}-rate`}
+              tooltip={rateTooltip}
+            >
+              {rateFieldLabel}{' '}
               <span className="text-muted-foreground text-xs font-normal">
-                (% of income)
+                {rateHint}
               </span>
-            </FieldLabel>
+            </LabelWithHint>
             <Input
-              id="update-budget-rate"
+              id={`${idPrefix}-rate`}
               type="number"
               min={0}
               max={100}
@@ -138,14 +195,17 @@ function UpdateBudgetModal({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="update-budget-period">
-              Reference period{' '}
+            <LabelWithHint
+              htmlFor={`${idPrefix}-period`}
+              tooltip={periodTooltip}
+            >
+              {periodFieldLabel}{' '}
               <span className="text-muted-foreground text-xs font-normal">
-                (months)
+                {periodHint}
               </span>
-            </FieldLabel>
+            </LabelWithHint>
             <Input
-              id="update-budget-period"
+              id={`${idPrefix}-period`}
               type="number"
               min={0}
               max={24}
@@ -161,7 +221,7 @@ function UpdateBudgetModal({
             Cancel
           </Button>
           <Button type="submit" disabled={loading}>
-            {loading ? <Spinner /> : 'Update'}
+            {loading ? <Spinner /> : submitButtonLabel}
           </Button>
         </div>
       </form>
@@ -177,6 +237,16 @@ function UpdateBudgetButton({
   onUpdateStart,
   onUpdateSuccess,
   onUpdateError,
+  buttonLabel = 'Update budget',
+  modalTitle,
+  rateFieldLabel,
+  rateHint,
+  periodFieldLabel,
+  periodHint,
+  rateTooltip,
+  periodTooltip,
+  submitButtonLabel,
+  idPrefix,
 }: {
   locationId: string;
   yearMonth: string;
@@ -185,12 +255,22 @@ function UpdateBudgetButton({
   onUpdateStart: (rate?: number, period?: number) => void;
   onUpdateSuccess: () => void;
   onUpdateError: () => void;
+  buttonLabel?: string;
+  modalTitle?: string;
+  rateFieldLabel?: string;
+  rateHint?: string;
+  periodFieldLabel?: string;
+  periodHint?: string;
+  rateTooltip?: string;
+  periodTooltip?: string;
+  submitButtonLabel?: string;
+  idPrefix?: string;
 }) {
   const [open, setOpen] = React.useState(false);
   return (
     <>
       <Button variant="outline" size="sm" onClick={() => setOpen((o) => !o)}>
-        Update budget
+        {buttonLabel}
       </Button>
       {open && (
         <UpdateBudgetModal
@@ -202,6 +282,15 @@ function UpdateBudgetButton({
           onUpdateStart={onUpdateStart}
           onUpdateSuccess={onUpdateSuccess}
           onUpdateError={onUpdateError}
+          modalTitle={modalTitle}
+          rateFieldLabel={rateFieldLabel}
+          rateHint={rateHint}
+          periodFieldLabel={periodFieldLabel}
+          periodHint={periodHint}
+          rateTooltip={rateTooltip}
+          periodTooltip={periodTooltip}
+          submitButtonLabel={submitButtonLabel}
+          idPrefix={idPrefix}
         />
       )}
     </>

@@ -157,6 +157,7 @@ function BudgetCard({
             currentCosByCategory={budget.currentCosByCategory}
             referenceCosByCategory={budget.referenceCosByCategory}
             referencePeriodMonthsUsed={budget.referencePeriodMonthsUsed}
+            isChartLoading={updating}
           />
         )}
         <BudgetCategoryList

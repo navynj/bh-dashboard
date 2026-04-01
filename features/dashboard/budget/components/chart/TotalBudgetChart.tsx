@@ -12,6 +12,58 @@ import {
 } from '@/features/report/utils/category';
 import { ClassName } from '@/types/className';
 
+function donutSizeClassName(
+  size: 'sm' | 'md' | 'lg',
+  className: string | undefined,
+) {
+  return cn(
+    className,
+    size === 'sm'
+      ? 'max-h-[150px]'
+      : size === 'md'
+        ? 'max-h-[300px]'
+        : 'max-h-[400px]',
+  );
+}
+
+/** Full-ring muted donut for “no cost data yet” (not loading). */
+function BlankBudgetDonut({
+  size,
+  className,
+}: {
+  size: 'sm' | 'md' | 'lg';
+  className?: string;
+}) {
+  const chartData = [
+    {
+      category: 'Empty',
+      cos: 100,
+      amount: 0,
+      fill: 'var(--muted)',
+    },
+  ];
+  const chartConfig = {
+    Empty: {
+      label: ' ',
+      color: 'var(--muted)',
+    },
+  };
+  return (
+    <ChartPieDonutText
+      className={donutSizeClassName(size, className)}
+      strokeWidth={size === 'sm' ? 3 : size === 'md' ? 5 : 7}
+      innerRadius={size === 'sm' ? 40 : size === 'md' ? 70 : 100}
+      title="0%"
+      description="Cost of Sales"
+      chartData={chartData}
+      dataKey="cos"
+      nameKey="category"
+      chartConfig={chartConfig}
+      tooltipFormatter={() => null}
+    />
+  );
+}
+
 interface TotalBudgetChartProps extends ClassName {
   totalAmount: number; // Budget total; all chart percentages are share of budget
   currentCosByCategory?: { categoryId: string; name: string; amount: number }[];
@@ -24,6 +76,8 @@ interface TotalBudgetChartProps extends ClassName {
   /** When <= 0, no reference income: show current COS only (100% = current COS total). */
   referencePeriodMonthsUsed?: number | null;
   size?: 'sm' | 'md' | 'lg';
+  /** While chart data is refreshing (e.g. after budget update), show skeleton instead of empty donut. */
+  isChartLoading?: boolean;
 }
 
 const TotalBudgetChart = ({
@@ -33,6 +87,7 @@ const TotalBudgetChart = ({
   referenceCosByCategory,
   referencePeriodMonthsUsed,
   className,
+  isChartLoading = false,
 }: TotalBudgetChartProps) => {
   const hasValidBudget = Number.isFinite(totalAmount) && totalAmount > 0;
   const noReference =
@@ -48,18 +103,12 @@ const TotalBudgetChart = ({
     (cosOnlyMode && currentCosSum <= 0);
 
   if (hasNoChartData) {
-    return hasValidBudget ? (
-      <ChartSkeleton
-        className={cn(
-          size === 'sm'
-            ? 'max-h-[150px]'
-            : size === 'md'
-              ? 'max-h-[300px]'
-              : 'max-h-[400px]',
-          className,
-        )}
-      />
-    ) : null;
+    if (!hasValidBudget) return null;
+    return isChartLoading ? (
+      <ChartSkeleton className={donutSizeClassName(size, className)} />
+    ) : (
+      <BlankBudgetDonut size={size} className={className} />
+    );
   }
 
   // Current month QB only (no reference union) so slices match P&L / category list
@@ -92,17 +141,10 @@ const TotalBudgetChart = ({
   }
 
   if (topLevelCategories.length === 0) {
-    return (
-      <ChartSkeleton
-        className={cn(
-          size === 'sm'
-            ? 'max-h-[150px]'
-            : size === 'md'
-              ? 'max-h-[300px]'
-              : 'max-h-[400px]',
-          className,
-        )}
-      />
+    return isChartLoading ? (
+      <ChartSkeleton className={donutSizeClassName(size, className)} />
+    ) : (
+      <BlankBudgetDonut size={size} className={className} />
     );
   }
 
@@ -212,14 +254,7 @@ const TotalBudgetChart = ({
 
   return (
     <ChartPieDonutText
-      className={cn(
-        className,
-        size === 'sm'
-          ? 'max-h-[150px]'
-          : size === 'md'
-            ? 'max-h-[300px]'
-            : 'max-h-[400px]',
-      )}
+      className={donutSizeClassName(size, className)}
       strokeWidth={size === 'sm' ? 3 : size === 'md' ? 5 : 7}
       innerRadius={size === 'sm' ? 40 : size === 'md' ? 70 : 100}
       title={`${currentPercent}%`}

@@ -11,21 +11,21 @@ const DashboardLinkList = () => {
     pathname === '/dashboard/cost' || pathname.startsWith('/dashboard/cost/');
   return (
     <>
-      <Link
+      {/* <Link
         href="/dashboard/revenue"
         className={linkClass('/dashboard/revenue')}
       >
         Revenue
-      </Link>
+      </Link> */}
       <Link
         href="/dashboard/cost"
         className={costPathActive ? '' : 'text-gray-300'}
       >
         Cost
       </Link>
-      <Link href="/dashboard/labor" className={linkClass('/dashboard/labor')}>
+      {/* <Link href="/dashboard/labor" className={linkClass('/dashboard/labor')}>
         Labor
-      </Link>
+      </Link> */}
     </>
   );
 };

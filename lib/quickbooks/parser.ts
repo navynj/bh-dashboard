@@ -197,6 +197,95 @@ function sectionIncomeLineItems(
   return out;
 }
 
+/**
+ * Direct children under the Expense D section (top-level accounts under that header).
+ * Amounts are absolute values for display as positive labor cost.
+ */
+function sectionExpenseDTopLevelLineItems(
+  row: unknown,
+): { id: string; name: string; amount: number }[] {
+  const r = row as { Rows?: { Row?: PlRow[] } };
+  const rowList = Array.isArray(r?.Rows?.Row) ? r.Rows.Row : [];
+  const out: { id: string; name: string; amount: number }[] = [];
+  rowList.forEach((category) => {
+    const pl = category as PlRow;
+    const name = categoryOrLineName(pl);
+    if (!name) return;
+    const id = stableQbIdForNonCosTopLevelName(`expenseD:${name}`);
+    const raw = rowTotal(pl);
+    out.push({ id, name, amount: Math.abs(raw) });
+  });
+  return out;
+}
+
+function sectionExpenseDLineItemsRecurse(
+  row: PlRow,
+  path: number[],
+  parentId: string | null,
+  out: { id: string; name: string; amount: number }[],
+): void {
+  const name = categoryOrLineName(row);
+  if (!name) return;
+  if (!row?.Header && /^expense\s+d$/i.test(name.trim())) return;
+  const id =
+    parentId != null
+      ? `${parentId}-${path[path.length - 1] ?? 0}`
+      : stableQbIdForNonCosTopLevelName(`expenseD:${name}`);
+  out.push({ id, name, amount: Math.abs(rowTotal(row)) });
+  const subRows = row?.Rows?.Row;
+  if (!Array.isArray(subRows) || subRows.length === 0) return;
+  subRows.forEach((sub, idx) => {
+    sectionExpenseDLineItemsRecurse(sub, [...path, idx], id, out);
+  });
+}
+
+function sectionExpenseDLineItemsAllLevels(
+  row: unknown,
+): { id: string; name: string; amount: number }[] {
+  const r = row as { Rows?: { Row?: PlRow[] } };
+  const out: { id: string; name: string; amount: number }[] = [];
+  const rowList = Array.isArray(r?.Rows?.Row) ? r.Rows.Row : [];
+  rowList.forEach((category, catIdx) => {
+    sectionExpenseDLineItemsRecurse(category, [catIdx], null, out);
+  });
+  return out;
+}
+
+/** Line items under P&L "Expense D" (QuickBooks). Prefers direct children; falls back to all nested rows. */
+export function parseExpenseDLineItemsFromReportRows(
+  rows: { Row?: unknown[] } | undefined,
+): { categoryId: string; name: string; amount: number }[] {
+  const expenseDSection = findSection(
+    rows,
+    (t) =>
+      /^expense\s+d\b/i.test(t.trim()) && !/\(deleted/i.test(t.trim()),
+  );
+  if (!expenseDSection) return [];
+  const direct = sectionExpenseDTopLevelLineItems(expenseDSection);
+  const lines =
+    direct.length > 0
+      ? direct
+      : sectionExpenseDLineItemsAllLevels(expenseDSection);
+  return lines.map((c) => ({
+    categoryId: c.id,
+    name: c.name,
+    amount: c.amount,
+  }));
+}
+
+/** Expense D section total from the P&L group row (QuickBooks summary), not the sum of parsed lines. */
+export function parseExpenseDTotalFromReportRows(
+  rows: { Row?: unknown[] } | undefined,
+): number {
+  const expenseDSection = findSection(
+    rows,
+    (t) =>
+      /^expense\s+d\b/i.test(t.trim()) && !/\(deleted/i.test(t.trim()),
+  );
+  if (!expenseDSection) return 0;
+  return Math.abs(rowTotal(expenseDSection));
+}
+
 export function parseIncomeFromReportRows(
   rows: { Row?: unknown[] } | undefined,
 ): number {

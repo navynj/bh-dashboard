@@ -22,6 +22,8 @@ export {
   getIncomeWithCategoriesFromPnlReport,
   getCosFromPnlReport,
   getBudgetDataFromPnlReport,
+  parseExpenseDLineItemsFromReportRows,
+  parseExpenseDTotalFromReportRows,
 } from './parser';
 export type {
   ProfitAndLossParsed,

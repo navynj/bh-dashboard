@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ChartSkeleton } from '@/features/dashboard/budget/components/card/BudgetCardSkeleton';
 
 /**
- * Placeholder layout matching weekly revenue: donut, totals, category rows, daily bars.
+ * Placeholder layout matching weekly Clover revenue: donut, summary, daily bars.
  */
 export default function WeeklyRevenueSectionSkeleton() {
   return (
@@ -23,11 +23,6 @@ export default function WeeklyRevenueSectionSkeleton() {
             </div>
           </div>
         </div>
-      </div>
-      <div className="space-y-2">
-        {[1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} className="h-4 w-full" />
-        ))}
       </div>
       <div className="flex aspect-[16/7] min-h-[200px] w-full max-w-none items-end gap-1.5 rounded-lg border border-dashed border-muted/60 bg-muted/20 p-2 pt-6">
         {[42, 58, 48, 66, 52, 72, 45].map((pct, i) => (

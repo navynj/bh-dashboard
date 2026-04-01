@@ -27,10 +27,9 @@ export default function WeeklyRevenueCard({
         const q = new URLSearchParams({
           locationId,
           yearMonth,
-          period: 'weekly',
           weekOffset: String(weekOffset),
         });
-        const res = await fetch(`/api/dashboard/revenue?${q.toString()}`, {
+        const res = await fetch(`/api/dashboard/revenue/clover?${q.toString()}`, {
           cache: 'no-store',
         });
         const j = (await res.json()) as {
@@ -56,10 +55,11 @@ export default function WeeklyRevenueCard({
 
   return (
     <RevenuePeriodSection
-      title="Weekly"
+      title="Weekly Clover Sales"
       data={data}
       showWeekNavigation
       showBarChart
+      showCategoryList={false}
       defaultOpen
       yearMonth={yearMonth}
       initialWeekOffset={initialWeekOffset}

@@ -9,8 +9,10 @@ import {
 } from '@/features/dashboard/budget';
 import BudgetCard from '@/features/dashboard/budget/components/card/BudgetCard';
 import LaborCard from '@/features/dashboard/labor/components/card/LaborCard';
+import { getLaborDashboardData } from '@/features/dashboard/labor';
 import RevenueCard from '@/features/dashboard/revenue/components/card/RevenueCard';
 import {
+  getCloverWeeklyRevenueData,
   getRevenuePeriodData,
   resolveMonthlyTargetIncome,
   type PrecomputedRevenueBudget,
@@ -141,7 +143,7 @@ const LocationPage = async ({
     budget,
     monthlyTargetIncome,
   };
-  const [monthlyRevenue, weeklyRevenue] = await Promise.all([
+  const [monthlyRevenue, weeklyRevenue, laborData] = await Promise.all([
     getRevenuePeriodData(
       id,
       yearMonth,
@@ -150,19 +152,13 @@ const LocationPage = async ({
       budgetMeta,
       session?.user?.id ?? undefined,
     ),
-    getRevenuePeriodData(
+    getCloverWeeklyRevenueData(
       id,
       yearMonth,
-      context,
-      {
-        period: 'weekly',
-        weekOffset: initialWeekOffset,
-        includeDailyBars: true,
-        precomputed,
-      },
-      budgetMeta,
-      session?.user?.id ?? undefined,
+      initialWeekOffset,
+      monthlyTargetIncome,
     ),
+    getLaborDashboardData(id, yearMonth, context, budget),
   ]);
 
   return (
@@ -189,8 +185,12 @@ const LocationPage = async ({
           Please contact to the administrator.
         </div>
       )}
-      {/* Labor */}
-      <LaborCard />
+      <LaborCard
+        data={laborData}
+        locationId={id}
+        yearMonth={yearMonth}
+        isOfficeOrAdmin={isOfficeOrAdmin}
+      />
     </div>
   );
 };
