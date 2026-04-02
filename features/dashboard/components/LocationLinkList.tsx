@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/core/prisma';
 import LocationLinkItem from './LocationLinkItem';
-import { useSearchParams } from 'next/navigation';
 
 const LocationLinkList = async () => {
   const locations = await prisma.location.findMany({
