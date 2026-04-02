@@ -116,10 +116,7 @@ export default function WeeklyRevenueCard({
             ) : (
               <>
                 <div className="flex flex-col gap-4">
-                  <RevenueSummary
-                    totalRevenue={data.totalRevenue}
-                    targetRevenue={data.targetRevenue}
-                  />
+                  <RevenueSummary totalRevenue={data.totalRevenue} />
                   <RevenueChart categories={data.categories} />
                 </div>
                 {data.dailyBars &&

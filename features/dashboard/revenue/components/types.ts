@@ -17,7 +17,6 @@ export type RevenueDailyBarRow = {
 
 export type RevenuePeriodData = {
   totalRevenue: number;
-  targetRevenue: number;
   categories: RevenueCategoryItem[];
   /** Weekly only: ordered keys for `dailyBars[].segments` (top-level P&L Income account ids). */
   dailyBarSegmentKeys?: string[];

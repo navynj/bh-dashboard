@@ -1,15 +1,11 @@
 /**
- * Aggregate revenue dashboard data from QuickBooks P&L (Income total + Income by account)
- * and budget metadata (reference income, rate, period).
+ * Aggregate revenue dashboard data from QuickBooks P&L (Income total + Income by account).
  */
 
 import {
-  getBudgetByLocationAndMonth,
   referenceCurrentMonthRange,
+  type QuickBooksApiContext,
 } from '@/features/dashboard/budget';
-import type { QuickBooksApiContext } from '@/features/dashboard/budget';
-import { getReferenceIncomeAndCos } from '@/features/dashboard/budget/utils/reference-data';
-import { isQuickBooksConfigured } from '@/lib/quickbooks/config';
 import {
   getTopLevelCategoryIndex,
   getTopLevelCategoryRows,
@@ -20,76 +16,13 @@ import type { RevenuePeriodData } from '../components/types';
 import { eachDayOfInterval, format } from 'date-fns';
 import { weekRangeForMonth } from './week-range';
 
-export type PrecomputedRevenueBudget = {
-  budget: Awaited<ReturnType<typeof getBudgetByLocationAndMonth>>;
-  monthlyTargetIncome: number;
-};
-
 export type GetRevenuePeriodOptions = {
   period: 'weekly' | 'monthly';
   /** Weeks from the first Monday-aligned week of the selected month (weekly only). */
   weekOffset: number;
   /** When false, skip 7 per-day P&L calls (weekly only). */
   includeDailyBars?: boolean;
-  /**
-   * When loading monthly + weekly in parallel (e.g. location page), pass once to avoid duplicate
-   * `getBudgetByLocationAndMonth` and `resolveMonthlyTargetIncome` / reference-income QB calls.
-   */
-  precomputed?: PrecomputedRevenueBudget;
 };
-
-/** From an attached budget (e.g. after attachReferenceCosToBudgets) — not on DB-only budget rows. */
-export type RevenueBudgetMetadata = {
-  referenceIncomeTotal?: number;
-  referencePeriodMonthsUsed?: number | null;
-  budgetRateUsed?: number | null;
-};
-
-function daysInMonth(yearMonth: string): number {
-  const [y, m] = yearMonth.split('-').map(Number);
-  if (!y || !m) return 30;
-  return new Date(y, m, 0).getDate();
-}
-
-export async function resolveMonthlyTargetIncome(
-  locationId: string,
-  yearMonth: string,
-  budget: Awaited<ReturnType<typeof getBudgetByLocationAndMonth>>,
-  meta: RevenueBudgetMetadata | undefined,
-  userId: string | undefined,
-  context: QuickBooksApiContext,
-): Promise<number> {
-  const months =
-    meta?.referencePeriodMonthsUsed ?? budget?.referencePeriodMonthsUsed;
-  if (months == null || months <= 0) return 0;
-
-  let refIncome = meta?.referenceIncomeTotal;
-  if (refIncome == null || !Number.isFinite(refIncome)) {
-    refIncome = (budget as { referenceIncomeTotal?: number })
-      ?.referenceIncomeTotal;
-  }
-  if (
-    (refIncome == null || !Number.isFinite(refIncome)) &&
-    userId &&
-    isQuickBooksConfigured()
-  ) {
-    try {
-      const ref = await getReferenceIncomeAndCos(
-        userId,
-        locationId,
-        yearMonth,
-        months,
-        context,
-      );
-      const inc = ref.incomeTotal;
-      refIncome = inc != null && Number.isFinite(inc) ? inc : undefined;
-    } catch {
-      refIncome = undefined;
-    }
-  }
-  if (refIncome == null || !Number.isFinite(refIncome)) return 0;
-  return refIncome / months;
-}
 
 function incomeRowsToCategories(
   rows: { categoryId: string; name: string; amount: number }[],
@@ -234,31 +167,14 @@ async function fetchDailyBars(
 }
 
 /**
- * Load revenue period data: P&L Income (total + top-level income accounts), targets from budget reference.
+ * Load revenue period data: P&L Income (total + top-level income accounts).
  */
 export async function getRevenuePeriodData(
   locationId: string,
   yearMonth: string,
   context: QuickBooksApiContext,
   options: GetRevenuePeriodOptions,
-  budgetMeta?: RevenueBudgetMetadata,
-  userId?: string,
 ): Promise<RevenuePeriodData> {
-  const pre = options.precomputed;
-  const budget = pre
-    ? pre.budget
-    : await getBudgetByLocationAndMonth(locationId, yearMonth);
-  const mt = pre
-    ? pre.monthlyTargetIncome
-    : await resolveMonthlyTargetIncome(
-        locationId,
-        yearMonth,
-        budget,
-        budgetMeta,
-        userId,
-        context,
-      );
-
   if (options.period === 'monthly') {
     const { startDate, endDate } = referenceCurrentMonthRange(yearMonth);
     const { report } = await fetchPnlReport(
@@ -274,7 +190,6 @@ export async function getRevenuePeriodData(
     const rows = getTopLevelCategoryRows(incomeByCategory ?? []);
     return {
       totalRevenue: incomeTotal,
-      targetRevenue: mt,
       categories: incomeRowsToCategories(rows),
     };
   }
@@ -285,15 +200,11 @@ export async function getRevenuePeriodData(
     options.weekOffset,
   );
 
-  const dim = daysInMonth(yearMonth);
-  const weeklyTarget = mt > 0 && dim > 0 ? (mt * 7) / dim : 0;
-
   if (includeDaily) {
     const daily = await fetchDailyBars(locationId, weekStart, weekEnd, context);
     const categories = incomeRowsToCategories(daily.weekRowsTopLevel);
     return {
       totalRevenue: daily.weekIncomeTotal,
-      targetRevenue: weeklyTarget,
       categories,
       dailyBars: daily.rows,
       dailyBarSegmentKeys: daily.segmentKeys,
@@ -316,7 +227,6 @@ export async function getRevenuePeriodData(
 
   return {
     totalRevenue: incomeTotal,
-    targetRevenue: weeklyTarget,
     categories,
   };
 }

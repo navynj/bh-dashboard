@@ -45,10 +45,7 @@ const MonthlyRevenueCard = ({ data, className }: MonthlyRevenueCardProps) => {
         <CollapsibleContent className="overflow-hidden">
           <div className="mt-4 space-y-4">
             <div className="flex flex-col gap-4">
-              <RevenueSummary
-                totalRevenue={data.totalRevenue}
-                targetRevenue={data.targetRevenue}
-              />
+              <RevenueSummary totalRevenue={data.totalRevenue} />
               <RevenueChart categories={data.categories} />
             </div>
             <RevenueCategoryList categories={data.categories} />
