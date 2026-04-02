@@ -23,6 +23,7 @@ const DashboardLinkList = () => {
       >
         Cost
       </Link>
+
       {/* <Link href="/dashboard/labor" className={linkClass('/dashboard/labor')}>
         Labor
       </Link> */}
