@@ -34,7 +34,10 @@ function formatShopifyDate(iso: string): string {
 }
 
 /** Customer profile when linked; otherwise checkout email on the order. */
-function formatCustomerCell(o: ShopifyOrderNode): { primary: string; secondary: string | null } {
+function formatCustomerCell(o: ShopifyOrderNode): {
+  primary: string;
+  secondary: string | null;
+} {
   const c = o.customer;
   const fallbackEmail = o.email?.trim() || null;
   if (!c) {
