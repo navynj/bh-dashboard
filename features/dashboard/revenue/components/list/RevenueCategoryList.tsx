@@ -1,19 +1,22 @@
-import { formatCurrency } from '@/lib/utils';
-import { ChevronRight } from 'lucide-react';
+import { cn, formatCurrency } from '@/lib/utils';
 import { CHART_COLORS } from '@/constants/color';
 import type { RevenueCategoryItem } from '../types';
 
 type RevenueCategoryListProps = {
   categories: RevenueCategoryItem[];
+  className?: string;
 };
 
-function RevenueCategoryList({ categories }: RevenueCategoryListProps) {
+function RevenueCategoryList({
+  categories,
+  className,
+}: RevenueCategoryListProps) {
   if (categories.length === 0) return null;
 
   const total = categories.reduce((s, c) => s + c.amount, 0);
 
   return (
-    <ul className="border-t pt-3 text-sm">
+    <ul className={cn('border-t pt-3 text-sm', className)}>
       {categories.map((c, index) => {
         const pct =
           c.percent != null ? c.percent : total > 0 ? c.amount / total : 0;

@@ -1,9 +1,16 @@
 'use client';
 
-import { ChartContainer } from '@/components/ui/chart';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
 import { formatCurrency } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Scatter,
   ScatterChart,
@@ -16,20 +23,31 @@ import type { ScatterShapeProps } from 'recharts';
 import { createContext, useContext } from 'react';
 import type { CloverDayHourlyStat } from '../types';
 
-/** Business hours shown: 6am – 11pm local */
-const HOURS = Array.from({ length: 18 }, (_, i) => i + 6);
+/** Business window 06:00–22:00 inclusive (local). */
+const HOUR_START = 6;
+const HOUR_END = 22;
+const HOURS = Array.from(
+  { length: HOUR_END - HOUR_START + 1 },
+  (_, i) => i + HOUR_START,
+);
 const HOUR_COUNT = HOURS.length;
 
-const X_AXIS_TICKS = [6, 9, 12, 15, 18, 21];
+/** e.g. 6 → "06:00", 22 → "22:00" */
+function fmtHour24(h: number): string {
+  return `${String(h).padStart(2, '0')}:00`;
+}
 
-/** Max pixel height for the weekly-per-hour summary bars */
-const WEEKLY_BAR_MAX_PX = 100;
+/** Bucket label for tooltips: "09:00–10:00" … "22:00–23:00" */
+function fmtHourRangeLabel(h: number): string {
+  const start = fmtHour24(h);
+  const end = fmtHour24(h + 1);
+  return `${start}–${end}`;
+}
 
-function fmtHour(h: number): string {
-  if (h === 0) return '12a';
-  if (h < 12) return `${h}a`;
-  if (h === 12) return '12p';
-  return `${h - 12}p`;
+/** Upper bound for weekly bar chart Y domain (headroom above max bar). */
+function weeklyBarYMax(maxTotal: number): number {
+  if (!Number.isFinite(maxTotal) || maxTotal <= 0) return 1;
+  return maxTotal * 1.1;
 }
 
 /** Emerald-500 heat scale (Tailwind-aligned rgb) */
@@ -98,7 +116,7 @@ function HeatTooltipBody({
   return (
     <div className="rounded-lg border bg-background px-3 py-2 shadow-lg text-xs space-y-0.5">
       <p className="font-semibold text-foreground">
-        {format(parseISO(d.date), 'EEE, MMM d')} · {fmtHour(d.hour)}
+        {format(parseISO(d.date), 'EEE, MMM d')} · {fmtHourRangeLabel(d.hour)}
       </p>
       <p className="text-muted-foreground">
         Revenue:{' '}
@@ -115,6 +133,13 @@ function HeatTooltipBody({
     </div>
   );
 }
+
+const weeklyBarChartConfig = {
+  total: {
+    label: 'Revenue (week)',
+    color: 'rgb(16, 185, 129)',
+  },
+} satisfies ChartConfig;
 
 type HourlySalesHeatmapProps = {
   dayHourlySales: CloverDayHourlyStat[];
@@ -167,14 +192,23 @@ export default function HourlySalesHeatmap({
   const hourTotals = HOURS.map((h) =>
     weekDates.reduce((s, { date }) => s + (lookup.get(date)?.get(h)?.revenue ?? 0), 0),
   );
-  const maxHourTotal = Math.max(...hourTotals, 1);
+
+  const barData = HOURS.map((h, i) => ({
+    hour: h,
+    hourLabel: fmtHour24(h),
+    slotLabel: fmtHourRangeLabel(h),
+    total: hourTotals[i] ?? 0,
+  }));
+
+  const maxBarTotal = Math.max(0, ...barData.map((d) => d.total));
+  const yMax = weeklyBarYMax(maxBarTotal);
 
   return (
     <div className="space-y-1">
       <div className="flex items-baseline gap-2">
         <span className="text-sm font-semibold">Hourly Heatmap</span>
         <span className="text-xs text-muted-foreground">
-          Recharts · 6am–11pm (local) · green = higher revenue
+          Recharts · 06:00–22:00 (local) · green = higher revenue
         </span>
       </div>
 
@@ -184,9 +218,9 @@ export default function HourlySalesHeatmap({
         <ChartContainer
           config={{}}
           className="w-full"
-          style={{ height: `${rowCount * 32 + 56}px` }}
+          style={{ height: `${rowCount * 32 + 84}px` }}
         >
-          <ScatterChart margin={{ top: 8, right: 4, bottom: 8, left: 32 }}>
+          <ScatterChart margin={{ top: 8, right: 4, bottom: 36, left: 32 }}>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="hsl(var(--border))"
@@ -196,10 +230,13 @@ export default function HourlySalesHeatmap({
             <XAxis
               type="number"
               dataKey="hour"
-              domain={[5.5, 23.5]}
-              ticks={X_AXIS_TICKS}
-              tickFormatter={fmtHour}
-              tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+              domain={[HOUR_START - 0.5, HOUR_END + 0.5]}
+              ticks={HOURS}
+              tickFormatter={fmtHour24}
+              tick={{ fontSize: 8, fill: 'hsl(var(--muted-foreground))' }}
+              angle={-55}
+              textAnchor="end"
+              height={36}
               axisLine={false}
               tickLine={false}
             />
@@ -215,10 +252,7 @@ export default function HourlySalesHeatmap({
               reversed
               width={30}
             />
-            <Tooltip
-              content={HeatTooltipBody}
-              cursor={false}
-            />
+            <Tooltip content={HeatTooltipBody} cursor={false} />
             <Scatter
               data={cells}
               dataKey="hour"
@@ -230,41 +264,70 @@ export default function HourlySalesHeatmap({
         </ChartContainer>
       </HeatmapMetaContext.Provider>
 
-      <div className="space-y-1 pl-[36px] pr-1">
+      <div className="space-y-1 pl-[28px] pr-0.5 min-w-0">
         <p className="text-[10px] font-medium text-muted-foreground">
-          Weekly total per hour (same 6am–11pm window)
+          Weekly total per hour (06:00–22:00, local)
         </p>
-        <div
-          className="flex gap-px border-b border-border/60 pb-0.5"
-          style={{ minHeight: WEEKLY_BAR_MAX_PX + 4 }}
+        <ChartContainer
+          config={weeklyBarChartConfig}
+          className="h-[200px] w-full min-h-[200px] max-w-none aspect-auto"
         >
-          {hourTotals.map((total, i) => {
-            const pct = total / maxHourTotal;
-            const barH = Math.max(4, Math.round(pct * WEEKLY_BAR_MAX_PX));
-            return (
-              <div
-                key={HOURS[i]}
-                className="flex min-w-0 flex-1 flex-col justify-end"
-                title={`${fmtHour(HOURS[i])}: ${formatCurrency(total)}`}
-              >
-                <div
-                  className="w-full min-h-[4px] rounded-sm bg-emerald-500/80 dark:bg-emerald-400/70"
-                  style={{ height: `${barH}px` }}
+          <BarChart
+            accessibilityLayer
+            data={barData}
+            margin={{ top: 8, right: 4, bottom: 36, left: 4 }}
+          >
+            <XAxis
+              dataKey="hourLabel"
+              tickLine={false}
+              axisLine={false}
+              interval={0}
+              tick={{ fontSize: 8, fill: 'hsl(var(--muted-foreground))' }}
+              angle={-55}
+              textAnchor="end"
+              height={48}
+            />
+            <YAxis
+              domain={[0, yMax]}
+              tickCount={6}
+              tickLine={false}
+              axisLine={{ stroke: 'hsl(var(--border))' }}
+              width={44}
+              tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+              tickFormatter={(v) => {
+                const n = Number(v);
+                if (!Number.isFinite(n) || n === 0) return '$0';
+                if (n >= 1000) return `$${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k`;
+                return formatCurrency(n);
+              }}
+            />
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <ChartTooltip
+              cursor={{ fill: 'rgba(0, 0, 0, 0.06)' }}
+              content={
+                <ChartTooltipContent
+                  labelFormatter={(_label, payload) => {
+                    const first = payload?.[0] as
+                      | { payload?: { slotLabel?: string } }
+                      | undefined;
+                    return first?.payload?.slotLabel ?? '';
+                  }}
+                  formatter={(value) => (
+                    <span className="font-mono font-medium tabular-nums">
+                      {formatCurrency(Number(value))}
+                    </span>
+                  )}
                 />
-              </div>
-            );
-          })}
-        </div>
-        <div className="flex gap-px pr-0.5">
-          {HOURS.map((h) => (
-            <div
-              key={h}
-              className="min-w-0 flex-1 text-center text-[9px] leading-none text-muted-foreground"
-            >
-              {X_AXIS_TICKS.includes(h) ? fmtHour(h) : ''}
-            </div>
-          ))}
-        </div>
+              }
+            />
+            <Bar
+              dataKey="total"
+              fill="var(--color-total)"
+              radius={[4, 4, 0, 0]}
+              maxBarSize={28}
+            />
+          </BarChart>
+        </ChartContainer>
       </div>
     </div>
   );

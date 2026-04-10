@@ -135,9 +135,18 @@ const LocationPage = async ({
   ]);
 
   return (
-    <div className="grid gap-4 max-lg:grid-cols-1 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] lg:items-start">
-      <div className="flex min-w-0 flex-col gap-4">
+    <div className="grid gap-4 max-lg:grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-start">
+      <div className="flex min-w-0 flex-col gap-4 lg:min-h-0">
         <MonthlyRevenueCard data={monthlyRevenue} />
+        <WeeklyRevenueCard
+          key={yearMonth}
+          locationId={id}
+          yearMonth={yearMonth}
+          initialData={weeklyRevenue}
+          initialWeekOffset={initialWeekOffset}
+        />
+      </div>
+      <div className="flex min-w-0 flex-col gap-4">
         {budget ? (
           <BudgetCard
             budget={budget}
@@ -157,15 +166,6 @@ const LocationPage = async ({
           locationId={id}
           yearMonth={yearMonth}
           isOfficeOrAdmin={isOfficeOrAdmin}
-        />
-      </div>
-      <div className="min-w-0 lg:min-h-0">
-        <WeeklyRevenueCard
-          key={yearMonth}
-          locationId={id}
-          yearMonth={yearMonth}
-          initialData={weeklyRevenue}
-          initialWeekOffset={initialWeekOffset}
         />
       </div>
     </div>

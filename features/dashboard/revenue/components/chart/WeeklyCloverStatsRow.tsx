@@ -15,14 +15,37 @@ function StatCard({
   value,
   sub,
   subClassName,
+  className,
+  layout = 'stack',
 }: {
   label: string;
   value: string;
   sub?: React.ReactNode;
   subClassName?: string;
+  className?: string;
+  layout?: 'stack' | 'inline';
 }) {
+  if (layout === 'inline') {
+    return (
+      <div
+        className={cn(
+          'flex flex-row items-baseline justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2',
+          className,
+        )}
+      >
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="text-base font-bold tabular-nums">{value}</span>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-1 flex-col gap-0.5 rounded-lg border bg-muted/30 px-3 py-2.5">
+    <div
+      className={cn(
+        'flex flex-col gap-0.5 rounded-lg border bg-muted/30 px-3 py-2.5',
+        className,
+      )}
+    >
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="text-lg font-bold tabular-nums">{value}</span>
       {sub != null && (
@@ -72,23 +95,28 @@ export default function WeeklyCloverStatsRow({
     transactionCount != null || (avgTicketSize != null && avgTicketSize > 0);
 
   return (
-    <div className="flex flex-col gap-2">
-      <StatCard
-        label="Weekly Sales"
-        value={formatCurrency(totalRevenue)}
-        sub={wowNode}
-        subClassName={wowClass}
-      />
+    <div className="flex flex-row items-stretch gap-3">
+      <div className="min-w-0 flex-1">
+        <StatCard
+          className="h-full"
+          label="Weekly Sales"
+          value={formatCurrency(totalRevenue)}
+          sub={wowNode}
+          subClassName={wowClass}
+        />
+      </div>
       {hasSubStats && (
-        <div className="flex gap-2">
+        <div className="flex shrink-0 flex-col justify-center gap-2">
           {transactionCount != null && (
             <StatCard
+              layout="inline"
               label="Transactions"
               value={transactionCount.toLocaleString()}
             />
           )}
           {avgTicketSize != null && avgTicketSize > 0 && (
             <StatCard
+              layout="inline"
               label="Avg Ticket"
               value={formatCurrency(avgTicketSize)}
             />

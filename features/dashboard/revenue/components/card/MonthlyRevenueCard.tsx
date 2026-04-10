@@ -1,7 +1,8 @@
 'use client';
 
-import { cn } from '@/lib/utils';
-import RevenueChart from '../chart/RevenueChart';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn, formatCurrency } from '@/lib/utils';
+import RevenueShareBarChart from '../chart/RevenueShareBarChart';
 import RevenueSummary from '../chart/RevenueSummary';
 import RevenueCategoryList from '../list/RevenueCategoryList';
 import type { RevenuePeriodData } from '../types';
@@ -13,18 +14,19 @@ type MonthlyRevenueCardProps = {
 
 const MonthlyRevenueCard = ({ data, className }: MonthlyRevenueCardProps) => {
   return (
-    <div className={cn(className)}>
-      <div className="rounded-lg border bg-background/80 p-3 sm:p-4">
-        <h2 className="text-base font-bold">Monthly Revenue</h2>
-        <div className="mt-4 space-y-4">
-          <div className="flex flex-col gap-4">
-            <RevenueSummary totalRevenue={data.totalRevenue} />
-            <RevenueChart categories={data.categories} />
-          </div>
-          <RevenueCategoryList categories={data.categories} />
-        </div>
-      </div>
-    </div>
+    <Card className={cn('min-w-0 overflow-hidden gap-2', className)}>
+      <CardHeader>
+        <CardTitle className="text-base font-bold flex items-center justify-between">
+          <p>Monthly Revenue</p>
+          <p className="font-extrabold tabular-nums text-2xl">
+            {formatCurrency(data.totalRevenue)}
+          </p>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <RevenueShareBarChart categories={data.categories} />
+      </CardContent>
+    </Card>
   );
 };
 
