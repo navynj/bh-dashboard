@@ -56,9 +56,15 @@ const LocationPage = async ({
   // Location
   // ===============================
   const { id } = await params;
-  const location = await prisma.location.findUnique({
-    where: { id },
-  });
+  const location = id
+    ? await prisma.location.findUnique({
+        where: { id },
+      })
+    : await prisma.location.findFirst({
+        orderBy: {
+          createdAt: 'asc',
+        },
+      });
 
   if (!location) {
     return notFound();
