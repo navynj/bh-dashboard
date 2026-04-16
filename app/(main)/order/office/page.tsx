@@ -1,9 +1,11 @@
-import { auth } from '@/lib/auth';
+import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
 import { redirect } from 'next/navigation';
 import { OrderManagementView } from '@/features/order/office/views/OrderManagementView';
 import { buildInboxData } from '@/features/order/office/mappers/build-inbox-data';
 import { buildWeekPeriods } from '@/features/order/office/mappers/periods';
+import { isShopifyAdminEnvConfigured } from '@/lib/shopify/env';
+import { executeShopifySync } from '@/lib/shopify/sync/run-shopify-sync';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +14,18 @@ const UNLINKED_ORDERS_DAYS = 90;
 export default async function OfficeOrderInboxPage() {
   const session = await auth();
   if (!session?.user?.id) redirect('/auth');
+
+  if (getOfficeOrAdmin(session.user.role) && isShopifyAdminEnvConfigured()) {
+    const tSync = Date.now();
+    try {
+      const syncResult = await executeShopifySync('incremental');
+      console.log(
+        `[OfficeInbox] incremental sync ${Date.now() - tSync}ms — orders synced: ${syncResult.synced}/${syncResult.fetched}, customers: ${syncResult.customersSynced}`,
+      );
+    } catch (err) {
+      console.error('[OfficeInbox] incremental sync failed:', err);
+    }
+  }
 
   const t0 = Date.now();
 

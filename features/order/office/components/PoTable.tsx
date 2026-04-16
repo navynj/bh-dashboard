@@ -23,6 +23,8 @@ import {
 } from '../types';
 import { formatItemPrice } from '../mappers/map-purchase-order';
 import type { ShopifyOrderEditOperation } from '@/lib/api/schemas';
+import type { OfficeProductSearchVariantHit } from '@/lib/shopify/searchProducts';
+import { LineItemThumb } from './LineItemThumb';
 import {
   Dialog,
   DialogContent,
@@ -147,16 +149,7 @@ export function PoTable({ purchaseOrder }: Props) {
   const [addOpen, setAddOpen] = useState(false);
   const [addTab, setAddTab] = useState<'search' | 'custom'>('search');
   const [searchQ, setSearchQ] = useState('');
-  const [searchHits, setSearchHits] = useState<
-    {
-      productId: string;
-      productTitle: string;
-      variantId: string;
-      variantTitle: string | null;
-      sku: string | null;
-      price: string | null;
-    }[]
-  >([]);
+  const [searchHits, setSearchHits] = useState<OfficeProductSearchVariantHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
   const [customPrice, setCustomPrice] = useState('');
@@ -463,14 +456,7 @@ export function PoTable({ purchaseOrder }: Props) {
   const tableRows = orderEditMode ? visibleEditLines : items;
 
   const addSearchHitToPo = useCallback(
-    (hit: {
-      productId: string;
-      productTitle: string;
-      variantId: string;
-      variantTitle: string | null;
-      sku: string | null;
-      price: string | null;
-    }) => {
+    (hit: OfficeProductSearchVariantHit) => {
       const key = poLocalKey();
       const ord = linkedOrders.find((o) => o.id === newLineTargetOrderId);
       setEditLines((prev) => [
@@ -485,6 +471,7 @@ export function PoTable({ purchaseOrder }: Props) {
           sku: hit.sku,
           variantTitle: hit.variantTitle,
           productTitle: `${hit.productTitle}${hit.variantTitle ? ` — ${hit.variantTitle}` : ''}`,
+          imageUrl: hit.imageUrl ?? null,
           isCustom: false,
           itemPrice: hit.price ?? '0',
           shopifyOrderLineItemId: null,
@@ -813,16 +800,21 @@ export function PoTable({ purchaseOrder }: Props) {
 
                 {/* Product */}
                 <TableCell className="px-3 py-[7px]">
-                  <div className="text-[11px] leading-tight">
-                    {formatProductLabel(item)}
-                    {item.isCustom && (
-                      <span className="text-[9px] text-muted-foreground ml-1">
-                        (custom)
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[9px] font-mono text-muted-foreground">
-                    {item.sku ?? '—'}
+                  <div className="flex gap-2 min-w-0">
+                    <LineItemThumb imageUrl={item.imageUrl} label={formatProductLabel(item)} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] leading-tight">
+                        {formatProductLabel(item)}
+                        {item.isCustom && (
+                          <span className="text-[9px] text-muted-foreground ml-1">
+                            (custom)
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[9px] font-mono text-muted-foreground">
+                        {item.sku ?? '—'}
+                      </div>
+                    </div>
                   </div>
                 </TableCell>
 
@@ -991,14 +983,17 @@ export function PoTable({ purchaseOrder }: Props) {
                     <button
                       key={h.variantId}
                       type="button"
-                      className="w-full text-left px-3 py-2 text-[12px] hover:bg-muted/50"
+                      className="w-full text-left px-3 py-2 text-[12px] hover:bg-muted/50 flex gap-2 items-start"
                       onClick={() => addSearchHitToPo(h)}
                     >
-                      <div className="font-medium">{h.productTitle}</div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {(h.variantTitle ?? 'Default') +
-                          (h.sku ? ` · ${h.sku}` : '') +
-                          (h.price ? ` · $${h.price}` : '')}
+                      <LineItemThumb imageUrl={h.imageUrl} label={h.productTitle} />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">{h.productTitle}</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {(h.variantTitle ?? 'Default') +
+                            (h.sku ? ` · ${h.sku}` : '') +
+                            (h.price ? ` · $${h.price}` : '')}
+                        </div>
                       </div>
                     </button>
                   ))

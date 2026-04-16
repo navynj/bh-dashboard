@@ -82,6 +82,9 @@ const ORDERS_QUERY = `query Orders($first: Int!, $after: String, $query: String)
               quantity
               sku
               vendor
+              image {
+                url
+              }
               discountedUnitPriceSet {
                 shopMoney {
                   amount
@@ -92,6 +95,14 @@ const ORDERS_QUERY = `query Orders($first: Int!, $after: String, $query: String)
                 id
                 title
                 sku
+                image {
+                  url
+                }
+                product {
+                  featuredImage {
+                    url
+                  }
+                }
                 inventoryItem {
                   unitCost {
                     amount
@@ -176,6 +187,9 @@ const ORDER_NODE_QUERY = `query OrderNode($id: ID!) {
             quantity
             sku
             vendor
+            image {
+              url
+            }
             discountedUnitPriceSet {
               shopMoney {
                 amount
@@ -186,6 +200,14 @@ const ORDER_NODE_QUERY = `query OrderNode($id: ID!) {
               id
               title
               sku
+              image {
+                url
+              }
+              product {
+                featuredImage {
+                  url
+                }
+              }
               inventoryItem {
                 unitCost {
                   amount

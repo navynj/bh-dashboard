@@ -17,6 +17,7 @@ import { parse as parseDf, isValid } from 'date-fns';
 import { parse } from 'csv-parse/sync';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/core/prisma';
+import { shippingBillingPayloadFromShopifyExportRow } from '../lib/order/shopify-po-export-csv-address';
 
 type CsvRow = Record<string, string>;
 
@@ -78,6 +79,7 @@ function headerPayload(row: CsvRow) {
     legacyExternalId,
     poNumber: row['PO number']?.trim() ?? String(legacyExternalId),
     legacyCsvStatus: row['Status']?.trim() ?? null,
+    ...shippingBillingPayloadFromShopifyExportRow(row),
     currency: row['Currency']?.trim() ?? 'USD',
     isAuto: yn(row['Is Auto']),
     displayTaxColumn: yn(row['Display tax column']),

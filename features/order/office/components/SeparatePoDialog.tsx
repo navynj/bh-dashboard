@@ -23,6 +23,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { formatItemPrice } from '../mappers/map-purchase-order';
 import type { ShopifyOrderDraft } from '../types';
+import { LineItemThumb } from './LineItemThumb';
 
 type Props = {
   order: ShopifyOrderDraft;
@@ -168,8 +169,11 @@ export function SeparatePoDialog({
                     )}
                   >
                     <TableCell className="px-3 py-[7px]">
-                      <div className="text-[11px] leading-tight">
-                        {item.productTitle}
+                      <div className="flex gap-2 min-w-0">
+                        <LineItemThumb imageUrl={item.imageUrl} label={item.productTitle} />
+                        <div className="text-[11px] leading-tight min-w-0 flex-1">
+                          {item.productTitle}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="px-3 py-[7px] text-[9px] font-mono text-muted-foreground">

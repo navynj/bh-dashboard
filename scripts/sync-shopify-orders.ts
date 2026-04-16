@@ -19,6 +19,7 @@ import { prisma } from '../lib/core/prisma';
 import { fetchAllShopifyOrders } from '../lib/shopify/fetchOrders';
 import { getShopifyAdminEnv } from '../lib/shopify/env';
 import type { ShopifyOrderNode } from '../types/shopify';
+import { lineItemImageUrlFromShopifyNode } from '../lib/shopify/line-item-image-url';
 
 function parseOrderNumber(name: string | null): number {
   if (!name) return 0;
@@ -156,6 +157,7 @@ async function main() {
           sku: li.sku ?? li.variant?.sku ?? null,
           variantTitle: li.variant?.title ?? null,
           variantGid: li.variant?.id ?? null,
+          imageUrl: lineItemImageUrlFromShopifyNode(li),
           vendor: li.vendor ?? null,
           quantity: li.quantity,
           price: toDecimalOrNull(li.discountedUnitPriceSet?.shopMoney?.amount),

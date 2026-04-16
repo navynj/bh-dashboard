@@ -171,26 +171,22 @@ export function collectPoRefsInCustomer(
 }
 
 /**
- * Default selection when opening PO tabs: `buildExpectedDateBuckets` orders buckets
- * by expected date descending (newest first). Pick one PO from the first non-empty bucket
- * so we do not fall back to arbitrary `filteredGroups[0]` order (which can be an old date).
+ * Default selection when opening PO tabs: same order as the sidebar — newest expected-date
+ * bucket first, then customers A→Z within the bucket (`buildExpectedDateBuckets`), then the
+ * first PO in that customer’s right column (`collectPoRefsInCustomer` = PO number order per
+ * customer). Do **not** sort all POs in the bucket by number globally (that can skip the top
+ * customer and pick another row’s lower PO number).
  */
 export function pickFirstPoInNewestExpectedBucket(
   buckets: ExpectedDateSidebarBucket[],
   viewDataMap: Record<SupplierKey, ViewData>,
 ): { supplierKey: SupplierKey; poId: string } | null {
   for (const bucket of buckets) {
-    const refs: PoRefInBucket[] = [];
     for (const cg of bucket.customerGroups) {
-      for (const sup of cg.suppliers) {
-        for (const poId of sup.visiblePoIds) {
-          refs.push({ supplierKey: sup.key, poId });
-        }
-      }
+      const refs = collectPoRefsInCustomer(cg, viewDataMap);
+      if (refs.length === 0) continue;
+      return { supplierKey: refs[0].supplierKey, poId: refs[0].poId };
     }
-    if (refs.length === 0) continue;
-    const sorted = sortPoRefsByPoNumber(refs, viewDataMap);
-    return { supplierKey: sorted[0].supplierKey, poId: sorted[0].poId };
   }
   return null;
 }

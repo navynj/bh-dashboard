@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils/cn';
 import type { PrePoLineDraft, ShopifyOrderDraft } from '../types';
 import { formatItemPrice } from '../mappers/map-purchase-order';
 import { SeparatePoDialog } from './SeparatePoDialog';
+import { LineItemThumb } from './LineItemThumb';
 import type { ShopifyOrderEditOperation } from '@/lib/api/schemas';
 
 type SeparatePoPayload = {
@@ -79,6 +80,7 @@ type SearchHit = {
   variantTitle: string | null;
   sku: string | null;
   price: string | null;
+  imageUrl?: string | null;
 };
 
 export function OrderBlock({
@@ -324,6 +326,7 @@ export function OrderBlock({
         shopifyVariantGid: hit.variantId,
         shopifyProductGid: hit.productId,
         sku: hit.sku,
+        imageUrl: hit.imageUrl ?? null,
         productTitle: `${hit.productTitle}${hit.variantTitle ? ` — ${hit.variantTitle}` : ''}`,
         itemPrice: price,
         quantity: 1,
@@ -537,9 +540,14 @@ export function OrderBlock({
                 )}
               >
                 <TableCell className="px-3 py-[7px]">
-                  <div className="text-[11px] leading-tight">{row.productTitle}</div>
-                  <div className="text-[9px] text-muted-foreground font-mono">
-                    {row.sku ?? '—'}
+                  <div className="flex gap-2 min-w-0">
+                    <LineItemThumb imageUrl={row.imageUrl} label={row.productTitle} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] leading-tight">{row.productTitle}</div>
+                      <div className="text-[9px] text-muted-foreground font-mono">
+                        {row.sku ?? '—'}
+                      </div>
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell className="px-3 py-[7px] text-[9px] font-mono text-muted-foreground">
@@ -710,14 +718,17 @@ export function OrderBlock({
                     <button
                       key={h.variantId}
                       type="button"
-                      className="w-full text-left px-3 py-2 text-[12px] hover:bg-muted/50"
+                      className="w-full text-left px-3 py-2 text-[12px] hover:bg-muted/50 flex gap-2 items-start"
                       onClick={() => addSearchHit(h)}
                     >
-                      <div className="font-medium">{h.productTitle}</div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {(h.variantTitle ?? 'Default') +
-                          (h.sku ? ` · ${h.sku}` : '') +
-                          (h.price ? ` · $${h.price}` : '')}
+                      <LineItemThumb imageUrl={h.imageUrl} label={h.productTitle} />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">{h.productTitle}</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {(h.variantTitle ?? 'Default') +
+                            (h.sku ? ` · ${h.sku}` : '') +
+                            (h.price ? ` · $${h.price}` : '')}
+                        </div>
                       </div>
                     </button>
                   ))

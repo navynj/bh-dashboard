@@ -87,7 +87,8 @@ export function OrderManagementView({
     { id: 'without_po', label: 'Inbox', count: computedCounts.without_po },
     { id: 'po_created', label: 'PO created', count: computedCounts.po_created },
     { id: 'fulfilled', label: 'Fulfilled', count: computedCounts.fulfilled },
-    { id: 'completed', label: 'Completed', count: computedCounts.completed },
+    // Completed tab not in use for now
+    // { id: 'completed', label: 'Completed', count: computedCounts.completed },
   ];
 
   const router = useRouter();
@@ -684,13 +685,22 @@ export function OrderManagementView({
     matchesPeriod,
   ]);
 
-  /** On STATUS tab change: select first sidebar row; Inbox → drafts, other tabs → first PO when available. */
+  /**
+   * When the status tab changes or the current supplier row is no longer in the
+   * filtered sidebar, select the default row for this tab (Inbox → first supplier +
+   * drafts; PO tabs → first PO in the newest expected-date bucket, matching sidebar order).
+   * Keeps one effect so a follow-up “repair” effect does not clear `selectedPoBlockId`.
+   */
   useEffect(() => {
     const tabChanged =
       prevStatusTabRef.current != null &&
       prevStatusTabRef.current !== activeStatusTab;
     prevStatusTabRef.current = activeStatusTab;
-    if (!tabChanged) return;
+
+    const stillVisible = filteredGroups.some((g) =>
+      g.suppliers.some((s) => s.key === activeKey),
+    );
+    if (stillVisible && !tabChanged) return;
 
     if (activeStatusTab === 'without_po') {
       setSelectedPoBlockId('__drafts__');
@@ -732,7 +742,14 @@ export function OrderManagementView({
       const pick = skipNew[0] ?? raw.purchaseOrders[0];
       setSelectedPoBlockId(pick.id);
     }
-  }, [activeStatusTab, activePeriod, showArchived, filteredGroups, viewDataMap]);
+  }, [
+    activeKey,
+    activeStatusTab,
+    activePeriod,
+    showArchived,
+    filteredGroups,
+    viewDataMap,
+  ]);
 
   /** Delivery-expected bucket for the selected PO — scopes sidebar highlight to one date section. */
   const selectionExpectedDateKey = useMemo(() => {
@@ -835,21 +852,6 @@ export function OrderManagementView({
     useInboxCustomerLayout,
   ]);
 
-  useEffect(() => {
-    const stillVisible = filteredGroups.some((g) =>
-      g.suppliers.some((s) => s.key === activeKey),
-    );
-    if (stillVisible) return;
-    const first = filteredGroups[0]?.suppliers[0];
-    if (first) {
-      setActiveKey(first.key);
-      setSelectedPoBlockId(null);
-    } else {
-      setActiveKey('');
-      setSelectedPoBlockId(null);
-    }
-  }, [filteredGroups, activeKey]);
-
   const entry = states[activeKey] ?? null;
 
   const rawViewData = entry ? viewDataMap[activeKey] : undefined;
@@ -909,7 +911,11 @@ export function OrderManagementView({
             ],
           } satisfies PostViewData)
         : raw;
-    if (vd.type !== 'post' || vd.purchaseOrders.length <= 1) {
+    if (vd.type !== 'post') {
+      setSelectedPoBlockId(null);
+      return;
+    }
+    if (vd.purchaseOrders.length === 0) {
       setSelectedPoBlockId(null);
       return;
     }

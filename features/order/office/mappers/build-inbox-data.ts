@@ -139,6 +139,7 @@ function shopifyOrderToDraft(
       shopifyLineItemGid: li.shopifyGid,
       shopifyVariantGid: li.variantGid,
       sku: li.sku,
+      imageUrl: li.imageUrl ?? null,
       productTitle: li.title ?? '(untitled)',
       itemPrice: li.price ? String(li.price) : null,
       itemCost: li.unitCost ? String(li.unitCost) : null,

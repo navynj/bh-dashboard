@@ -6,6 +6,8 @@ export type PrePoLineDraft = {
   shopifyVariantGid?: string | null;
   /** When known (e.g. search), used for optional catalog price updates. */
   shopifyProductGid?: string | null;
+  /** Synced product/variant image URL from Shopify. */
+  imageUrl?: string | null;
   sku: string | null;
   productTitle: string;
   itemPrice: string | null;

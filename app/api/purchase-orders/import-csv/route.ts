@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import { parse as parseDf, isValid } from 'date-fns';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
+import { shippingBillingPayloadFromShopifyExportRow } from '@/lib/order/shopify-po-export-csv-address';
 
 type CsvRow = Record<string, string>;
 
@@ -206,7 +207,6 @@ export async function POST(request: NextRequest) {
         const headerData = {
           legacyExternalId: legacyId,
           poNumber,
-          legacyCsvStatus: emptyToNull(first['Status']),
           currency: first['Currency']?.trim() ?? 'USD',
           isAuto: yn(first['Is Auto']),
           displayTaxColumn: yn(first['Display tax column']),
@@ -226,6 +226,7 @@ export async function POST(request: NextRequest) {
           completedAt,
           status,
           supplierId,
+          ...shippingBillingPayloadFromShopifyExportRow(first),
         };
 
         const existing = await tx.purchaseOrder.findFirst({

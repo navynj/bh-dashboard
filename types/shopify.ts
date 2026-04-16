@@ -84,6 +84,8 @@ export interface ShopifyOrderLineNode {
   quantity: number;
   sku: string | null;
   vendor: string | null;
+  /** Line-item snapshot image when present. */
+  image?: { url: string | null } | null;
   discountedUnitPriceSet?: {
     shopMoney?: { amount: string; currencyCode?: string } | null;
   } | null;
@@ -91,6 +93,10 @@ export interface ShopifyOrderLineNode {
     id: string;
     title: string | null;
     sku: string | null;
+    image?: { url: string | null } | null;
+    product?: {
+      featuredImage?: { url: string | null } | null;
+    } | null;
     inventoryItem?: {
       unitCost?: { amount: string } | null;
     } | null;

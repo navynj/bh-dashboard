@@ -118,6 +118,7 @@ export function mapPrismaPoToBlock(
       sku: li.sku,
       variantTitle: li.variantTitle,
       productTitle: li.productTitle,
+      imageUrl: soli?.imageUrl ?? null,
       isCustom: li.isCustom,
       itemPrice: decimalToString(li.itemPrice),
       shopifyOrderLineItemId: soli?.id ?? null,

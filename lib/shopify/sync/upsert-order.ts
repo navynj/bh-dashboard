@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/core/prisma';
 import type { ShopifyMailingAddress, ShopifyOrderNode } from '@/types/shopify';
 import type { ShopifyAdminCustomerNode } from '@/lib/shopify/fetchCustomers';
+import { lineItemImageUrlFromShopifyNode } from '@/lib/shopify/line-item-image-url';
 
 function parseOrderNumber(name: string | null): number {
   if (!name) return 0;
@@ -207,6 +208,7 @@ export async function upsertShopifyOrder(
   const gids = lineItems.map((li) => li.id);
 
   for (const li of lineItems) {
+    const imageUrl = lineItemImageUrlFromShopifyNode(li);
     await prisma.shopifyOrderLineItem.upsert({
       where: { shopifyGid: li.id },
       create: {
@@ -216,6 +218,7 @@ export async function upsertShopifyOrder(
         sku: li.sku ?? li.variant?.sku ?? null,
         variantTitle: li.variant?.title ?? null,
         variantGid: li.variant?.id ?? null,
+        imageUrl,
         vendor: li.vendor ?? null,
         quantity: li.quantity,
         price: toDecimalOrNull(li.discountedUnitPriceSet?.shopMoney?.amount),
@@ -227,6 +230,7 @@ export async function upsertShopifyOrder(
         sku: li.sku ?? li.variant?.sku ?? null,
         variantTitle: li.variant?.title ?? null,
         variantGid: li.variant?.id ?? null,
+        imageUrl,
         vendor: li.vendor ?? null,
         quantity: li.quantity,
         price: toDecimalOrNull(li.discountedUnitPriceSet?.shopMoney?.amount),

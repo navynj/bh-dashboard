@@ -18,6 +18,8 @@ export type PoLineItemView = {
   sku: string | null;
   variantTitle: string | null;
   productTitle: string | null;
+  /** From linked Shopify order line when available. */
+  imageUrl?: string | null;
   isCustom: boolean;
   itemPrice: string | null;
   /** Local `ShopifyOrderLineItem.id` when line is tied to a synced Shopify line. */

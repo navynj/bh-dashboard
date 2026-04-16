@@ -624,6 +624,8 @@ model ShopifyOrderLineItem {
   sku                    String?
   variantTitle           String?                 @map("variant_title")
   variantGid             String?                 @map("variant_gid")
+  /// Product/variant image URL from Shopify (line, variant, or product featured image).
+  imageUrl               String?                 @map("image_url") @db.Text
   /// Shopify product vendor name at order creation time (frozen snapshot).
   vendor                 String?
   quantity               Int                     @default(0)
@@ -678,8 +680,8 @@ model Supplier {
   createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz
 
-  orderChannelPayload Json?   @map("order_channel_payload")
   orderChannelType    String? @map("order_channel_type")
+  orderChannelPayload Json?   @map("order_channel_payload")
 
   @@index([groupId])
   @@map("suppliers")

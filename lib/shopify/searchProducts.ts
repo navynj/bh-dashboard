@@ -13,6 +13,9 @@ const PRODUCTS_SEARCH = `query OfficeProductsSearch($first: Int!, $query: String
         id
         title
         handle
+        featuredImage {
+          url
+        }
         variants(first: 50) {
           edges {
             node {
@@ -20,6 +23,9 @@ const PRODUCTS_SEARCH = `query OfficeProductsSearch($first: Int!, $query: String
               title
               sku
               price
+              image {
+                url
+              }
             }
           }
         }
@@ -35,6 +41,8 @@ export type OfficeProductSearchVariantHit = {
   variantTitle: string | null;
   sku: string | null;
   price: string | null;
+  /** Variant image, else product featured image. */
+  imageUrl: string | null;
 };
 
 export type OfficeProductSearchData = {
@@ -44,6 +52,7 @@ export type OfficeProductSearchData = {
         id: string;
         title: string;
         handle: string;
+        featuredImage?: { url: string | null } | null;
         variants: {
           edges: Array<{
             node: {
@@ -51,6 +60,7 @@ export type OfficeProductSearchData = {
               title: string | null;
               sku: string | null;
               price: string | null;
+              image?: { url: string | null } | null;
             };
           }>;
         };
@@ -88,6 +98,10 @@ export async function searchProductsForOffice(
     const p = edge.node;
     for (const ve of p.variants.edges) {
       const v = ve.node;
+      const imageUrl =
+        v.image?.url?.trim() ||
+        p.featuredImage?.url?.trim() ||
+        null;
       hits.push({
         productId: p.id,
         productTitle: p.title,
@@ -95,6 +109,7 @@ export async function searchProductsForOffice(
         variantTitle: v.title,
         sku: v.sku,
         price: v.price ?? null,
+        imageUrl,
       });
     }
   }
