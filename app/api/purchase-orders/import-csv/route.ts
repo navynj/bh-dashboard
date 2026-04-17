@@ -1,109 +1,26 @@
 /**
  * POST /api/purchase-orders/import-csv
  *
- * Accepts a multipart form with a `file` field (CSV in the Shopify Auto Purchase
- * Orders export format).  Upserts POs by `legacyExternalId` — new POs are created,
- * existing ones have their line items replaced.
+ * Accepts multipart `file` (Shopify Auto Purchase Orders CSV). Upserts by `legacyExternalId`.
+ *
+ * Query: `stream=1` — NDJSON progress + final summary (client disconnect / AbortSignal stops
+ * between PO transactions; already committed POs remain).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { parse } from 'csv-parse/sync';
-import { Prisma } from '@prisma/client';
-import { parse as parseDf, isValid } from 'date-fns';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
-import { prisma } from '@/lib/core/prisma';
-import { shippingBillingPayloadFromShopifyExportRow } from '@/lib/order/shopify-po-export-csv-address';
-
-type CsvRow = Record<string, string>;
-
-function emptyToNull(s: string | undefined): string | null {
-  const t = s?.trim();
-  return t ? t : null;
-}
-
-function yn(s: string | undefined): boolean {
-  return s?.trim().toLowerCase() === 'yes';
-}
-
-function parseMoney(raw: string | undefined): Prisma.Decimal | null {
-  if (!raw?.trim()) return null;
-  const cleaned = raw.replace(/[$,\s]/g, '').replace(/^[−-]/, '-');
-  const n = Number.parseFloat(cleaned);
-  if (Number.isNaN(n)) return null;
-  return new Prisma.Decimal(n);
-}
-
-function parseIntOrNull(raw: string | undefined): number | null {
-  if (!raw?.trim()) return null;
-  const n = Number.parseInt(raw.replace(/,/g, ''), 10);
-  return Number.isNaN(n) ? null : n;
-}
-
-function parseExportDate(s: string | undefined): Date | null {
-  const t = s?.trim();
-  if (!t) return null;
-  for (const fmt of ['MMMM dd, yyyy', 'MMMM d, yyyy']) {
-    const d = parseDf(t, fmt, new Date());
-    if (isValid(d)) return d;
-  }
-  return null;
-}
-
-function parseExportDateTime(s: string | undefined): Date | null {
-  const t = s?.trim();
-  if (!t) return null;
-  for (const fmt of [
-    'MMMM dd, yyyy HH:mm',
-    'MMMM d, yyyy HH:mm',
-    'MMMM dd, yyyy h:mm a',
-    'MMMM d, yyyy h:mm a',
-  ]) {
-    const d = parseDf(t, fmt, new Date());
-    if (isValid(d)) return d;
-  }
-  return null;
-}
-
-function collectShopifyOrderNames(group: CsvRow[]): string[] {
-  const names = new Set<string>();
-  for (const row of group) {
-    const raw = row['Shopify Order #']?.trim();
-    if (!raw) continue;
-    for (const part of raw.split(',')) {
-      const name = part.trim();
-      if (name && name !== '(unknown)') names.add(name);
-    }
-  }
-  return [...names];
-}
-
-function linePayload(row: CsvRow, sequence: number) {
-  return {
-    legacyLineExternalId: parseIntOrNull(row['Product ID']),
-    sequence,
-    quantity: parseIntOrNull(row['Product Quantity']) ?? 0,
-    quantityReceived: parseIntOrNull(row['Product Received']) ?? 0,
-    supplierRef: emptyToNull(row['Product Supplier ref']),
-    taxPercent: parseMoney(row['Product Tax percent']),
-    sku: emptyToNull(row['Product SKU']),
-    variantTitle: emptyToNull(row['Product Variant title']),
-    productTitle: emptyToNull(row['Product title']),
-    shopifyInventoryItemGid: emptyToNull(row['Product Shopify InventoryItemID']),
-    shopifyVariantGid: emptyToNull(row['Product Shopify VariantID']),
-    shopifyProductGid: emptyToNull(row['Product Shopify ProductID']),
-    isCustom: yn(row['Product Is custom']),
-    itemPrice: parseMoney(row['Product Item price']),
-    lineSubtotalPrice: parseMoney(row['Product Subtotal price']),
-    lineTotalTaxPrice: parseMoney(row['Product Total tax price']),
-    productProperties: emptyToNull(row['Product Properties']),
-  };
-}
+import {
+  parsePurchaseOrdersCsvText,
+  runPurchaseOrdersCsvImport,
+} from '@/lib/order/purchase-orders-csv-import-core';
 
 export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id || !getOfficeOrAdmin(session.user.role)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
+
+  const wantsStream = request.nextUrl.searchParams.get('stream') === '1';
 
   try {
     const formData = await request.formData();
@@ -113,176 +30,48 @@ export async function POST(request: NextRequest) {
     }
 
     const buf = await file.text();
-    const rows = parse(buf, {
-      columns: true,
-      skip_empty_lines: true,
-      relax_quotes: true,
-      relax_column_count: true,
-      bom: true,
-    }) as CsvRow[];
+    const rows = parsePurchaseOrdersCsvText(buf);
 
-    const byPo = new Map<number, CsvRow[]>();
-    for (const row of rows) {
-      const id = parseIntOrNull(row['ID']);
-      if (id === null) continue;
-      const list = byPo.get(id) ?? [];
-      list.push(row);
-      byPo.set(id, list);
-    }
-
-    // Deduplicate PO numbers
-    const poNumberCounts = new Map<string, number>();
-    const poIdToNumber = new Map<number, string>();
-    for (const [legacyId, group] of byPo) {
-      const rawPo = group[0]['PO number']?.trim() ?? String(legacyId);
-      const count = (poNumberCounts.get(rawPo) ?? 0) + 1;
-      poNumberCounts.set(rawPo, count);
-      poIdToNumber.set(legacyId, count > 1 ? `${rawPo} (${count})` : rawPo);
-    }
-
-    // ShopifyOrder lookup
-    const allShopifyOrders = await prisma.shopifyOrder.findMany({
-      select: { id: true, name: true, displayFulfillmentStatus: true },
-    });
-    type SoRef = { id: string; fulfillStatus: string | null };
-    const soByName = new Map<string, SoRef>();
-    for (const so of allShopifyOrders) {
-      const ref: SoRef = { id: so.id, fulfillStatus: so.displayFulfillmentStatus };
-      soByName.set(so.name, ref);
-      const stripped = so.name.replace(/^#/, '');
-      if (!soByName.has(stripped)) soByName.set(stripped, ref);
-    }
-
-    // Supplier cache
-    const supplierCache = new Map<string, string>();
-    async function resolveSupplier(
-      tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
-      company: string | null,
-      contactName: string | null,
-      contactEmail: string | null,
-    ): Promise<string> {
-      const name = company?.trim() || '(unknown supplier)';
-      const key = name.toLowerCase();
-      const cached = supplierCache.get(key);
-      if (cached) return cached;
-      const supplier = await tx.supplier.upsert({
-        where: { shopifyVendorName: name },
-        create: { company: name, shopifyVendorName: name, contactName, contactEmail },
-        update: {},
+    if (wantsStream) {
+      const encoder = new TextEncoder();
+      const body = new ReadableStream({
+        async start(controller) {
+          const send = (obj: unknown) => {
+            controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
+          };
+          try {
+            const result = await runPurchaseOrdersCsvImport({
+              rows,
+              signal: request.signal,
+              onProgress: async (p) => {
+                send({ event: 'progress', ...p });
+              },
+            });
+            send({ event: 'done', ...result });
+          } catch (err) {
+            send({ event: 'error', message: String(err) });
+          } finally {
+            controller.close();
+          }
+        },
       });
-      supplierCache.set(key, supplier.id);
-      return supplier.id;
-    }
 
-    let created = 0;
-    let updated = 0;
-
-    for (const [legacyId, group] of byPo) {
-      const first = group[0];
-      const poNumber = poIdToNumber.get(legacyId) ?? first['PO number']?.trim() ?? String(legacyId);
-      const supplierCompany = emptyToNull(first['Supplier company']);
-      const supplierContactName = emptyToNull(first['Supplier contact name']);
-      const supplierContactEmail = emptyToNull(first['Supplier contact email'] ?? first['Supplier contact email']);
-
-      await prisma.$transaction(async (tx) => {
-        const supplierId = await resolveSupplier(tx, supplierCompany, supplierContactName, supplierContactEmail);
-
-        const orderNames = collectShopifyOrderNames(group);
-        const matchedRefs: SoRef[] = [];
-        for (const name of orderNames) {
-          const ref = soByName.get(name);
-          if (ref) matchedRefs.push(ref);
-        }
-
-        const fulfilledCount = matchedRefs.filter((r) => r.fulfillStatus === 'FULFILLED').length;
-        const total = matchedRefs.length;
-        const allFulfilled = total > 0 && fulfilledCount === total;
-        const completedAt = parseExportDateTime(first['Completed at']);
-        let status: string;
-        if (completedAt && allFulfilled) status = 'completed';
-        else if (allFulfilled) status = 'fulfilled';
-        else if (fulfilledCount > 0) status = 'partially_fulfilled';
-        else status = 'unfulfilled';
-
-        const headerData = {
-          legacyExternalId: legacyId,
-          poNumber,
-          currency: first['Currency']?.trim() ?? 'USD',
-          isAuto: yn(first['Is Auto']),
-          displayTaxColumn: yn(first['Display tax column']),
-          comment: emptyToNull(first['Comment']),
-          authorizedBy: emptyToNull(first['Authorized by']),
-          unitsOrdered: parseIntOrNull(first['Units Ordered']),
-          dateCreated: parseExportDate(first['Date created']),
-          expectedDate: parseExportDate(first['Expected date']),
-          subtotalPrice: parseMoney(first['Subtotal price']),
-          discount: parseMoney(first['Discount']),
-          discountReason: emptyToNull(first['Discount reason']),
-          shippingHandlingPrice: parseMoney(first['Shipping and handling price']),
-          totalTaxPrice: parseMoney(first['Total tax price']),
-          totalPrice: parseMoney(first['Total price']),
-          sourceCreatedAt: parseExportDateTime(first['Created at']),
-          sourceUpdatedAt: parseExportDateTime(first['Updated at']),
-          completedAt,
-          status,
-          supplierId,
-          ...shippingBillingPayloadFromShopifyExportRow(first),
-        };
-
-        const existing = await tx.purchaseOrder.findFirst({
-          where: { legacyExternalId: legacyId },
-          select: { id: true },
-        });
-
-        let poId: string;
-        if (existing) {
-          await tx.purchaseOrder.update({
-            where: { id: existing.id },
-            data: {
-              ...headerData,
-              shopifyOrders: matchedRefs.length > 0
-                ? { set: matchedRefs.map((r) => ({ id: r.id })) }
-                : { set: [] },
-            },
-          });
-          poId = existing.id;
-          await tx.purchaseOrderLineItem.deleteMany({ where: { purchaseOrderId: poId } });
-          updated++;
-        } else {
-          // Check if poNumber is already taken
-          const poNumberTaken = await tx.purchaseOrder.findUnique({
-            where: { poNumber },
-            select: { id: true },
-          });
-          const finalPoNumber = poNumberTaken ? `${poNumber}-${legacyId}` : poNumber;
-
-          const po = await tx.purchaseOrder.create({
-            data: {
-              ...headerData,
-              poNumber: finalPoNumber,
-              shopifyOrders: matchedRefs.length > 0
-                ? { connect: matchedRefs.map((r) => ({ id: r.id })) }
-                : undefined,
-            },
-          });
-          poId = po.id;
-          created++;
-        }
-
-        const lines = group.map((r, seq) => ({
-          ...linePayload(r, seq),
-          purchaseOrderId: poId,
-        }));
-        await tx.purchaseOrderLineItem.createMany({ data: lines });
+      return new Response(body, {
+        headers: {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Cache-Control': 'no-store',
+        },
       });
     }
 
+    const result = await runPurchaseOrdersCsvImport({ rows });
     return NextResponse.json({
       ok: true,
-      totalCsvRows: rows.length,
-      purchaseOrders: byPo.size,
-      created,
-      updated,
+      totalCsvRows: result.totalCsvRows,
+      purchaseOrders: result.purchaseOrders,
+      created: result.created,
+      updated: result.updated,
+      aborted: result.aborted,
     });
   } catch (err) {
     console.error('[import-csv] Error:', err);

@@ -1,3 +1,8 @@
+import type {
+  SupplierEmailContact,
+  SupplierOrderChannelType,
+} from '@/lib/order/supplier-order-channel';
+
 export type SupplierKey = string;
 
 export type SupplierEntry = {
@@ -7,8 +12,16 @@ export type SupplierEntry = {
   dateCreated: string | null;
   expectedDate: string | null;
   supplierCompany: string;
+  /** One-line subtitle under supplier name in meta (email, link host, or “Direct”). */
+  supplierOrderChannelSummary: string;
   supplierContactEmail: string;
   supplierEmailMissing: boolean;
+  supplierOrderChannelType: SupplierOrderChannelType;
+  /** Supplier PO / order email recipients (each row has its own display name). */
+  supplierPoContacts: SupplierEmailContact[];
+  supplierOrderUrl: string | null;
+  supplierOrderInstruction: string;
+  supplierInvoiceConfirmSenderEmail: string | null;
   fulfillDoneCount: number;
   fulfillPendingCount: number;
   fulfillTotalCount: number;
@@ -34,7 +47,7 @@ export type SupplierEntry = {
   completedAt: string | null;
   /** Whether all POs (or all unlinked orders) for this entry are archived. */
   isArchived: boolean;
-  /** IDs needed to archive/unarchive: PO ids for PO entries, Shopify order ids for without-PO. */
+  /** IDs for `/api/archive`: PO ids when the row has POs; always includes unlinked Shopify order ids for that row. */
   archivePurchaseOrderIds: string[];
   archiveShopifyOrderIds: string[];
 };

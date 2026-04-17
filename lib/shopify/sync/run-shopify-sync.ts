@@ -104,6 +104,7 @@ export async function executeShopifySync(
 
   const creds = getShopifyAdminEnv();
 
+  /** Lower bound for Shopify `updated_at:` search when mode is incremental (see below). */
   let since: Date | null = null;
   let query: string | undefined;
 
@@ -111,8 +112,25 @@ export async function executeShopifySync(
     const latestSync = await prisma.shopifyOrder.aggregate({
       _max: { syncedAt: true },
     });
-    since = latestSync._max.syncedAt;
-    query = since ? `updated_at:>'${since.toISOString()}'` : undefined;
+    const maxSyncedAt = latestSync._max.syncedAt;
+    if (maxSyncedAt) {
+      /**
+       * `syncedAt` is when **we** last wrote the row, not Shopify’s `updated_at`. Using
+       * `_max(syncedAt)` alone as the search floor skips orders whose Shopify `updated_at`
+       * never moved past that wall (e.g. never imported, or old orders). Pull an overlap
+       * window so incremental runs still pick up stragglers; upserts dedupe.
+       */
+      const overlapMs = 48 * 60 * 60 * 1000;
+      since = new Date(maxSyncedAt.getTime() - overlapMs);
+      query = `updated_at:>'${since.toISOString()}'`;
+      console.log(
+        `[sync/shopify] incremental order search: ${query} (max local syncedAt=${maxSyncedAt.toISOString()}, overlap=48h)`,
+      );
+    } else {
+      since = null;
+      query = undefined;
+      console.log('[sync/shopify] incremental: no local orders yet — fetching default Shopify order window');
+    }
   }
 
   const maxPages = mode === 'full' ? 200 : 20;
@@ -120,7 +138,8 @@ export async function executeShopifySync(
   throwIfAborted(signal);
 
   const { orders, pagesFetched } = await fetchAllShopifyOrders(creds, {
-    pageSize: 250,
+    /** Keep pages small: bulk `orders` query cost scales with orders × line fields (Shopify max ~1000/query). */
+    pageSize: mode === 'full' ? 40 : 35,
     maxPages,
     query,
     signal,

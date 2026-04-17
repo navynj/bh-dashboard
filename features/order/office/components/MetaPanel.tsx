@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Pencil, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,11 +20,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { SupplierKey, SupplierEntry, PoPanelMeta, LinkedShopifyOrder, PoAddress } from '../types';
+import type {
+  SupplierKey,
+  SupplierEntry,
+  PoPanelMeta,
+  LinkedShopifyOrder,
+  PoAddress,
+  OfficePurchaseOrderBlock,
+} from '../types';
+import { buildPoPdfInput, openPoPdfPrint } from '../utils/purchase-order-pdf';
 import {
   MetaPoNumberInput,
   type MetaPoNumberFieldError,
 } from './MetaPoNumberInput';
+import { postSendPurchaseOrderEmail } from '../utils/post-send-po-email';
 
 const CA_PROVINCES = [
   { code: 'AB', name: 'Alberta' },
@@ -70,6 +80,8 @@ type Props = {
   onCreatePo: (key: SupplierKey, payload?: CreatePoPayload) => Promise<EditPoResult>;
   onEditPo: (poId: string, fields: EditPoFields) => Promise<EditPoResult>;
   onDeletePo: (poId: string) => void;
+  /** After successful PO outbound email — parent patches view data optimistically. */
+  onPoEmailSent?: (poId: string) => void;
   poPanelMeta?: PoPanelMeta;
   selectedPoBlockId?: string | null;
   onArchive?: (key: SupplierKey) => void;
@@ -81,6 +93,10 @@ type Props = {
   customerDefaultShipping?: PoAddress | null;
   customerDefaultBilling?: PoAddress | null;
   customerBillingSameAsShipping?: boolean;
+  /** Block selected in the post-PO view — used for Print PO. */
+  poPrintBlock?: OfficePurchaseOrderBlock | null;
+  /** Customer company headline for the PDF (billing = shipping in most cases). */
+  poPrintHeadline?: string | null;
 };
 
 export function MetaPanel({
@@ -89,6 +105,7 @@ export function MetaPanel({
   onCreatePo,
   onEditPo,
   onDeletePo,
+  onPoEmailSent,
   poPanelMeta,
   selectedPoBlockId,
   onArchive,
@@ -100,6 +117,8 @@ export function MetaPanel({
   customerDefaultShipping,
   customerDefaultBilling,
   customerBillingSameAsShipping,
+  poPrintBlock,
+  poPrintHeadline,
 }: Props) {
   return (
     <div className="w-[192px] flex-shrink-0 border-l bg-background flex flex-col overflow-y-auto">
@@ -125,9 +144,14 @@ export function MetaPanel({
           selectedPoBlockId={selectedPoBlockId}
           onEditPo={onEditPo}
           onDeletePo={onDeletePo}
+          onPoEmailSent={onPoEmailSent}
           activeKey={activeKey}
           onArchive={onArchive}
           onUnarchive={onUnarchive}
+          poPrintBlock={poPrintBlock}
+          poPrintHeadline={poPrintHeadline}
+          customerDefaultBilling={customerDefaultBilling}
+          customerDefaultShipping={customerDefaultShipping}
         />
       )}
     </div>
@@ -359,8 +383,13 @@ function WithoutPoMeta({
       <Section>
         <MetaLabel>Supplier</MetaLabel>
         <MetaValue>{entry.supplierCompany}</MetaValue>
-        <MetaSub red={entry.supplierEmailMissing}>
-          {entry.supplierContactEmail}
+        <MetaSub
+          red={
+            entry.supplierOrderChannelType === 'email' &&
+            entry.supplierEmailMissing
+          }
+        >
+          {entry.supplierOrderChannelSummary}
         </MetaSub>
       </Section>
 
@@ -494,20 +523,33 @@ function WithPoMeta({
   selectedPoBlockId,
   onEditPo,
   onDeletePo,
+  onPoEmailSent,
   activeKey,
   onArchive,
   onUnarchive,
+  poPrintBlock,
+  poPrintHeadline,
+  customerDefaultBilling,
+  customerDefaultShipping,
 }: {
   entry: SupplierEntry;
   poPanelMeta?: PoPanelMeta;
   selectedPoBlockId?: string | null;
   onEditPo: (poId: string, fields: EditPoFields) => Promise<EditPoResult>;
   onDeletePo: (poId: string) => void;
+  onPoEmailSent?: (poId: string) => void;
   activeKey: SupplierKey;
   onArchive?: (key: SupplierKey) => void;
   onUnarchive?: (key: SupplierKey) => void;
+  poPrintBlock?: OfficePurchaseOrderBlock | null;
+  poPrintHeadline?: string | null;
+  customerDefaultBilling?: PoAddress | null;
+  customerDefaultShipping?: PoAddress | null;
 }) {
   const router = useRouter();
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailSentLocal, setEmailSentLocal] = useState(false);
+  const [emailSendError, setEmailSendError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -517,6 +559,64 @@ function WithPoMeta({
   const [poNumberError, setPoNumberError] = useState<'duplicate' | 'required' | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setEmailSentLocal(!!poPanelMeta?.emailSentAt);
+    setEmailSendError(null);
+  }, [selectedPoBlockId, poPanelMeta?.emailSentAt]);
+
+  const performSendEmail = async () => {
+    if (!selectedPoBlockId || selectedPoBlockId === '__drafts__') return;
+    setSendingEmail(true);
+    setEmailSendError(null);
+    try {
+      const result = await postSendPurchaseOrderEmail(selectedPoBlockId);
+      if (!result.ok) {
+        setEmailSendError(result.error);
+        toast.error(result.error);
+        return;
+      }
+      onPoEmailSent?.(selectedPoBlockId);
+      setEmailSentLocal(true);
+      router.refresh();
+      if (result.recipientCount > 0) {
+        toast.success(
+          `Email sent to ${result.recipientCount} contact${result.recipientCount === 1 ? '' : 's'}.`,
+        );
+      } else {
+        toast.success('PO email sent.');
+      }
+    } catch {
+      const msg = 'Network error — could not send email';
+      setEmailSendError(msg);
+      toast.error(msg);
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const handleSendEmailClick = () => {
+    if (!selectedPoBlockId || selectedPoBlockId === '__drafts__') return;
+    const isResend = emailSentLocal || !!poPanelMeta?.emailSentAt;
+    if (isResend) {
+      toast('Resend PO email to all contacts?', {
+        description:
+          'The same PO PDF will be emailed again to every address on file for this supplier.',
+        action: {
+          label: 'Resend',
+          onClick: () => {
+            void performSendEmail();
+          },
+        },
+        cancel: {
+          label: 'Cancel',
+          onClick: () => {},
+        },
+      });
+      return;
+    }
+    void performSendEmail();
+  };
 
   const poNumber = poPanelMeta?.poNumber ?? entry.referenceKey;
   const created = fmtDate(poPanelMeta?.dateCreated ?? entry.dateCreated);
@@ -621,6 +721,24 @@ function WithPoMeta({
     }
   };
 
+  const canPrintPo =
+    poPrintBlock != null &&
+    poPrintBlock.id !== 'new' &&
+    poPrintBlock.panelMeta != null &&
+    poPrintBlock.lineItems.length > 0;
+
+  const handlePrintPo = () => {
+    if (!poPrintBlock) return;
+    const input = buildPoPdfInput({
+      block: poPrintBlock,
+      supplierCompany: entry.supplierCompany,
+      customerHeadline: poPrintHeadline ?? null,
+      fallbackBillingAddress: customerDefaultBilling ?? null,
+      fallbackShippingAddress: customerDefaultShipping ?? null,
+    });
+    if (input) openPoPdfPrint(input);
+  };
+
   return (
     <>
       <Section>
@@ -672,8 +790,13 @@ function WithPoMeta({
       <Section>
         <MetaLabel>Supplier</MetaLabel>
         <MetaValue>{entry.supplierCompany}</MetaValue>
-        <MetaSub red={entry.supplierEmailMissing}>
-          {entry.supplierContactEmail}
+        <MetaSub
+          red={
+            entry.supplierOrderChannelType === 'email' &&
+            entry.supplierEmailMissing
+          }
+        >
+          {entry.supplierOrderChannelSummary}
         </MetaSub>
       </Section>
 
@@ -772,39 +895,77 @@ function WithPoMeta({
           </>
         ) : (
           <>
+            {entry.supplierOrderChannelType === 'email' ? (
+              <>
+                {emailSentLocal || poPanelMeta?.emailSentAt ? (
+                  <Button
+                    size="xs"
+                    className="w-full justify-center text-[11px] rounded-[5px] bg-emerald-50 text-emerald-900 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-100 dark:border-emerald-800 dark:hover:bg-emerald-950/60"
+                    variant="outline"
+                    onClick={() => handleSendEmailClick()}
+                    disabled={sendingEmail}
+                  >
+                    {sendingEmail ? 'Sending…' : 'Email sent - resend?'}
+                  </Button>
+                ) : entry.hasEmail ? (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="w-full justify-center text-[11px] rounded-[5px] border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500"
+                    onClick={() => handleSendEmailClick()}
+                    disabled={sendingEmail}
+                  >
+                    {sendingEmail ? 'Sending…' : 'Send email'}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    disabled
+                    className="w-full justify-center text-[11px] rounded-[5px]"
+                  >
+                    No email on file
+                  </Button>
+                )}
+                {emailSendError && (
+                  <p className="text-[9px] text-destructive leading-snug break-words" role="alert">
+                    {emailSendError}
+                  </p>
+                )}
+                {(emailSentLocal || poPanelMeta?.emailSentAt) && (
+                  <div className="text-[9px] text-center leading-snug">
+                    {poPanelMeta?.emailOpenedAt ? (
+                      <span className="text-emerald-600 font-medium">
+                        Opened{' '}
+                        {formatDistanceToNow(new Date(poPanelMeta.emailOpenedAt), {
+                          addSuffix: true,
+                        })}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Not opened yet</span>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-[10px] text-muted-foreground text-center leading-snug px-1">
+                PO uses{' '}
+                {entry.supplierOrderChannelType === 'order_link'
+                  ? 'supplier order link'
+                  : 'direct instructions'}
+                . Open the comm panel for details.
+              </p>
+            )}
+            <Separator className="my-0.5" />
             <Button
               variant="outline"
               size="xs"
               className="w-full justify-center text-[11px] rounded-[5px]"
+              disabled={!canPrintPo}
+              onClick={handlePrintPo}
             >
               Print PO
             </Button>
-            {entry.emailSent ? (
-              <Button
-                variant="outline"
-                size="xs"
-                className="w-full justify-center text-[11px] rounded-[5px] bg-[#EAF3DE] text-[#27500A] border-[#C0DD97] hover:opacity-85"
-              >
-                Email sent
-              </Button>
-            ) : entry.hasEmail ? (
-              <Button
-                size="xs"
-                className="w-full justify-center text-[11px] rounded-[5px]"
-              >
-                Send email
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="xs"
-                disabled
-                className="w-full justify-center text-[11px] rounded-[5px]"
-              >
-                No email on file
-              </Button>
-            )}
-            <Separator className="my-0.5" />
             <Button
               variant="outline"
               size="xs"

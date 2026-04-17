@@ -6,6 +6,7 @@
 
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/core/prisma';
+import { recomputePurchaseOrderStatusById } from '@/lib/order/purchase-order-status';
 
 export type ResyncPurchaseOrderFromShopifyOptions = {
   purchaseOrderId: string;
@@ -88,6 +89,7 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
   }
 
   if (!appendFromShopifyOrderId || !linkedOrderIds.has(appendFromShopifyOrderId)) {
+    await recomputePurchaseOrderStatusById(purchaseOrderId);
     return;
   }
 
@@ -97,7 +99,10 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
       lineItems: { orderBy: { sequence: 'asc' } },
     },
   });
-  if (!refreshed) return;
+  if (!refreshed) {
+    await recomputePurchaseOrderStatusById(purchaseOrderId);
+    return;
+  }
 
   const usedShopifyLineIds = new Set(
     refreshed.lineItems.map((l) => l.shopifyOrderLineItemId).filter(Boolean) as string[],
@@ -107,7 +112,10 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
     where: { id: appendFromShopifyOrderId },
     include: { lineItems: { orderBy: { createdAt: 'asc' } } },
   });
-  if (!orderWithLines) return;
+  if (!orderWithLines) {
+    await recomputePurchaseOrderStatusById(purchaseOrderId);
+    return;
+  }
 
   let maxSeq = refreshed.lineItems.reduce((m, l) => Math.max(m, l.sequence), 0);
 
@@ -142,4 +150,6 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
     });
     usedShopifyLineIds.add(li.id);
   }
+
+  await recomputePurchaseOrderStatusById(purchaseOrderId);
 }

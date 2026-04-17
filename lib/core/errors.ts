@@ -96,6 +96,27 @@ export class GraphQLError extends AppError {
   }
 }
 
+function prismaKnownRequestUserMessage(
+  e: Prisma.PrismaClientKnownRequestError,
+): string {
+  switch (e.code) {
+    case 'P2021':
+      return 'A required database table is missing. Run migrations (e.g. pnpm prisma migrate deploy) for this environment.';
+    case 'P1000':
+    case 'P1001':
+    case 'P1002':
+    case 'P1003':
+    case 'P1017':
+      return 'Could not reach the database. Check DATABASE_URL, network access, and that Postgres is running.';
+    case 'P2002':
+      return 'A unique constraint would be violated.';
+    default:
+      return 'A database error occurred. Please try again.';
+  }
+}
+
+const isDev = process.env.NODE_ENV === 'development';
+
 /**
  * Canonical API error handler. Returns NextResponse with body { error, code? } and appropriate status.
  * Use in route handlers: catch (e) { return handleApiError(e); }
@@ -110,12 +131,51 @@ export function handleApiError(error: unknown): NextResponse {
     );
   }
 
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    const e = error as Prisma.PrismaClientInitializationError;
+    return NextResponse.json(
+      {
+        error: isDev
+          ? e.message
+          : 'Could not connect to the database. Check DATABASE_URL and that the server can reach Postgres.',
+        code: 'PRISMA_INIT',
+      },
+      { status: 503 },
+    );
+  }
+
+  if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+    const e = error as Prisma.PrismaClientUnknownRequestError;
+    return NextResponse.json(
+      {
+        error: isDev
+          ? e.message
+          : 'The database returned an unexpected error. Check server logs.',
+        code: 'PRISMA_UNKNOWN',
+      },
+      { status: 500 },
+    );
+  }
+
+  if (error instanceof Prisma.PrismaClientValidationError) {
+    const e = error as Prisma.PrismaClientValidationError;
+    return NextResponse.json(
+      {
+        error: isDev ? e.message : 'Invalid database query.',
+        code: 'PRISMA_VALIDATION',
+      },
+      { status: 500 },
+    );
+  }
+
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
     const prismaError = error as Prisma.PrismaClientKnownRequestError;
-    const dbError = new DatabaseError(prismaError.message, prismaError);
     return NextResponse.json(
-      { error: dbError.userMessage, code: dbError.code },
-      { status: dbError.statusCode },
+      {
+        error: prismaKnownRequestUserMessage(prismaError),
+        code: prismaError.code,
+      },
+      { status: 500 },
     );
   }
 
@@ -127,9 +187,23 @@ export function handleApiError(error: unknown): NextResponse {
     );
   }
 
-  const message = (error as Error)?.message || 'An unexpected error occurred';
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : 'An unexpected error occurred';
+
   return NextResponse.json(
-    { error: GENERIC_ERROR_MESSAGE, code: 'UNKNOWN_ERROR' },
+    {
+      error: isDev && message ? message : GENERIC_ERROR_MESSAGE,
+      code: 'UNKNOWN_ERROR',
+      ...(!isDev
+        ? {
+            hint: 'If this persists, check the server terminal or hosting logs for this API route.',
+          }
+        : {}),
+    },
     { status: 500 },
   );
 }

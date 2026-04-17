@@ -23,6 +23,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import type { PrePoLineDraft, ShopifyOrderDraft } from '../types';
 import { formatItemPrice } from '../mappers/map-purchase-order';
+import { formatVancouverOrderedDetail } from '../utils/vancouver-datetime';
 import { SeparatePoDialog } from './SeparatePoDialog';
 import { LineItemThumb } from './LineItemThumb';
 import type { ShopifyOrderEditOperation } from '@/lib/api/schemas';
@@ -51,7 +52,9 @@ type Props = {
   inclusions?: boolean[];
   onToggleInclude?: (orderId: string, itemIdx: number) => void;
   onSeparatePo?: (payload: SeparatePoPayload) => void;
-  onArchive?: () => void;
+  onArchiveShopifyOrder?: (shopifyOrderDbId: string) => void;
+  showArchived?: boolean;
+  onUnarchiveShopifyOrder?: (shopifyOrderDbId: string) => void;
   /** When saving from a PO context, pass PO id so server can resync lines. */
   purchaseOrderId?: string | null;
 };
@@ -88,7 +91,9 @@ export function OrderBlock({
   inclusions,
   onToggleInclude,
   onSeparatePo,
-  onArchive,
+  onArchiveShopifyOrder,
+  showArchived,
+  onUnarchiveShopifyOrder,
   purchaseOrderId,
 }: Props) {
   const router = useRouter();
@@ -380,7 +385,7 @@ export function OrderBlock({
           <div className="flex gap-2.5 flex-wrap">
             {order.orderedAt && (
               <span className="text-[10px] text-muted-foreground">
-                Ordered {order.orderedAt}
+                Ordered {formatVancouverOrderedDetail(order.orderedAt)}
               </span>
             )}
             <span className="text-[10px] text-muted-foreground">
@@ -431,6 +436,17 @@ export function OrderBlock({
                 {saving ? 'Saving…' : 'Save'}
               </Button>
             </>
+          ) : showArchived ? (
+            onUnarchiveShopifyOrder ? (
+              <Button
+                variant="outline"
+                size="xs"
+                className="text-[10px] rounded-[5px]"
+                onClick={() => void onUnarchiveShopifyOrder(order.id)}
+              >
+                Unarchive
+              </Button>
+            ) : null
           ) : (
             <>
               <Button
@@ -463,7 +479,11 @@ export function OrderBlock({
             onSeparatePo(payload);
             setDialogOpen(false);
           }}
-          onArchive={onArchive}
+          onArchive={
+            onArchiveShopifyOrder
+              ? () => onArchiveShopifyOrder(order.id)
+              : undefined
+          }
         />
       )}
 

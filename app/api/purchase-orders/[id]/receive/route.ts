@@ -19,6 +19,7 @@ import {
   isShopifyAdminEnvConfigured,
 } from '@/lib/shopify/env';
 import { createShopifyFulfillment } from '@/lib/shopify/createFulfillment';
+import { recomputePurchaseOrderStatusById } from '@/lib/order/purchase-order-status';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -88,30 +89,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       ),
     );
 
-    // ── Recompute PO status from all line items ─────────────────────────────
-    const allLineItems = await prisma.purchaseOrderLineItem.findMany({
-      where: { purchaseOrderId },
-      select: { quantity: true, quantityReceived: true },
-    });
-
-    const allFulfilled =
-      allLineItems.length > 0 &&
-      allLineItems.every((li) => li.quantityReceived >= li.quantity);
-    const anyFulfilled = allLineItems.some((li) => li.quantityReceived > 0);
-
-    const newStatus = allFulfilled
-      ? 'fulfilled'
-      : anyFulfilled
-        ? 'partially_fulfilled'
-        : 'unfulfilled';
-
-    await prisma.purchaseOrder.update({
-      where: { id: purchaseOrderId },
-      data: {
-        status: newStatus,
-        ...(allFulfilled ? { receivedAt: new Date() } : {}),
-      },
-    });
+    const newStatus = await recomputePurchaseOrderStatusById(purchaseOrderId);
+    if (newStatus == null) {
+      return NextResponse.json(
+        { error: 'Purchase order not found' },
+        { status: 404 },
+      );
+    }
 
     // ── Shopify outbound fulfillment ────────────────────────────────────────
     // Group items by Shopify order and push fulfillments to Shopify.

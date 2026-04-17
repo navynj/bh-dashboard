@@ -53,7 +53,7 @@ async function main() {
   console.log(`[sync] Fetching all Shopify orders from ${creds.shopDomain}…`);
 
   const { orders, pagesFetched } = await fetchAllShopifyOrders(creds, {
-    pageSize: 250,
+    pageSize: 40,
     maxPages: 200,
   });
 

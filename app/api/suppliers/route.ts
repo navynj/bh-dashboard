@@ -4,6 +4,11 @@ import { prisma } from '@/lib/core/prisma';
 import { parseBody, supplierCreateSchema } from '@/lib/api/schemas';
 import { toApiErrorResponse } from '@/lib/core/errors';
 import { resolveSupplierGroupId } from '@/lib/order/default-supplier-group';
+import {
+  assertSupplierOrderChannel,
+  legacyColumnsFromOrderChannel,
+} from '@/lib/order/supplier-order-channel';
+import type { Prisma } from '@prisma/client';
 
 export async function GET() {
   try {
@@ -22,9 +27,11 @@ export async function GET() {
         company: true,
         shopifyVendorName: true,
         contactName: true,
-        contactEmail: true,
+        contactEmails: true,
         contactPhone: true,
         preferredCommMode: true,
+        orderChannelType: true,
+        orderChannelPayload: true,
         groupId: true,
         isFavorite: true,
         link: true,
@@ -56,17 +63,34 @@ export async function POST(request: NextRequest) {
 
     const groupId = await resolveSupplierGroupId(prisma, data.groupId);
 
+    const channel = assertSupplierOrderChannel(
+      data.orderChannelType,
+      data.orderChannelPayload,
+    );
+    if (!channel.ok) {
+      return NextResponse.json(
+        { error: 'Invalid order channel' },
+        { status: 400 },
+      );
+    }
+    const legacy = legacyColumnsFromOrderChannel(
+      data.orderChannelType,
+      channel.payload,
+    );
+
     const supplier = await prisma.supplier.create({
       data: {
         company: data.company,
         shopifyVendorName: data.shopifyVendorName ?? null,
-        contactName: data.contactName ?? null,
-        contactEmail: data.contactEmail ?? null,
-        contactPhone: data.contactPhone ?? null,
-        preferredCommMode: data.preferredCommMode ?? null,
         groupId,
-        link: data.link ?? null,
         notes: data.notes ?? null,
+        orderChannelType: data.orderChannelType,
+        orderChannelPayload: channel.payload as unknown as Prisma.InputJsonValue,
+        contactName: legacy.contactName,
+        contactEmails: legacy.contactEmails,
+        link: legacy.link,
+        contactPhone: null,
+        preferredCommMode: null,
       },
     });
 

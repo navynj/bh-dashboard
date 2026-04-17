@@ -10,3 +10,4 @@ export {
   listYearMonthsInRange,
 } from './date';
 export { formatCurrency } from './format';
+export { getInternalAppBaseUrl } from './app-url';

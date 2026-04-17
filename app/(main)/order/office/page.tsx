@@ -5,6 +5,7 @@ import { OrderManagementView } from '@/features/order/office/views/OrderManageme
 import { buildInboxData } from '@/features/order/office/mappers/build-inbox-data';
 import { buildWeekPeriods } from '@/features/order/office/mappers/periods';
 import { isShopifyAdminEnvConfigured } from '@/lib/shopify/env';
+import { isShopifyOrderFinancialVoided } from '@/types/shopify';
 import { executeShopifySync } from '@/lib/shopify/sync/run-shopify-sync';
 
 export const dynamic = 'force-dynamic';
@@ -50,6 +51,7 @@ export default async function OfficeOrderInboxPage() {
         },
         shopifyOrders: { include: { customer: true } },
         supplier: true,
+        emailDeliveries: { orderBy: { sentAt: 'desc' } },
       },
     }),
     // Archived POs — minimal includes (enough for sidebar + counts)
@@ -63,6 +65,7 @@ export default async function OfficeOrderInboxPage() {
         },
         shopifyOrders: { include: { customer: true } },
         supplier: true,
+        emailDeliveries: { orderBy: { sentAt: 'desc' } },
       },
       take: 100,
     }),
@@ -72,19 +75,23 @@ export default async function OfficeOrderInboxPage() {
         suppliers: { orderBy: { company: 'asc' } },
       },
     }),
-    // Unlinked orders — only recent (last N days), unfulfilled
-    prisma.shopifyOrder.findMany({
-      where: {
-        purchaseOrders: { none: {} },
-        displayFulfillmentStatus: { not: 'FULFILLED' },
-        shopifyCreatedAt: { gte: unlinkedCutoff },
-      },
-      orderBy: { shopifyCreatedAt: 'desc' },
-      include: {
-        customer: true,
-        lineItems: true,
-      },
-    }),
+    // Unlinked orders — only recent (last N days), unfulfilled, not financially voided
+    prisma.shopifyOrder
+      .findMany({
+        where: {
+          purchaseOrders: { none: {} },
+          displayFulfillmentStatus: { not: 'FULFILLED' },
+          shopifyCreatedAt: { gte: unlinkedCutoff },
+        },
+        orderBy: { shopifyCreatedAt: 'desc' },
+        include: {
+          customer: true,
+          lineItems: true,
+        },
+      })
+      .then((rows) =>
+        rows.filter((o) => !isShopifyOrderFinancialVoided(o.displayFinancialStatus)),
+      ),
     prisma.shopifyVendorMapping.findMany({
       select: { vendorName: true, supplierId: true },
     }),

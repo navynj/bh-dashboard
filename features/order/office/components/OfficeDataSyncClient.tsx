@@ -66,9 +66,41 @@ type ImportResult = {
   purchaseOrders?: number;
   created?: number;
   updated?: number;
+  aborted?: boolean;
   error?: string;
   detail?: string;
 };
+
+type ImportStreamProgress =
+  | { phase: 'parsed'; totalRows: number; totalPo: number }
+  | { phase: 'shopify_lookup'; shopifyOrderCount: number }
+  | { phase: 'import_po'; done: number; total: number; legacyExternalId: number };
+
+function importProgressLabel(p: ImportStreamProgress): string {
+  switch (p.phase) {
+    case 'parsed':
+      return `Parsed CSV — ${p.totalPo} PO(s), ${p.totalRows} row(s)`;
+    case 'shopify_lookup':
+      return `Loaded ${p.shopifyOrderCount} Shopify order(s) for linking`;
+    case 'import_po':
+      return `Importing POs — ${p.done} / ${p.total} (export id ${p.legacyExternalId})`;
+    default:
+      return 'Working…';
+  }
+}
+
+function importProgressPercent(p: ImportStreamProgress): number {
+  switch (p.phase) {
+    case 'parsed':
+      return 5;
+    case 'shopify_lookup':
+      return 12;
+    case 'import_po':
+      return 12 + (p.total > 0 ? (p.done / p.total) * 88 : 0);
+    default:
+      return 0;
+  }
+}
 
 export function OfficeDataSyncClient() {
   const router = useRouter();
@@ -81,10 +113,16 @@ export function OfficeDataSyncClient() {
 
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importLiveProgress, setImportLiveProgress] = useState<ImportStreamProgress | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const importAbortRef = useRef<AbortController | null>(null);
 
   const handleStopSync = useCallback(() => {
     syncAbortRef.current?.abort();
+  }, []);
+
+  const handleStopImport = useCallback(() => {
+    importAbortRef.current?.abort();
   }, []);
 
   const handleFullSync = useCallback(async () => {
@@ -136,10 +174,12 @@ export function OfficeDataSyncClient() {
         const msg = JSON.parse(trimmed) as Record<string, unknown> & { event?: string };
         const ev = msg.event;
         if (ev === 'progress') {
-          const { event: _e, ...rest } = msg as { event: string } & StreamProgress;
+          const { event, ...rest } = msg as { event: string } & StreamProgress;
+          void event;
           setLiveProgress(rest as StreamProgress);
         } else if (ev === 'done') {
-          const { event: _e, ...rest } = msg as { event: string } & Omit<SyncResult, 'ok'>;
+          const { event, ...rest } = msg as { event: string } & Omit<SyncResult, 'ok'>;
+          void event;
           finalRef.current = { ...(rest as SyncResult), ok: true };
           setLiveProgress(null);
         } else if (ev === 'aborted') {
@@ -192,27 +232,118 @@ export function OfficeDataSyncClient() {
     const file = fileRef.current?.files?.[0];
     if (!file) return;
 
+    const ac = new AbortController();
+    importAbortRef.current = ac;
     setImporting(true);
     setImportResult(null);
+    setImportLiveProgress(null);
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await fetch('/api/purchase-orders/import-csv', {
+      const res = await fetch('/api/purchase-orders/import-csv?stream=1', {
         method: 'POST',
         body: fd,
+        signal: ac.signal,
       });
-      const json = (await res.json()) as ImportResult;
-      setImportResult(json);
-      if (json.ok) router.refresh();
+
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = text;
+        try {
+          const j = JSON.parse(text) as { error?: string; detail?: string };
+          const combined = [j.error, j.detail].filter(Boolean).join(': ');
+          if (combined) msg = combined;
+        } catch {
+          /* use raw */
+        }
+        setImportResult({ ok: false, error: msg || `HTTP ${res.status}` });
+        return;
+      }
+
+      if (!res.body) {
+        setImportResult({ ok: false, error: 'No response body' });
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      const finalRef = { current: null as ImportResult | null };
+
+      const flushLine = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        const msg = JSON.parse(trimmed) as Record<string, unknown> & { event?: string };
+        const ev = msg.event;
+        if (ev === 'progress') {
+          const { event, ...rest } = msg as { event: string } & ImportStreamProgress;
+          void event;
+          setImportLiveProgress(rest as ImportStreamProgress);
+        } else if (ev === 'done') {
+          const { event, ...rest } = msg as {
+            event: string;
+            ok?: boolean;
+            totalCsvRows?: number;
+            purchaseOrders?: number;
+            created?: number;
+            updated?: number;
+            aborted?: boolean;
+          };
+          void event;
+          finalRef.current = {
+            ok: rest.ok !== false,
+            totalCsvRows: rest.totalCsvRows,
+            purchaseOrders: rest.purchaseOrders,
+            created: rest.created,
+            updated: rest.updated,
+            aborted: rest.aborted,
+          };
+          setImportLiveProgress(null);
+        } else if (ev === 'error') {
+          finalRef.current = { ok: false, error: String(msg.message ?? 'Import failed') };
+          setImportLiveProgress(null);
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n');
+        buf = parts.pop() ?? '';
+        for (const line of parts) {
+          flushLine(line);
+        }
+      }
+      if (buf.trim()) {
+        flushLine(buf);
+      }
+
+      const final = finalRef.current;
+      if (final) {
+        setImportResult(final);
+        if (final.ok) router.refresh();
+      } else {
+        setImportResult({ ok: false, error: 'No completion message from server' });
+      }
     } catch (err) {
-      setImportResult({ ok: false, error: String(err) });
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setImportResult({ ok: false, error: 'Stopped.' });
+      } else {
+        setImportResult({ ok: false, error: String(err) });
+      }
     } finally {
       setImporting(false);
+      importAbortRef.current = null;
+      setImportLiveProgress(null);
       if (fileRef.current) fileRef.current.value = '';
     }
   }, [router]);
 
   const pct = liveProgress ? Math.round(progressPercent(liveProgress)) : 0;
+  const importPct = importLiveProgress
+    ? Math.round(importProgressPercent(importLiveProgress))
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -313,6 +444,7 @@ export function OfficeDataSyncClient() {
             ref={fileRef}
             type="file"
             accept=".csv"
+            disabled={importing}
             className="text-xs file:mr-2 file:rounded file:border file:border-border file:bg-background file:px-2.5 file:py-1 file:text-xs file:font-medium hover:file:bg-muted"
           />
           <Button
@@ -324,18 +456,57 @@ export function OfficeDataSyncClient() {
           >
             {importing ? 'Importing…' : 'Import CSV'}
           </Button>
+          {importing && (
+            <Button
+              size="sm"
+              variant="outline"
+              type="button"
+              onClick={handleStopImport}
+              className="text-xs"
+            >
+              Stop
+            </Button>
+          )}
         </div>
+        {importing && importLiveProgress && (
+          <div className="space-y-1.5">
+            <p className="text-[11px] text-muted-foreground">
+              {importProgressLabel(importLiveProgress)}
+            </p>
+            <progress
+              className="w-full h-2 rounded overflow-hidden [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary [&::-moz-progress-bar]:bg-primary"
+              value={importPct}
+              max={100}
+            />
+            <p className="text-[10px] text-muted-foreground tabular-nums">{importPct}%</p>
+          </div>
+        )}
+        {importing && !importLiveProgress && (
+          <p className="text-[11px] text-muted-foreground">Starting import…</p>
+        )}
         {importResult && (
           <div
             className={`text-xs rounded px-2 py-1.5 ${
               importResult.ok
-                ? 'text-green-700 bg-green-50'
+                ? importResult.aborted
+                  ? 'text-amber-800 bg-amber-50'
+                  : 'text-green-700 bg-green-50'
                 : 'text-red-600 bg-red-50'
             }`}
           >
-            {importResult.ok
-              ? `${importResult.purchaseOrders} POs processed — ${importResult.created} created, ${importResult.updated} updated (${importResult.totalCsvRows} CSV rows)`
-              : importResult.error ?? 'Import failed'}
+            {importResult.ok ? (
+              importResult.aborted ? (
+                <span>
+                  Import stopped — {importResult.created ?? 0} created, {importResult.updated ?? 0}{' '}
+                  updated before stop ({importResult.totalCsvRows} CSV rows,{' '}
+                  {importResult.purchaseOrders} PO groups).
+                </span>
+              ) : (
+                `${importResult.purchaseOrders} POs processed — ${importResult.created} created, ${importResult.updated} updated (${importResult.totalCsvRows} CSV rows)`
+              )
+            ) : (
+              importResult.error ?? 'Import failed'
+            )}
           </div>
         )}
       </section>

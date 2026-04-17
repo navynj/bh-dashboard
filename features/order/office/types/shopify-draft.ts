@@ -20,6 +20,8 @@ export type PrePoLineDraft = {
 
 export type ShopifyOrderDraft = {
   id: string;
+  /** Hub DB `shopify_orders.archived_at` (ISO); null = not archived. */
+  archivedAt?: string | null;
   /** Shopify Order GID for Admin order edits. */
   shopifyOrderGid: string;
   /** ISO currency from synced order (e.g. CAD). */

@@ -10,7 +10,7 @@ import {
 import type { QuickBooksApiContext } from '@/features/dashboard/budget';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
-import { getCurrentYearMonth, isValidYearMonth } from '@/lib/utils';
+import { getCurrentYearMonth, getInternalAppBaseUrl, isValidYearMonth } from '@/lib/utils';
 import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import CategoryBudgetBarChart from '@/features/dashboard/budget/components/chart/CategoryBudgetBarChart';
@@ -55,12 +55,9 @@ const LocationPage = async ({
   // ===============================
   // Budget
   // ===============================
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-    ? process.env.NEXT_PUBLIC_APP_URL
-    : 'http://localhost:3000';
   const headersList = await headers();
   const context: QuickBooksApiContext = {
-    baseUrl,
+    baseUrl: getInternalAppBaseUrl(headersList),
     cookie: headersList.get('cookie'),
   };
 

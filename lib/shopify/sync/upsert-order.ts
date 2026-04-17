@@ -8,6 +8,7 @@ import { prisma } from '@/lib/core/prisma';
 import type { ShopifyMailingAddress, ShopifyOrderNode } from '@/types/shopify';
 import type { ShopifyAdminCustomerNode } from '@/lib/shopify/fetchCustomers';
 import { lineItemImageUrlFromShopifyNode } from '@/lib/shopify/line-item-image-url';
+import { recomputePurchaseOrderStatusesForShopifyOrderId } from '@/lib/order/purchase-order-status';
 
 function parseOrderNumber(name: string | null): number {
   if (!name) return 0;
@@ -262,6 +263,8 @@ export async function upsertShopifyOrder(
       where: { id: { in: removeIds } },
     });
   }
+
+  await recomputePurchaseOrderStatusesForShopifyOrderId(shopifyOrder.id);
 
   return { id: shopifyOrder.id, shopifyGid: shopifyOrder.shopifyGid };
 }

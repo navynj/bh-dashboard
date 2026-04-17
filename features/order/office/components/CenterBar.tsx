@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge';
 import type { SupplierKey, SupplierEntry, PoPanelMeta } from '../types';
+import { formatVancouverOrderedDetail } from '../utils/vancouver-datetime';
 
 type Props = {
   entry: SupplierEntry;
@@ -32,7 +33,7 @@ export function CenterBar({
     sub = entry.supplierCompany;
   } else if (poPanelMeta) {
     headline = `PO #${poPanelMeta.poNumber}`;
-    sub = `${entry.supplierCompany} · Ordered ${fmt(poPanelMeta.orderedAt)} · created ${fmt(poPanelMeta.dateCreated)} · expected ${fmt(poPanelMeta.expectedDate)}`;
+    sub = `${entry.supplierCompany} · Ordered ${formatVancouverOrderedDetail(poPanelMeta.orderedAt)} · created ${fmt(poPanelMeta.dateCreated)} · expected ${fmt(poPanelMeta.expectedDate)}`;
   } else {
     headline = entry.supplierCompany;
     sub = entry.meta;

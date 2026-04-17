@@ -401,6 +401,7 @@ export function SuppliersClient({
           {showForm && (
             <div className="rounded-lg border bg-background p-4">
               <SupplierForm
+                key={`create-${prefillVendor ?? ''}`}
                 editing={null}
                 prefillVendor={prefillVendor}
                 vendors={vendors}
@@ -425,9 +426,8 @@ export function SuppliersClient({
                       'Company',
                       'Group',
                       'Vendor',
-                      'Contact',
-                      'Email',
-                      'Comm',
+                      'Channel',
+                      'Detail',
                       'POs',
                       '',
                     ].map((h, i) => (
@@ -470,7 +470,7 @@ export function SuppliersClient({
                       <td className="p-2 align-middle font-medium">
                         <span className="flex items-center gap-1.5">
                           {s.company}
-                          {s.link && (
+                          {s.orderChannelType === 'order_link' && s.link && (
                             <a
                               href={s.link}
                               target="_blank"
@@ -505,22 +505,35 @@ export function SuppliersClient({
                         )}
                       </td>
                       <td className="p-2 align-middle">
-                        {s.contactName ?? '—'}
+                        <Badge
+                          variant="gray"
+                          className="rounded px-1.5 text-[10px] capitalize"
+                        >
+                          {s.orderChannelType === 'email'
+                            ? 'Email'
+                            : s.orderChannelType === 'order_link'
+                              ? 'Link'
+                              : 'Direct'}
+                        </Badge>
                       </td>
-                      <td className="p-2 align-middle text-xs">
-                        {s.contactEmail ?? '—'}
-                      </td>
-                      <td className="p-2 align-middle">
-                        {s.preferredCommMode ? (
-                          <Badge
-                            variant="blue"
-                            className="rounded px-1.5 text-[10px] capitalize"
-                          >
-                            {s.preferredCommMode}
-                          </Badge>
-                        ) : (
-                          '—'
-                        )}
+                      <td className="p-2 align-middle text-xs text-muted-foreground max-w-[220px] truncate">
+                        {s.orderChannelType === 'email'
+                          ? s.contactEmails?.length
+                            ? s.contactEmails.join(', ')
+                            : '—'
+                          : s.orderChannelType === 'order_link'
+                            ? (s.link ?? '—')
+                            : (() => {
+                                const p = s.orderChannelPayload as {
+                                  instruction?: string;
+                                } | null;
+                                const t = p?.instruction?.trim() ?? '';
+                                return t
+                                  ? t.length > 48
+                                    ? `${t.slice(0, 48)}…`
+                                    : t
+                                  : '—';
+                              })()}
                       </td>
                       <td className="p-2 align-middle text-right tabular-nums">
                         {s._count.purchaseOrders}
@@ -572,6 +585,7 @@ export function SuppliersClient({
           </DialogHeader>
           {editing && (
             <SupplierForm
+              key={editing.id}
               editing={editing}
               prefillVendor={null}
               vendors={vendors}

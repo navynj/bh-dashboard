@@ -77,6 +77,19 @@ export interface ShopifyOrdersPageInfo {
   endCursor: string | null;
 }
 
+/** `Product` / `ProductVariant` media connection from order line queries (`... on MediaImage`). */
+export type ShopifyOrderLineMediaConnection = {
+  edges?: ReadonlyArray<{ node?: unknown } | null> | null;
+} | null;
+
+/** Product image fields queried on order line items (legacy + unified media). */
+export type ShopifyOrderLineProductImages = {
+  featuredImage?: { url: string | null } | null;
+  /** `Media` resolved as `MediaImage` in GraphQL; other media kinds omitted. */
+  featuredMedia?: unknown;
+  media?: ShopifyOrderLineMediaConnection;
+};
+
 /** GraphQL `LineItem.id` — `gid://shopify/LineItem/...` */
 export interface ShopifyOrderLineNode {
   id: string;
@@ -89,14 +102,15 @@ export interface ShopifyOrderLineNode {
   discountedUnitPriceSet?: {
     shopMoney?: { amount: string; currencyCode?: string } | null;
   } | null;
+  /** Same catalog product as `variant.product` when a variant exists. */
+  product?: ShopifyOrderLineProductImages | null;
   variant: {
     id: string;
     title: string | null;
     sku: string | null;
     image?: { url: string | null } | null;
-    product?: {
-      featuredImage?: { url: string | null } | null;
-    } | null;
+    media?: ShopifyOrderLineMediaConnection;
+    product?: ShopifyOrderLineProductImages | null;
     inventoryItem?: {
       unitCost?: { amount: string } | null;
     } | null;
@@ -156,6 +170,14 @@ export function isShopifyOrderDisplayFinancialStatus(
   value: string,
 ): value is ShopifyOrderDisplayFinancialStatus {
   return (SHOPIFY_ORDER_DISPLAY_FINANCIAL_STATUSES as readonly string[]).includes(value);
+}
+
+/** `Order.displayFinancialStatus` — voided orders should be excluded from office inbox queues. */
+export function isShopifyOrderFinancialVoided(
+  status: string | null | undefined,
+): boolean {
+  if (status == null || status === '') return false;
+  return status.trim().toUpperCase() === 'VOIDED';
 }
 
 export function isShopifyOrderDisplayFulfillmentStatus(

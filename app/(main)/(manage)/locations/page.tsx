@@ -1,3 +1,4 @@
+import { getInternalAppBaseUrl } from '@/lib/utils';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
@@ -26,10 +27,8 @@ export default async function LocationsPage() {
     redirect('/auth');
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-    ? process.env.NEXT_PUBLIC_APP_URL
-    : 'http://localhost:3000';
   const headersList = await headers();
+  const baseUrl = getInternalAppBaseUrl(headersList);
   const cookie = headersList.get('cookie') ?? '';
 
   const [realmRes, locationRes] = await Promise.all([

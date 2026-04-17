@@ -1,5 +1,10 @@
-import { format, parseISO } from 'date-fns';
-import type { SidebarCustomerGroup, SidebarSupplierRow, ViewData } from '../types';
+import { formatOfficeDateHeader } from './format-date-label';
+import type {
+  OfficePurchaseOrderBlock,
+  SidebarCustomerGroup,
+  SidebarSupplierRow,
+  ViewData,
+} from '../types';
 import type { SupplierKey } from '../types';
 
 export type ScopedSupplierRow = SidebarSupplierRow & {
@@ -35,6 +40,11 @@ export type BuildExpectedDateBucketsOptions = {
   onlyExpectedDateKey?: string | null;
   /** Archived: left label “Ordered at”. Default: “Delivery expected at”. */
   bucketStyle?: 'delivery_expected' | 'ordered';
+  /**
+   * When set (PO Created / Fulfilled tabs), only matching POs appear in buckets —
+   * mixed supplier rows can list open vs fulfilled POs separately.
+   */
+  includePo?: (po: OfficePurchaseOrderBlock) => boolean;
 };
 
 /**
@@ -57,6 +67,8 @@ export function buildExpectedDateBuckets(
       const vd = viewDataMap[sup.key];
       if (!vd || vd.type !== 'post') continue;
       for (const po of vd.purchaseOrders) {
+        if (po.id === 'new') continue;
+        if (options?.includePo && !options.includePo(po)) continue;
         const ed = expectedDateKeyFromPo(po.panelMeta?.expectedDate ?? null);
         if (
           options?.onlyExpectedDateKey &&
@@ -109,7 +121,7 @@ export function buildExpectedDateBuckets(
         ? '—'
         : (() => {
             try {
-              return format(parseISO(k), 'MMM d, yyyy');
+              return formatOfficeDateHeader(k);
             } catch {
               return k;
             }

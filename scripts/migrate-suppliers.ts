@@ -13,6 +13,10 @@
 
 import 'dotenv/config';
 import { prisma } from '../lib/core/prisma';
+import {
+  looseContactEmailsFromRaw,
+  normalizeSupplierContactEmails,
+} from '../lib/order/supplier-order-channel';
 
 async function main() {
   const pos = await prisma.purchaseOrder.findMany({
@@ -38,7 +42,7 @@ async function main() {
     {
       company: string;
       contactName: string | null;
-      contactEmail: string | null;
+      contactEmails: string[];
       poIds: string[];
     }
   >();
@@ -48,20 +52,25 @@ async function main() {
     if (!raw) continue;
     const key = raw.toLowerCase();
 
+    const fromPo = looseContactEmailsFromRaw(po.supplierContactEmail);
+
     const existing = grouped.get(key);
     if (existing) {
       existing.poIds.push(po.id);
       if (!existing.contactName && po.supplierContactName) {
         existing.contactName = po.supplierContactName;
       }
-      if (!existing.contactEmail && po.supplierContactEmail) {
-        existing.contactEmail = po.supplierContactEmail;
+      if (fromPo.length > 0) {
+        existing.contactEmails = normalizeSupplierContactEmails([
+          ...existing.contactEmails,
+          ...fromPo,
+        ]);
       }
     } else {
       grouped.set(key, {
         company: raw,
         contactName: po.supplierContactName,
-        contactEmail: po.supplierContactEmail,
+        contactEmails: fromPo,
         poIds: [po.id],
       });
     }
@@ -81,7 +90,7 @@ async function main() {
         company: entry.company,
         shopifyVendorName: entry.company,
         contactName: entry.contactName,
-        contactEmail: entry.contactEmail,
+        contactEmails: normalizeSupplierContactEmails(entry.contactEmails),
       },
       update: {},
     });

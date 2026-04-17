@@ -7,6 +7,112 @@ import type {
   ShopifyOrdersQueryData,
 } from '@/types/shopify';
 
+/**
+ * Bulk `orders` query: keep line item selection shallow so the query stays under
+ * Shopify’s per-request cost limit (~1000). Deep media lives in
+ * `ORDER_LINE_ITEM_SELECTION_DETAIL` (single-order fetch only).
+ */
+const ORDER_LINE_ITEM_SELECTION_SYNC = `
+              id
+              title
+              quantity
+              sku
+              vendor
+              image { url }
+              discountedUnitPriceSet {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              variant {
+                id
+                title
+                sku
+                image { url }
+                product {
+                  featuredImage { url }
+                }
+                inventoryItem {
+                  unitCost {
+                    amount
+                  }
+                }
+              }
+`;
+
+/** Single `node(id:)` order — richer media for `image_url` when cost is amortized per order. */
+const ORDER_LINE_ITEM_SELECTION_DETAIL = `
+              id
+              title
+              quantity
+              sku
+              vendor
+              image { url }
+              discountedUnitPriceSet {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              product {
+                featuredImage { url }
+                featuredMedia {
+                  ... on MediaImage {
+                    image { url }
+                    preview { image { url } }
+                  }
+                }
+                media(first: 8) {
+                  edges {
+                    node {
+                      ... on MediaImage {
+                        image { url }
+                      }
+                    }
+                  }
+                }
+              }
+              variant {
+                id
+                title
+                sku
+                image { url }
+                media(first: 8) {
+                  edges {
+                    node {
+                      ... on MediaImage {
+                        image { url }
+                      }
+                    }
+                  }
+                }
+                product {
+                  featuredImage { url }
+                  featuredMedia {
+                    ... on MediaImage {
+                      image { url }
+                      preview { image { url } }
+                    }
+                  }
+                  media(first: 8) {
+                    edges {
+                      node {
+                        ... on MediaImage {
+                          image { url }
+                        }
+                      }
+                    }
+                  }
+                }
+                inventoryItem {
+                  unitCost {
+                    amount
+                  }
+                }
+              }
+`;
+
 const ORDERS_QUERY = `query Orders($first: Int!, $after: String, $query: String) {
   orders(first: $first, after: $after, sortKey: CREATED_AT, reverse: true, query: $query) {
     pageInfo {
@@ -77,38 +183,7 @@ const ORDERS_QUERY = `query Orders($first: Int!, $after: String, $query: String)
         lineItems(first: 250) {
           edges {
             node {
-              id
-              title
-              quantity
-              sku
-              vendor
-              image {
-                url
-              }
-              discountedUnitPriceSet {
-                shopMoney {
-                  amount
-                  currencyCode
-                }
-              }
-              variant {
-                id
-                title
-                sku
-                image {
-                  url
-                }
-                product {
-                  featuredImage {
-                    url
-                  }
-                }
-                inventoryItem {
-                  unitCost {
-                    amount
-                  }
-                }
-              }
+${ORDER_LINE_ITEM_SELECTION_SYNC}
             }
           }
         }
@@ -182,38 +257,7 @@ const ORDER_NODE_QUERY = `query OrderNode($id: ID!) {
       lineItems(first: 250) {
         edges {
           node {
-            id
-            title
-            quantity
-            sku
-            vendor
-            image {
-              url
-            }
-            discountedUnitPriceSet {
-              shopMoney {
-                amount
-                currencyCode
-              }
-            }
-            variant {
-              id
-              title
-              sku
-              image {
-                url
-              }
-              product {
-                featuredImage {
-                  url
-                }
-              }
-              inventoryItem {
-                unitCost {
-                  amount
-                }
-              }
-            }
+${ORDER_LINE_ITEM_SELECTION_DETAIL}
           }
         }
       }

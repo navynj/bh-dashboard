@@ -9,11 +9,16 @@ import type { Prisma } from '@prisma/client';
 import type { ShopifyOrderDisplayFulfillmentStatus } from '@/types/shopify';
 import type {
   OfficePurchaseOrderBlock,
-  PoLineItemView,
   PoPanelMeta,
   PurchaseOrderStatus,
   LinkedShopifyOrder,
+  PoEmailDeliveryItem,
 } from '../types';
+import { derivePurchaseOrderStatusFromShopify } from '@/lib/order/purchase-order-status-compute';
+import { legacyFallbackOrderChannel } from '@/lib/order/supplier-order-channel';
+import { sortPoLineItemsByProductTitleAsc } from '../utils/sort-lines-by-product-title';
+import { toOrderedAtIso } from '../utils/vancouver-datetime';
+import { computeEmailDeliveryOutstanding } from '../utils/po-email-delivery-policy';
 
 // ─── Prisma payload types ─────────────────────────────────────────────────────
 
@@ -26,6 +31,7 @@ export type PrismaPoWithRelations = Prisma.PurchaseOrderGetPayload<{
     };
     shopifyOrders: { include: { customer: true } };
     supplier: true;
+    emailDeliveries: true;
   };
 }>;
 
@@ -47,29 +53,7 @@ function dateToIso(d: Date | null | undefined): string | null {
   }
 }
 
-/**
- * Derive PO status from linked Shopify order fulfillment:
- * - `completed`            — PO explicitly marked complete (`completedAt` set) AND all fulfilled
- * - `fulfilled`            — all linked Shopify orders fulfilled
- * - `partially_fulfilled`  — some (but not all) linked orders fulfilled
- * - `unfulfilled`          — none fulfilled, or no linked orders
- */
-export function derivePurchaseOrderStatus(
-  linkedOrders: { displayFulfillmentStatus: string | null }[],
-  completedAt: Date | null | undefined,
-): PurchaseOrderStatus {
-  const total = linkedOrders.length;
-  const fulfilledCount = linkedOrders.filter(
-    (o) => o.displayFulfillmentStatus === 'FULFILLED',
-  ).length;
-
-  const allFulfilled = total > 0 && fulfilledCount === total;
-
-  if (completedAt && allFulfilled) return 'completed';
-  if (allFulfilled) return 'fulfilled';
-  if (fulfilledCount > 0) return 'partially_fulfilled';
-  return 'unfulfilled';
-}
+export const derivePurchaseOrderStatus = derivePurchaseOrderStatusFromShopify;
 
 // ─── PO → OfficePurchaseOrderBlock ────────────────────────────────────────────
 
@@ -81,12 +65,30 @@ export function mapPrismaPoToBlock(
   const firstOrder = linkedOrders[0];
   const firstOrderName = firstOrder?.name ?? '—';
 
+  const supplierChannel = legacyFallbackOrderChannel({
+    orderChannelType: po.supplier.orderChannelType,
+    orderChannelPayload: po.supplier.orderChannelPayload,
+    contactEmails: po.supplier.contactEmails,
+    contactName: po.supplier.contactName,
+    link: po.supplier.link,
+    notes: po.supplier.notes,
+  });
+  const supplierOrderChannelType = supplierChannel.type;
+  const emailDeliveryOutstanding = computeEmailDeliveryOutstanding({
+    supplierOrderChannelType,
+    emailSentAt: po.emailSentAt,
+    archivedAt: po.archivedAt,
+    legacyExternalId: po.legacyExternalId,
+  });
+
   // Build orderId→order map so we can resolve each lineItem's source order
   // without a 3-depth nested include (shopifyOrderLineItem→order).
   const orderById = new Map(linkedOrders.map((o) => [o.id, o]));
 
-  const derivedFromShopify = derivePurchaseOrderStatus(
-    linkedOrders.map((o) => ({ displayFulfillmentStatus: o.displayFulfillmentStatus })),
+  const derivedFromShopify = derivePurchaseOrderStatusFromShopify(
+    linkedOrders.map((o) => ({
+      displayFulfillmentStatus: o.displayFulfillmentStatus,
+    })),
     po.completedAt,
   );
 
@@ -96,46 +98,52 @@ export function mapPrismaPoToBlock(
     storedStatus === 'fulfilled' ||
     storedStatus === 'completed';
 
-  function lineFulfillmentStatus(li: (typeof po.lineItems)[0]): ShopifyOrderDisplayFulfillmentStatus {
+  function lineFulfillmentStatus(
+    li: (typeof po.lineItems)[0],
+  ): ShopifyOrderDisplayFulfillmentStatus {
     const qty = li.quantity;
     const recv = li.quantityReceived;
+    if (qty <= 0) return 'FULFILLED';
     if (qty > 0 && recv >= qty) return 'FULFILLED';
     if (qty > 0 && recv > 0 && recv < qty) return 'PARTIALLY_FULFILLED';
     if (poConsideredFulfilled && qty > 0) return 'FULFILLED';
     return 'UNFULFILLED';
   }
 
-  const lineItems: PoLineItemView[] = po.lineItems.map((li) => {
-    const soli = li.shopifyOrderLineItem;
-    const srcOrder = soli ? orderById.get(soli.orderId) : undefined;
-    return {
-      id: li.id,
-      purchaseOrderId: li.purchaseOrderId,
-      sequence: li.sequence,
-      quantity: li.quantity,
-      quantityReceived: li.quantityReceived,
-      supplierRef: li.supplierRef,
-      sku: li.sku,
-      variantTitle: li.variantTitle,
-      productTitle: li.productTitle,
-      imageUrl: soli?.imageUrl ?? null,
-      isCustom: li.isCustom,
-      itemPrice: decimalToString(li.itemPrice),
-      shopifyOrderLineItemId: soli?.id ?? null,
-      shopifyLineItemGid: soli?.shopifyGid ?? null,
-      shopifyVariantGid: li.shopifyVariantGid ?? soli?.variantGid ?? null,
-      shopifyProductGid: li.shopifyProductGid ?? null,
-      shopifyOrderId: srcOrder?.id ?? firstOrder?.id ?? null,
-      shopifyOrderNumber: srcOrder?.name ?? firstOrderName,
-      fulfillmentStatus: lineFulfillmentStatus(li),
-    };
-  });
+  const lineItems = sortPoLineItemsByProductTitleAsc(
+    po.lineItems.map((li) => {
+      const soli = li.shopifyOrderLineItem;
+      const srcOrder = soli ? orderById.get(soli.orderId) : undefined;
+      return {
+        id: li.id,
+        purchaseOrderId: li.purchaseOrderId,
+        sequence: li.sequence,
+        quantity: li.quantity,
+        quantityReceived: li.quantityReceived,
+        supplierRef: li.supplierRef,
+        sku: li.sku,
+        variantTitle: li.variantTitle,
+        productTitle: li.productTitle,
+        imageUrl: soli?.imageUrl ?? null,
+        isCustom: li.isCustom,
+        itemPrice: decimalToString(li.itemPrice),
+        shopifyOrderLineItemId: soli?.id ?? null,
+        shopifyLineItemGid: soli?.shopifyGid ?? null,
+        shopifyVariantGid: li.shopifyVariantGid ?? soli?.variantGid ?? null,
+        shopifyProductGid: li.shopifyProductGid ?? null,
+        shopifyOrderId: srcOrder?.id ?? firstOrder?.id ?? null,
+        shopifyOrderNumber: srcOrder?.name ?? firstOrderName,
+        fulfillmentStatus: lineFulfillmentStatus(li),
+      };
+    }),
+  );
 
   const orderDates = linkedOrders
     .map((o) => o.processedAt ?? o.shopifyCreatedAt)
     .filter((d): d is Date => d != null)
     .sort((a, b) => a.getTime() - b.getTime());
-  const orderedAt = orderDates.length > 0 ? dateToIso(orderDates[0]) : null;
+  const orderedAt =
+    orderDates.length > 0 ? toOrderedAtIso(orderDates[0]) : null;
 
   const linkedShopifyOrders: LinkedShopifyOrder[] = linkedOrders.map((o) => ({
     id: o.id,
@@ -151,7 +159,9 @@ export function mapPrismaPoToBlock(
   const lastSyncedAt = syncDates.length > 0 ? syncDates[0].toISOString() : null;
 
   /** Match PoTable: counts are **line rows** with status FULFILLED, not sum of quantities. */
-  const linesFulfilled = lineItems.filter((i) => i.fulfillmentStatus === 'FULFILLED').length;
+  const linesFulfilled = lineItems.filter(
+    (i) => i.fulfillmentStatus === 'FULFILLED',
+  ).length;
   const linesTotal = lineItems.length;
 
   const panelMeta: PoPanelMeta = {
@@ -166,9 +176,20 @@ export function mapPrismaPoToBlock(
     fulfillTotalCount: linesTotal,
     linkedShopifyOrders,
     lastSyncedAt,
-    shippingAddress: (po.shippingAddress ?? null) as PoPanelMeta['shippingAddress'],
-    billingAddress: (po.billingAddress ?? null) as PoPanelMeta['billingAddress'],
+    shippingAddress: (po.shippingAddress ??
+      null) as PoPanelMeta['shippingAddress'],
+    billingAddress: (po.billingAddress ??
+      null) as PoPanelMeta['billingAddress'],
     billingSameAsShipping: po.billingSameAsShipping,
+    authorizedBy: po.authorizedBy?.trim() ?? null,
+    emailSentAt: po.emailSentAt ? po.emailSentAt.toISOString() : null,
+    emailOpenedAt: po.emailOpenedAt ? po.emailOpenedAt.toISOString() : null,
+    emailDeliveries: po.emailDeliveries.map((d): PoEmailDeliveryItem => ({
+      recipientEmail: d.recipientEmail,
+      recipientName: d.recipientName,
+      sentAt: d.sentAt.toISOString(),
+      openedAt: d.openedAt ? d.openedAt.toISOString() : null,
+    })),
   };
 
   return {
@@ -181,15 +202,16 @@ export function mapPrismaPoToBlock(
     shopifyOrderCount: linkedOrders.length,
     lineItems,
     panelMeta,
+    supplierOrderChannelType,
+    poCreatedAt: po.createdAt.toISOString(),
+    legacyExternalId: po.legacyExternalId,
+    emailDeliveryOutstanding,
   };
 }
 
 // ─── Utility: format Decimal as display currency ─────────────────────────────
 
-export function formatItemPrice(
-  raw: string | null,
-  currency = 'CAD',
-): string {
+export function formatItemPrice(raw: string | null, currency = 'CAD'): string {
   if (raw == null) return '—';
   const n = Number.parseFloat(raw);
   if (Number.isNaN(n)) return raw;

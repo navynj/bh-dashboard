@@ -13,8 +13,8 @@ export default async function OfficeContactSettingsPage() {
       <div>
         <h1 className="text-lg font-semibold">Office — Contact Settings</h1>
         <p className="text-sm text-muted-foreground">
-          Configure sender accounts used for order communications with
-          suppliers.
+          Configure PO outbound email (saved to the database) and other contact
+          preferences for supplier communications.
         </p>
       </div>
 

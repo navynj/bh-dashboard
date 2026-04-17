@@ -667,7 +667,8 @@ model Supplier {
   groupId           String?                @map("group_id")
   group             SupplierGroup?         @relation(fields: [groupId], references: [id])
   contactName       String?                @map("contact_name")
-  contactEmail      String?                @map("contact_email")
+  /// One or more supplier contact emails (ordering / comm).
+  contactEmails     String[]               @default([]) @map("contact_emails")
   contactPhone      String?                @map("contact_phone")
   /// Preferred communication channel (email, chat, sms).
   preferredCommMode String?                @map("preferred_comm_mode")
@@ -680,7 +681,9 @@ model Supplier {
   createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime               @updatedAt @map("updated_at") @db.Timestamptz
 
-  orderChannelType    String? @map("order_channel_type")
+  /// email | order_link | direct_instruction (extensible string).
+  orderChannelType    String  @default("email") @map("order_channel_type")
+  /// Mode-specific JSON (contact, URLs, instructions).
   orderChannelPayload Json?   @map("order_channel_payload")
 
   @@index([groupId])
@@ -735,6 +738,9 @@ model PurchaseOrder {
   finalizedAt           DateTime?               @map("finalized_at") @db.Timestamptz
   completedAt           DateTime?               @map("completed_at") @db.Timestamptz
   archivedAt            DateTime?               @map("archived_at") @db.Timestamptz
+  emailSentAt           DateTime?               @map("email_sent_at") @db.Timestamptz
+  emailTrackingToken    String?                 @unique @map("email_tracking_token")
+  emailOpenedAt         DateTime?               @map("email_opened_at") @db.Timestamptz
   /// Shipping address for this PO (JSON: address1, address2, city, province, postalCode, country).
   shippingAddress       Json?                   @map("shipping_address")
   /// Billing address for this PO (JSON, same shape as shipping).
@@ -744,6 +750,7 @@ model PurchaseOrder {
   supplier              Supplier                @relation(fields: [supplierId], references: [id])
   shopifyOrders         ShopifyOrder[]
   lineItems             PurchaseOrderLineItem[]
+  emailDeliveries       PoEmailDelivery[]
   createdAt             DateTime                @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime                @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -784,6 +791,38 @@ model PurchaseOrderLineItem {
   @@index([purchaseOrderId, legacyLineExternalId])
   @@index([shopifyOrderLineItemId])
   @@map("purchase_order_line_items")
+  @@schema("order")
+}
+
+/// Singleton (`id = "default"`): PO supplier outbound email — edited under Office → Contact Settings.
+model OfficePoEmailSettings {
+  id        String @id @default("default")
+  senderName String @map("sender_name")
+  ccEmail    String? @map("cc_email") @db.Text
+  /// Supports {{poNumber}}
+  subjectTemplate String @map("subject_template") @db.Text
+  /// Supports {{supplierName}}, {{poNumber}}. Optional legacy {{replyEmail}} → order@cmarket.ca.
+  bodyIntroTemplate String @map("body_intro_template") @db.Text
+  bodySignatureTemplate String @map("body_signature_template") @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("office_po_email_settings")
+  @@schema("order")
+}
+
+model PoEmailDelivery {
+  id              String        @id @default(cuid())
+  purchaseOrderId String        @map("purchase_order_id")
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  recipientEmail  String        @map("recipient_email")
+  recipientName   String?       @map("recipient_name")
+  trackingToken   String        @unique @map("tracking_token")
+  sentAt          DateTime      @map("sent_at") @db.Timestamptz
+  openedAt        DateTime?     @map("opened_at") @db.Timestamptz
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([purchaseOrderId])
+  @@map("po_email_deliveries")
   @@schema("order")
 }
 

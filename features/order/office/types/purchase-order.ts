@@ -1,4 +1,5 @@
 import type { ShopifyOrderDisplayFulfillmentStatus } from '@/types/shopify';
+import type { SupplierOrderChannelType } from '@/lib/order/supplier-order-channel';
 
 export type PurchaseOrderStatus =
   | 'unfulfilled'
@@ -49,6 +50,13 @@ export type PoAddress = {
   country: string;
 };
 
+export type PoEmailDeliveryItem = {
+  recipientEmail: string;
+  recipientName: string | null;
+  sentAt: string;
+  openedAt: string | null;
+};
+
 export type PoPanelMeta = {
   poNumber: string;
   status: PurchaseOrderStatus;
@@ -64,6 +72,10 @@ export type PoPanelMeta = {
   shippingAddress: PoAddress | null;
   billingAddress: PoAddress | null;
   billingSameAsShipping: boolean;
+  authorizedBy: string | null;
+  emailSentAt: string | null;
+  emailOpenedAt: string | null;
+  emailDeliveries: PoEmailDeliveryItem[];
 };
 
 export type OfficePurchaseOrderBlock = {
@@ -77,6 +89,14 @@ export type OfficePurchaseOrderBlock = {
   lineItems: PoLineItemView[];
   subtreeRowLabel?: string;
   panelMeta?: PoPanelMeta;
+  /** Resolved supplier channel (legacy fallback applied in mapper). */
+  supplierOrderChannelType: SupplierOrderChannelType;
+  /** DB `purchase_orders.created_at` (ISO). */
+  poCreatedAt: string;
+  /** Shopify export `ID` when PO was imported from CSV; skips email-delivery nagging. */
+  legacyExternalId: number | null;
+  /** Email-channel PO, not archived/import legacy, no `emailSentAt`. */
+  emailDeliveryOutstanding: boolean;
 };
 
 export function formatProductLabel(line: PoLineItemView): string {

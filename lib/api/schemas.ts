@@ -5,6 +5,10 @@
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import {
+  assertSupplierOrderChannel,
+  supplierOrderChannelTypeSchema,
+} from '@/lib/order/supplier-order-channel';
 
 const yearMonthSchema = z
   .string()
@@ -356,24 +360,68 @@ export const deliveryDriverLocationPostSchema = z.object({
 
 // ─── Supplier ─────────────────────────────────────────────────────────────────
 
-export const supplierCreateSchema = z.object({
+const supplierWritableFieldsSchema = z.object({
   company: z
     .string()
     .min(1, 'Company name is required')
     .transform((s) => s.trim()),
   shopifyVendorName: z.string().trim().optional().nullable(),
-  contactName: z.string().trim().optional().nullable(),
-  contactEmail: z.string().email().trim().optional().nullable(),
-  contactPhone: z.string().trim().optional().nullable(),
-  preferredCommMode: z.enum(['email', 'chat', 'sms']).optional().nullable(),
   groupId: z.string().optional().nullable(),
-  link: z.string().url().trim().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
+  orderChannelType: supplierOrderChannelTypeSchema(),
+  orderChannelPayload: z.unknown(),
   /** Vendor name aliases for ShopifyVendorMapping (handles vendor renames). */
   vendorAliases: z.array(z.string().trim().min(1)).optional(),
 });
 
-export const supplierUpdateSchema = supplierCreateSchema.partial();
+export const supplierCreateSchema = supplierWritableFieldsSchema.superRefine(
+  (data, ctx) => {
+    const result = assertSupplierOrderChannel(
+      data.orderChannelType,
+      data.orderChannelPayload,
+    );
+    if (!result.ok) {
+      for (const issue of result.issues) {
+        ctx.addIssue({
+          code: 'custom',
+          message: issue.message,
+          path: ['orderChannelPayload', ...issue.path],
+        });
+      }
+    }
+  },
+);
+
+export const supplierUpdateSchema = supplierWritableFieldsSchema
+  .partial()
+  .superRefine((data, ctx) => {
+    const hasType = data.orderChannelType !== undefined;
+    const hasPayload = data.orderChannelPayload !== undefined;
+    if (hasType !== hasPayload) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'orderChannelType and orderChannelPayload must both be provided when updating order channel',
+        path: ['orderChannelPayload'],
+      });
+      return;
+    }
+    if (hasType && data.orderChannelType !== undefined) {
+      const result = assertSupplierOrderChannel(
+        data.orderChannelType,
+        data.orderChannelPayload,
+      );
+      if (!result.ok) {
+        for (const issue of result.issues) {
+          ctx.addIssue({
+            code: 'custom',
+            message: issue.message,
+            path: ['orderChannelPayload', ...issue.path],
+          });
+        }
+      }
+    }
+  });
 
 // ─── Office: Shopify order edit (Inbox / PO) ─────────────────────────────────
 

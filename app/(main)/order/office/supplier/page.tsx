@@ -40,9 +40,9 @@ export default async function OfficeSuppliersPage() {
         groupId: true,
         group: { select: { name: true, slug: true } },
         contactName: true,
-        contactEmail: true,
-        contactPhone: true,
-        preferredCommMode: true,
+        contactEmails: true,
+        orderChannelType: true,
+        orderChannelPayload: true,
         isFavorite: true,
         link: true,
         notes: true,
@@ -58,6 +58,7 @@ export default async function OfficeSuppliersPage() {
 
   const serialized = suppliers.map((s) => ({
     ...s,
+    orderChannelType: s.orderChannelType ?? 'email',
     createdAt: s.createdAt.toISOString(),
   }));
 

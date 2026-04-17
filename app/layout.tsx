@@ -27,14 +27,7 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <Suspense
-          fallback={
-            <>
-              {children}
-              <Toaster position="top-center" />
-            </>
-          }
-        >
+        <Suspense fallback={null}>
           <NextIntlClientProvider messages={messages}>
             <QueryProvider>
               <SessionProvider>

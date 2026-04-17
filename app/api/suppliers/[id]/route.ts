@@ -4,6 +4,11 @@ import { prisma } from '@/lib/core/prisma';
 import { parseBody, supplierUpdateSchema } from '@/lib/api/schemas';
 import { toApiErrorResponse } from '@/lib/core/errors';
 import { resolveSupplierGroupId } from '@/lib/order/default-supplier-group';
+import {
+  assertSupplierOrderChannel,
+  legacyColumnsFromOrderChannel,
+} from '@/lib/order/supplier-order-channel';
+import type { Prisma } from '@prisma/client';
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -27,6 +32,43 @@ export async function PUT(request: NextRequest, ctx: RouteCtx) {
         ? await resolveSupplierGroupId(prisma, data.groupId)
         : undefined;
 
+    let orderChannelPrisma:
+      | {
+          orderChannelType: string;
+          orderChannelPayload: Prisma.InputJsonValue;
+          contactName: string | null;
+          contactEmails: string[];
+          link: string | null;
+        }
+      | undefined;
+
+    if (
+      data.orderChannelType !== undefined &&
+      data.orderChannelPayload !== undefined
+    ) {
+      const channel = assertSupplierOrderChannel(
+        data.orderChannelType,
+        data.orderChannelPayload,
+      );
+      if (!channel.ok) {
+        return NextResponse.json(
+          { error: 'Invalid order channel' },
+          { status: 400 },
+        );
+      }
+      const legacy = legacyColumnsFromOrderChannel(
+        data.orderChannelType,
+        channel.payload,
+      );
+      orderChannelPrisma = {
+        orderChannelType: data.orderChannelType,
+        orderChannelPayload: channel.payload as unknown as Prisma.InputJsonValue,
+        contactName: legacy.contactName,
+        contactEmails: legacy.contactEmails,
+        link: legacy.link,
+      };
+    }
+
     const supplier = await prisma.supplier.update({
       where: { id },
       data: {
@@ -34,21 +76,17 @@ export async function PUT(request: NextRequest, ctx: RouteCtx) {
         ...(data.shopifyVendorName !== undefined && {
           shopifyVendorName: data.shopifyVendorName ?? null,
         }),
-        ...(data.contactName !== undefined && {
-          contactName: data.contactName ?? null,
-        }),
-        ...(data.contactEmail !== undefined && {
-          contactEmail: data.contactEmail ?? null,
-        }),
-        ...(data.contactPhone !== undefined && {
-          contactPhone: data.contactPhone ?? null,
-        }),
-        ...(data.preferredCommMode !== undefined && {
-          preferredCommMode: data.preferredCommMode ?? null,
-        }),
         ...(data.groupId !== undefined && { groupId: resolvedGroupId }),
-        ...(data.link !== undefined && { link: data.link ?? null }),
         ...(data.notes !== undefined && { notes: data.notes ?? null }),
+        ...(orderChannelPrisma && {
+          orderChannelType: orderChannelPrisma.orderChannelType,
+          orderChannelPayload: orderChannelPrisma.orderChannelPayload,
+          contactName: orderChannelPrisma.contactName,
+          contactEmails: orderChannelPrisma.contactEmails,
+          link: orderChannelPrisma.link,
+          contactPhone: null,
+          preferredCommMode: null,
+        }),
       },
     });
 
@@ -135,6 +173,23 @@ export async function DELETE(_request: NextRequest, ctx: RouteCtx) {
     }
 
     const { id } = await ctx.params;
+
+    const existing = await prisma.supplier.findUnique({
+      where: { id },
+      select: { _count: { select: { purchaseOrders: true } } },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: 'Supplier not found' }, { status: 404 });
+    }
+    if (existing._count.purchaseOrders > 0) {
+      return NextResponse.json(
+        {
+          error:
+            'Cannot delete a supplier that has purchase orders. Reassign or archive those POs first.',
+        },
+        { status: 409 },
+      );
+    }
 
     await prisma.supplier.delete({ where: { id } });
 

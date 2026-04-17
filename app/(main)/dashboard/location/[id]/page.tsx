@@ -33,7 +33,7 @@ import {
 } from '@/features/dashboard/revenue/utils/week-range';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core';
-import { getCurrentYearMonth, isValidYearMonth } from '@/lib/utils';
+import { getCurrentYearMonth, getInternalAppBaseUrl, isValidYearMonth } from '@/lib/utils';
 import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 
@@ -84,12 +84,9 @@ const LocationPage = async ({
   // ===============================
   // Budget
   // ===============================
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-    ? process.env.NEXT_PUBLIC_APP_URL
-    : 'http://localhost:3000';
   const headersList = await headers();
   const context: QuickBooksApiContext = {
-    baseUrl,
+    baseUrl: getInternalAppBaseUrl(headersList),
     cookie: headersList.get('cookie'),
   };
 

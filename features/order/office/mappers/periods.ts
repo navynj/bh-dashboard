@@ -1,4 +1,5 @@
 import { format, startOfWeek, addWeeks, subWeeks, endOfWeek } from 'date-fns';
+import { enUS } from 'date-fns/locale';
 import type { Period } from '../types';
 
 /**
@@ -31,7 +32,7 @@ function formatWeekLabel(weekStart: Date): string {
   const end = endOfWeek(weekStart, { weekStartsOn: 1 });
   const sameMonth = weekStart.getMonth() === end.getMonth();
   if (sameMonth) {
-    return `${format(weekStart, 'MMM d')}–${format(end, 'd')}`;
+    return `${format(weekStart, 'MMM d (EEE)', { locale: enUS })}–${format(end, 'd (EEE)', { locale: enUS })}`;
   }
-  return `${format(weekStart, 'MMM d')}–${format(end, 'MMM d')}`;
+  return `${format(weekStart, 'MMM d (EEE)', { locale: enUS })}–${format(end, 'MMM d (EEE)', { locale: enUS })}`;
 }

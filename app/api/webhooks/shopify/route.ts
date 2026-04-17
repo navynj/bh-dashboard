@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/core/prisma';
+import { recomputePurchaseOrderStatusesForShopifyOrderId } from '@/lib/order/purchase-order-status';
 import { syncOneOrder } from '@/lib/shopify/sync/upsert-order';
 import type { ShopifyOrderNode } from '@/types/shopify';
 
@@ -250,6 +251,13 @@ export async function POST(request: NextRequest) {
               syncedAt: new Date(),
             },
           });
+          const localOrder = await prisma.shopifyOrder.findFirst({
+            where: { shopifyGid: gid },
+            select: { id: true },
+          });
+          if (localOrder) {
+            await recomputePurchaseOrderStatusesForShopifyOrderId(localOrder.id);
+          }
           console.log(
             `[webhook/shopify] Updated fulfillment status for order ${orderId} → ${displayStatus}`,
           );

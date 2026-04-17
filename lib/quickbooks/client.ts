@@ -41,14 +41,27 @@ export const fetchPnlReport = cache(async function fetchPnlReport(
     cache: 'no-store',
   });
 
+  const raw = await res.text();
   if (!res.ok) {
-    const text = await res.text();
     throw new AppError(
-      `QuickBooks P&L API failed: ${res.status} ${text || res.statusText}`,
+      `QuickBooks P&L API failed: ${res.status} ${raw || res.statusText}`,
     );
   }
 
-  const data = (await res.json()) as PnlApiResponse;
+  let data: PnlApiResponse;
+  try {
+    data = JSON.parse(raw) as PnlApiResponse;
+  } catch {
+    const looksLikeHtml = raw.trimStart().startsWith('<');
+    const hint = looksLikeHtml
+      ? 'Received HTML instead of JSON — the internal fetch URL likely does not match this app (e.g. NEXT_PUBLIC_APP_URL vs the URL in your browser).'
+      : 'Response body is not valid JSON.';
+    const preview = raw.slice(0, 200).replace(/\s+/g, ' ');
+    throw new AppError(
+      `QuickBooks P&L API failed: ${hint} Status ${res.status}. Body preview: ${preview}`,
+    );
+  }
+
   if (!data.report) {
     throw new AppError('QuickBooks P&L API returned no report');
   }

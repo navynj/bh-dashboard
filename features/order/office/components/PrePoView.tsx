@@ -18,7 +18,10 @@ type Props = {
   inclusions?: Record<string, boolean[]>;
   onToggleInclude?: (orderId: string, itemIdx: number) => void;
   onSeparatePo?: (payload: SeparatePoPayload) => void;
-  onArchive?: () => void;
+  /** Archive only this order (Separate PO dialog), not every draft in the row. */
+  onArchiveShopifyOrder?: (shopifyOrderDbId: string) => void;
+  showArchived?: boolean;
+  onUnarchiveShopifyOrder?: (shopifyOrderDbId: string) => void;
   /** When editing drafts under a PO tab, pass PO id for Shopify save + resync. */
   purchaseOrderId?: string | null;
 };
@@ -28,19 +31,28 @@ export function PrePoView({
   inclusions,
   onToggleInclude,
   onSeparatePo,
-  onArchive,
+  onArchiveShopifyOrder,
+  showArchived,
+  onUnarchiveShopifyOrder,
   purchaseOrderId,
 }: Props) {
+  const orders =
+    showArchived === true
+      ? viewData.shopifyOrderDrafts
+      : viewData.shopifyOrderDrafts.filter((o) => !o.archivedAt);
+
   return (
     <div>
-      {viewData.shopifyOrderDrafts.map((order) => (
+      {orders.map((order) => (
         <OrderBlock
           key={order.id}
           order={order}
           inclusions={inclusions?.[order.id]}
           onToggleInclude={onToggleInclude}
-          onSeparatePo={onSeparatePo}
-          onArchive={onArchive}
+          onSeparatePo={showArchived ? undefined : onSeparatePo}
+          onArchiveShopifyOrder={onArchiveShopifyOrder}
+          showArchived={showArchived}
+          onUnarchiveShopifyOrder={onUnarchiveShopifyOrder}
           purchaseOrderId={purchaseOrderId ?? undefined}
         />
       ))}

@@ -3,6 +3,7 @@ import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
 import { parseBody, purchaseOrderUpdateSchema } from '@/lib/api/schemas';
 import { toApiErrorResponse } from '@/lib/core/errors';
+import { recomputePurchaseOrderStatusById } from '@/lib/order/purchase-order-status';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -100,9 +101,15 @@ export async function PUT(
         : null;
     }
 
-    const po = await prisma.purchaseOrder.update({
+    await prisma.purchaseOrder.update({
       where: { id },
       data: updateData,
+    });
+
+    await recomputePurchaseOrderStatusById(id);
+
+    const po = await prisma.purchaseOrder.findUniqueOrThrow({
+      where: { id },
       include: {
         lineItems: { orderBy: { sequence: 'asc' } },
         shopifyOrders: true,

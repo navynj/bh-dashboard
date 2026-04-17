@@ -3,6 +3,7 @@ import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
 import { parseBody, purchaseOrderCreateSchema } from '@/lib/api/schemas';
 import { toApiErrorResponse } from '@/lib/core/errors';
+import { mapPrismaPoToBlock } from '@/features/order/office/mappers/map-purchase-order';
 
 export async function GET() {
   try {
@@ -79,6 +80,11 @@ export async function POST(request: NextRequest) {
         poNumber = String(lastNum + 1);
       }
 
+      const authorizedBy =
+        session.user?.name?.trim() ||
+        session.user?.email?.trim() ||
+        null;
+
       const created = await tx.purchaseOrder.create({
         data: {
           poNumber,
@@ -91,6 +97,7 @@ export async function POST(request: NextRequest) {
           shippingAddress: data.shippingAddress ?? undefined,
           billingAddress: data.billingAddress ?? undefined,
           billingSameAsShipping: data.billingSameAsShipping,
+          authorizedBy,
         },
       });
 
@@ -134,14 +141,25 @@ export async function POST(request: NextRequest) {
       return tx.purchaseOrder.findUniqueOrThrow({
         where: { id: created.id },
         include: {
-          lineItems: { orderBy: { sequence: 'asc' } },
-          shopifyOrders: true,
+          lineItems: {
+            orderBy: { sequence: 'asc' },
+            include: { shopifyOrderLineItem: true },
+          },
+          shopifyOrders: { include: { customer: true } },
           supplier: true,
+          emailDeliveries: true,
         },
       });
     });
 
-    return NextResponse.json({ ok: true, purchaseOrder: po }, { status: 201 });
+    return NextResponse.json(
+      {
+        ok: true,
+        purchaseOrder: po,
+        officeBlock: mapPrismaPoToBlock(po),
+      },
+      { status: 201 },
+    );
   } catch (err: unknown) {
     return toApiErrorResponse(err, 'POST /api/purchase-orders error:');
   }

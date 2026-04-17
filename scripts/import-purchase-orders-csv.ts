@@ -18,6 +18,7 @@ import { parse } from 'csv-parse/sync';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/core/prisma';
 import { shippingBillingPayloadFromShopifyExportRow } from '../lib/order/shopify-po-export-csv-address';
+import { looseContactEmailsFromRaw } from '../lib/order/supplier-order-channel';
 
 type CsvRow = Record<string, string>;
 
@@ -227,19 +228,20 @@ async function main() {
     tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
     company: string | null,
     contactName: string | null,
-    contactEmail: string | null,
+    supplierContactEmail: string | null,
   ): Promise<string> {
     const name = company?.trim() || '(unknown supplier)';
     const key = name.toLowerCase();
     const cached = supplierIdCache.get(key);
     if (cached) return cached;
+    const contactEmails = looseContactEmailsFromRaw(supplierContactEmail);
     const supplier = await tx.supplier.upsert({
       where: { shopifyVendorName: name },
       create: {
         company: name,
         shopifyVendorName: name,
         contactName,
-        contactEmail,
+        contactEmails,
       },
       update: {},
     });
@@ -255,7 +257,8 @@ async function main() {
     const first = group[0];
     const header = headerPayload(first);
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(
+      async (tx) => {
       const supplierId = await resolveSupplier(
         tx,
         header.supplierCompany,
@@ -317,7 +320,9 @@ async function main() {
       }));
 
       await tx.purchaseOrderLineItem.createMany({ data: lines });
-    });
+    },
+      { maxWait: 20_000, timeout: 120_000 },
+    );
 
     done += 1;
     if (done % 500 === 0) {

@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils/cn';
 import type { Period, PeriodKey } from '../types';
+import { formatOfficeDateChip } from '../utils/format-date-label';
 
 type Props = {
   periods: Period[];
@@ -63,7 +64,9 @@ export function PeriodFilterBar({
 
   const activeLabel =
     activePeriod === 'custom'
-      ? `${af || '?'} – ${at || '?'}`
+      ? af && at
+        ? `${formatOfficeDateChip(af)} – ${formatOfficeDateChip(at)}`
+        : `${af || '?'} – ${at || '?'}`
       : activePeriod === 'all'
         ? ''
         : (allPresetLabels.find((p) => p.id === activePeriod)?.label ?? '');
@@ -205,8 +208,10 @@ export function PeriodFilterBar({
                   }}
                 >
                   {p.label}
-                  <span className="ml-2 text-muted-foreground font-mono text-[10px]">
-                    {p.from}
+                  <span className="ml-2 text-muted-foreground text-[10px]">
+                    {p.from === p.to
+                      ? formatOfficeDateChip(p.from)
+                      : `${formatOfficeDateChip(p.from)} – ${formatOfficeDateChip(p.to)}`}
                   </span>
                 </Button>
               );

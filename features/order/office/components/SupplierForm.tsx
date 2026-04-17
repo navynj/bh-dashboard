@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,6 +13,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { cn } from '@/lib/utils/cn';
+import {
+  legacyFallbackOrderChannel,
+  normalizeSupplierEmailContacts,
+  type SupplierOrderChannelType,
+  type EmailOrderChannelPayload,
+  type OrderLinkChannelPayload,
+  type DirectInstructionChannelPayload,
+} from '@/lib/order/supplier-order-channel';
+
+type EmailFormRow = { email: string; name: string };
 
 export type SupplierGroup = {
   id: string;
@@ -29,12 +41,12 @@ export type SupplierRow = {
   groupId: string | null;
   group: { name: string; slug: string } | null;
   contactName: string | null;
-  contactEmail: string | null;
-  contactPhone: string | null;
-  preferredCommMode: string | null;
+  contactEmails: string[];
   isFavorite: boolean;
   link: string | null;
   notes: string | null;
+  orderChannelType: string;
+  orderChannelPayload: unknown;
   createdAt: string;
   vendorMappings: VendorMappingRow[];
   _count: { purchaseOrders: number };
@@ -49,13 +61,76 @@ type Props = {
   onDone: () => void;
 };
 
-const COMM_OPTIONS = [
-  { value: 'email', label: 'Email' },
-  { value: 'chat', label: 'Chat' },
-  { value: 'sms', label: 'SMS' },
-] as const;
-
 const NONE_VALUE = '__none__';
+
+const CHANNEL_OPTIONS: {
+  value: SupplierOrderChannelType;
+  label: string;
+}[] = [
+  { value: 'email', label: 'Email' },
+  { value: 'order_link', label: 'Order link' },
+  { value: 'direct_instruction', label: 'Direct' },
+];
+
+function initialOrderChannel(editing: SupplierRow | null) {
+  const emptyEmailRow = (): EmailFormRow => ({ email: '', name: '' });
+  if (!editing) {
+    return {
+      orderChannelType: 'email' as SupplierOrderChannelType,
+      email: { rows: [emptyEmailRow()] },
+      link: {
+        orderUrl: '',
+        instruction: '',
+        invoiceConfirmSenderEmail: '',
+      },
+      direct: { instruction: '' },
+    };
+  }
+  const { type, payload } = legacyFallbackOrderChannel({
+    orderChannelType: editing.orderChannelType,
+    orderChannelPayload: editing.orderChannelPayload,
+    contactEmails: editing.contactEmails,
+    contactName: editing.contactName,
+    link: editing.link,
+    notes: editing.notes,
+  });
+  if (type === 'email') {
+    const p = payload as EmailOrderChannelPayload;
+    const rows: EmailFormRow[] =
+      p.contacts.length > 0
+        ? p.contacts.map((c) => ({
+            email: c.email,
+            name: c.name?.trim() ?? '',
+          }))
+        : [emptyEmailRow()];
+    return {
+      orderChannelType: type,
+      email: { rows },
+      link: { orderUrl: '', instruction: '', invoiceConfirmSenderEmail: '' },
+      direct: { instruction: '' },
+    };
+  }
+  if (type === 'order_link') {
+    const p = payload as OrderLinkChannelPayload;
+    return {
+      orderChannelType: type,
+      email: { rows: [emptyEmailRow()] },
+      link: {
+        orderUrl: p.orderUrl ?? '',
+        instruction: p.instruction ?? '',
+        invoiceConfirmSenderEmail: p.invoiceConfirmSenderEmail ?? '',
+      },
+      direct: { instruction: '' },
+    };
+  }
+  const p = payload as DirectInstructionChannelPayload;
+  return {
+    orderChannelType: type,
+    email: { rows: [emptyEmailRow()] },
+    link: { orderUrl: '', instruction: '', invoiceConfirmSenderEmail: '' },
+    direct: { instruction: p.instruction ?? '' },
+  };
+}
 
 export function SupplierForm({
   editing,
@@ -67,6 +142,7 @@ export function SupplierForm({
 }: Props) {
   const isEdit = editing !== null;
   const [isPending, startTransition] = useTransition();
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const [company, setCompany] = useState(
     editing?.company ?? prefillVendor ?? '',
@@ -77,19 +153,19 @@ export function SupplierForm({
   const [groupId, setGroupId] = useState(
     editing?.groupId ?? defaultGroupId ?? '',
   );
-  const [contactName, setContactName] = useState(editing?.contactName ?? '');
-  const [contactEmail, setContactEmail] = useState(
-    editing?.contactEmail ?? '',
-  );
-  const [contactPhone, setContactPhone] = useState(
-    editing?.contactPhone ?? '',
-  );
-  const [preferredCommMode, setPreferredCommMode] = useState(
-    editing?.preferredCommMode ?? '',
-  );
-  const [link, setLink] = useState(editing?.link ?? '');
   const [notes, setNotes] = useState(editing?.notes ?? '');
   const [error, setError] = useState<string | null>(null);
+
+  const ic = useMemo(() => initialOrderChannel(editing), [editing]);
+  const [orderChannelType, setOrderChannelType] =
+    useState<SupplierOrderChannelType>(ic.orderChannelType);
+  const [emailRows, setEmailRows] = useState<EmailFormRow[]>(ic.email.rows);
+  const [linkOrderUrl, setLinkOrderUrl] = useState(ic.link.orderUrl);
+  const [linkInstruction, setLinkInstruction] = useState(ic.link.instruction);
+  const [linkInvoiceEmail, setLinkInvoiceEmail] = useState(
+    ic.link.invoiceConfirmSenderEmail,
+  );
+  const [directInstruction, setDirectInstruction] = useState(ic.direct.instruction);
 
   const [vendorAliases, setVendorAliases] = useState<string[]>(
     editing?.vendorMappings.map((m) => m.vendorName) ?? [],
@@ -107,6 +183,46 @@ export function SupplierForm({
     setVendorAliases((prev) => prev.filter((a) => a !== name));
   }
 
+  function addEmailRow() {
+    setEmailRows((prev) => [...prev, { email: '', name: '' }]);
+  }
+
+  function removeEmailRow(index: number) {
+    setEmailRows((prev) =>
+      prev.length <= 1 ? prev : prev.filter((_, i) => i !== index),
+    );
+  }
+
+  function patchEmailRow(
+    index: number,
+    patch: Partial<Pick<EmailFormRow, 'email' | 'name'>>,
+  ) {
+    setEmailRows((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    );
+  }
+
+  function buildPayload(): unknown {
+    if (orderChannelType === 'email') {
+      return {
+        contacts: normalizeSupplierEmailContacts(
+          emailRows.map((r) => ({
+            email: r.email,
+            name: r.name.trim() || null,
+          })),
+        ),
+      };
+    }
+    if (orderChannelType === 'order_link') {
+      return {
+        orderUrl: linkOrderUrl.trim() || null,
+        instruction: linkInstruction.trim(),
+        invoiceConfirmSenderEmail: linkInvoiceEmail.trim() || null,
+      };
+    }
+    return { instruction: directInstruction.trim() };
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -116,12 +232,9 @@ export function SupplierForm({
         company: company.trim(),
         shopifyVendorName: shopifyVendorName.trim() || null,
         groupId: groupId || null,
-        contactName: contactName.trim() || null,
-        contactEmail: contactEmail.trim() || null,
-        contactPhone: contactPhone.trim() || null,
-        preferredCommMode: preferredCommMode || null,
-        link: link.trim() || null,
         notes: notes.trim() || null,
+        orderChannelType,
+        orderChannelPayload: buildPayload(),
         vendorAliases,
       };
 
@@ -146,6 +259,9 @@ export function SupplierForm({
 
   const fieldCls =
     'h-auto min-h-0 text-sm px-2 py-1.5 rounded-md md:text-sm';
+
+  const poCount = editing?._count.purchaseOrders ?? 0;
+  const canDelete = isEdit && poCount === 0;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
@@ -280,86 +396,151 @@ export function SupplierForm({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="grid gap-2">
-          <Label htmlFor="sf-name" className="text-xs">
-            Contact Name
-          </Label>
-          <Input
-            id="sf-name"
-            value={contactName}
-            onChange={(e) => setContactName(e.target.value)}
-            className={fieldCls}
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="sf-email" className="text-xs">
-            Contact Email
-          </Label>
-          <Input
-            id="sf-email"
-            type="email"
-            value={contactEmail}
-            onChange={(e) => setContactEmail(e.target.value)}
-            className={fieldCls}
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="grid gap-2">
-          <Label htmlFor="sf-phone" className="text-xs">
-            Contact Phone
-          </Label>
-          <Input
-            id="sf-phone"
-            value={contactPhone}
-            onChange={(e) => setContactPhone(e.target.value)}
-            className={fieldCls}
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="sf-comm" className="text-xs">
-            Preferred Comm
-          </Label>
-          <Select
-            value={preferredCommMode}
-            onValueChange={setPreferredCommMode}
-          >
-            <SelectTrigger
-              id="sf-comm"
-              className="h-auto min-h-0 text-sm px-2 py-1.5"
-            >
-              <SelectValue placeholder="Select..." />
-            </SelectTrigger>
-            <SelectContent>
-              {COMM_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
       <div className="grid gap-2">
-        <Label htmlFor="sf-link" className="text-xs">
-          Order Link
-        </Label>
-        <Input
-          id="sf-link"
-          type="url"
-          placeholder="https://supplier-site.com/order"
-          value={link}
-          onChange={(e) => setLink(e.target.value)}
-          className={fieldCls}
-        />
+        <Label className="text-xs">Order method</Label>
+        <div className="flex flex-wrap gap-1">
+          {CHANNEL_OPTIONS.map((o) => (
+            <Button
+              key={o.value}
+              type="button"
+              size="sm"
+              variant={orderChannelType === o.value ? 'default' : 'outline'}
+              className={cn(
+                'text-xs h-auto py-1',
+                orderChannelType !== o.value && 'text-muted-foreground',
+              )}
+              onClick={() => setOrderChannelType(o.value)}
+            >
+              {o.label}
+            </Button>
+          ))}
+        </div>
       </div>
+
+      {orderChannelType === 'email' && (
+        <div className="grid gap-3">
+          <div className="grid gap-2">
+            <Label className="text-xs">Contacts *</Label>
+            <p className="text-[10px] text-muted-foreground -mt-1">
+              One name per email (invalid / duplicate emails are removed on save).
+            </p>
+            {emailRows.map((row, index) => (
+              <div
+                key={index}
+                className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-1.5 items-end"
+              >
+                <div className="grid gap-1">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Email
+                  </Label>
+                  <Input
+                    id={index === 0 ? 'sf-email-0' : undefined}
+                    type="email"
+                    value={row.email}
+                    onChange={(e) =>
+                      patchEmailRow(index, { email: e.target.value })
+                    }
+                    placeholder="supplier@example.com"
+                    className={fieldCls}
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Name
+                  </Label>
+                  <Input
+                    value={row.name}
+                    onChange={(e) =>
+                      patchEmailRow(index, { name: e.target.value })
+                    }
+                    placeholder="Contact name"
+                    className={fieldCls}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs shrink-0 px-2 h-8 sm:mb-0.5"
+                  onClick={() => removeEmailRow(index)}
+                  disabled={emailRows.length <= 1}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs w-fit"
+              onClick={addEmailRow}
+            >
+              Add contact
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {orderChannelType === 'order_link' && (
+        <div className="grid gap-3">
+          <div className="grid gap-2">
+            <Label htmlFor="sf-order-url" className="text-xs">
+              Order URL *
+            </Label>
+            <Input
+              id="sf-order-url"
+              type="url"
+              placeholder="https://…"
+              value={linkOrderUrl}
+              onChange={(e) => setLinkOrderUrl(e.target.value)}
+              className={fieldCls}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="sf-link-instr" className="text-xs">
+              Instructions
+            </Label>
+            <Textarea
+              id="sf-link-instr"
+              value={linkInstruction}
+              onChange={(e) => setLinkInstruction(e.target.value)}
+              className="min-h-16 resize-none text-sm px-2 py-1.5 md:text-sm"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="sf-invoice-email" className="text-xs">
+              Invoice confirm email
+            </Label>
+            <Input
+              id="sf-invoice-email"
+              type="email"
+              placeholder="Who sends / receives invoice confirmation"
+              value={linkInvoiceEmail}
+              onChange={(e) => setLinkInvoiceEmail(e.target.value)}
+              className={fieldCls}
+            />
+          </div>
+        </div>
+      )}
+
+      {orderChannelType === 'direct_instruction' && (
+        <div className="grid gap-2">
+          <Label htmlFor="sf-direct-instr" className="text-xs">
+            Instructions
+          </Label>
+          <Textarea
+            id="sf-direct-instr"
+            value={directInstruction}
+            onChange={(e) => setDirectInstruction(e.target.value)}
+            className="min-h-20 resize-none text-sm px-2 py-1.5 md:text-sm"
+          />
+        </div>
+      )}
 
       <div className="grid gap-2">
         <Label htmlFor="sf-notes" className="text-xs">
-          Notes
+          Notes (internal)
         </Label>
         <Textarea
           id="sf-notes"
@@ -369,20 +550,68 @@ export function SupplierForm({
         />
       </div>
 
-      <div className="flex gap-2 pt-1">
-        <Button type="submit" size="sm" disabled={isPending}>
-          {isPending ? 'Saving...' : isEdit ? 'Update' : 'Create'}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={onDone}
-          disabled={isPending}
-        >
-          Cancel
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+        <div className="flex gap-2">
+          <Button type="submit" size="sm" disabled={isPending}>
+            {isPending ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onDone}
+            disabled={isPending}
+          >
+            Cancel
+          </Button>
+        </div>
+        {isEdit && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-destructive border-destructive/40 hover:bg-destructive/10"
+            disabled={isPending || !canDelete}
+            title={
+              !canDelete
+                ? `This supplier has ${poCount} purchase order${poCount !== 1 ? 's' : ''} and cannot be deleted.`
+                : 'Permanently remove this supplier and its vendor mappings'
+            }
+            onClick={() => {
+              setError(null);
+              setDeleteConfirmOpen(true);
+            }}
+          >
+            Delete supplier
+          </Button>
+        )}
       </div>
+
+      {editing && (
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          onOpenChange={setDeleteConfirmOpen}
+          title="Delete this supplier?"
+          description={`Remove “${editing.company}” from the hub. Shopify vendor aliases for this supplier will be removed. This cannot be undone.`}
+          variant="destructive"
+          confirmLabel="Delete"
+          onConfirm={async () => {
+            const res = await fetch(`/api/suppliers/${editing.id}`, {
+              method: 'DELETE',
+            });
+            if (!res.ok) {
+              const data = (await res.json().catch(() => null)) as {
+                error?: string;
+              } | null;
+              const msg = data?.error ?? `Delete failed (${res.status})`;
+              setError(msg);
+              throw new Error(msg);
+            }
+            setDeleteConfirmOpen(false);
+            onDone();
+          }}
+        />
+      )}
     </form>
   );
 }

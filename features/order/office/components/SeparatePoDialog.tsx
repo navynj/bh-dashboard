@@ -23,6 +23,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { formatItemPrice } from '../mappers/map-purchase-order';
 import type { ShopifyOrderDraft } from '../types';
+import { formatVancouverOrderedDetail } from '../utils/vancouver-datetime';
 import { LineItemThumb } from './LineItemThumb';
 
 type Props = {
@@ -119,7 +120,9 @@ export function SeparatePoDialog({
         <div className="space-y-4">
           {/* Order info */}
           <div className="flex gap-3 flex-wrap text-[11px] text-muted-foreground">
-            {order.orderedAt && <span>Ordered {order.orderedAt}</span>}
+            {order.orderedAt && (
+              <span>Ordered {formatVancouverOrderedDetail(order.orderedAt)}</span>
+            )}
             <span>{order.customerEmail ?? '—'}</span>
             <span>{order.shippingAddressLine ?? '—'}</span>
           </div>

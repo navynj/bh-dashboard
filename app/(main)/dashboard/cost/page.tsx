@@ -7,7 +7,7 @@ import {
   getBudgetsByMonth,
 } from '@/features/dashboard/budget';
 import { AppError, GENERIC_ERROR_MESSAGE } from '@/lib/core/errors';
-import { getCurrentYearMonth, isValidYearMonth } from '@/lib/utils';
+import { getCurrentYearMonth, getInternalAppBaseUrl, isValidYearMonth } from '@/lib/utils';
 import type { QuickBooksApiContext } from '@/features/dashboard/budget';
 import type { BudgetDataType } from '@/features/dashboard/budget';
 import { getDefaultDashboardLocationId } from '@/lib/dashboard/default-location';
@@ -45,12 +45,9 @@ export default async function BudgetPage({ searchParams }: Props) {
     redirect(`/dashboard/location/${managerLocationId}?yearMonth=${yearMonth}`);
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-    ? process.env.NEXT_PUBLIC_APP_URL
-    : 'http://localhost:3000';
   const headersList = await headers();
   const context: QuickBooksApiContext = {
-    baseUrl,
+    baseUrl: getInternalAppBaseUrl(headersList),
     cookie: headersList.get('cookie'),
   };
 

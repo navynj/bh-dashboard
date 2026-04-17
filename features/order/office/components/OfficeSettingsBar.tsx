@@ -80,6 +80,11 @@ export function OfficeSettingsBar() {
     fetchStatus();
   }, [fetchStatus]);
 
+  /** Same layout stays mounted across office routes — clear stale sync errors when navigating. */
+  useEffect(() => {
+    setSyncError(null);
+  }, [pathname]);
+
   const handleIncrementalSync = useCallback(async () => {
     setSyncing(true);
     setSyncError(null);
