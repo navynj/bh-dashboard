@@ -42,7 +42,25 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ ok: true, officeBlock: mapPrismaPoToBlock(po) });
+    // For line items without a linked ShopifyOrderLineItem (e.g. legacy imported POs),
+    // fall back to imageUrl via variantGid so images still render.
+    const unlinkedVariantGids = po.lineItems
+      .filter((li) => !li.shopifyOrderLineItem && li.shopifyVariantGid)
+      .map((li) => li.shopifyVariantGid!);
+
+    const variantImageFallback = new Map<string, string | null>();
+    if (unlinkedVariantGids.length > 0) {
+      const rows = await prisma.shopifyOrderLineItem.findMany({
+        where: { variantGid: { in: unlinkedVariantGids }, imageUrl: { not: null } },
+        select: { variantGid: true, imageUrl: true },
+        distinct: ['variantGid'],
+      });
+      for (const r of rows) {
+        if (r.variantGid) variantImageFallback.set(r.variantGid, r.imageUrl);
+      }
+    }
+
+    return NextResponse.json({ ok: true, officeBlock: mapPrismaPoToBlock(po, variantImageFallback) });
   } catch (err: unknown) {
     return toApiErrorResponse(err, 'GET /api/purchase-orders/[id] error:');
   }

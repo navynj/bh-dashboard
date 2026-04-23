@@ -69,6 +69,7 @@ export const derivePurchaseOrderStatus = derivePurchaseOrderStatusFromShopify;
 
 export function mapPrismaPoToBlock(
   po: PrismaPoWithRelations,
+  variantImageFallback?: Map<string, string | null>,
 ): OfficePurchaseOrderBlock {
   const storedStatus = po.status as PurchaseOrderStatus;
   const linkedOrders = po.shopifyOrders;
@@ -134,7 +135,7 @@ export function mapPrismaPoToBlock(
         sku: li.sku,
         variantTitle: li.variantTitle,
         productTitle: li.productTitle,
-        imageUrl: soli?.imageUrl ?? null,
+        imageUrl: soli?.imageUrl ?? (li.shopifyVariantGid ? (variantImageFallback?.get(li.shopifyVariantGid) ?? null) : null),
         isCustom: li.isCustom,
         itemPrice: decimalToString(li.itemPrice),
         shopifyOrderLineItemId: soli?.id ?? null,
