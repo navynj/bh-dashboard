@@ -12,10 +12,25 @@ export async function GET(request: NextRequest) {
 
   if (token) {
     try {
-      await prisma.poEmailDelivery.updateMany({
+      const openedAt = new Date();
+      const deliveries = await prisma.poEmailDelivery.findMany({
         where: { trackingToken: token, openedAt: null },
-        data: { openedAt: new Date() },
+        select: { id: true, purchaseOrderId: true },
       });
+      if (deliveries.length > 0) {
+        const ids = deliveries.map((d) => d.id);
+        const poIds = [...new Set(deliveries.map((d) => d.purchaseOrderId))];
+        await Promise.all([
+          prisma.poEmailDelivery.updateMany({
+            where: { id: { in: ids } },
+            data: { openedAt },
+          }),
+          prisma.purchaseOrder.updateMany({
+            where: { id: { in: poIds }, emailOpenedAt: null },
+            data: { emailOpenedAt: openedAt },
+          }),
+        ]);
+      }
     } catch {
       // Never fail a tracking request
     }

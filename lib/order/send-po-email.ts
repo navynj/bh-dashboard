@@ -22,11 +22,7 @@ function createTransport() {
 }
 
 function buildTrackingPixelUrl(token: string): string | null {
-  const base = (
-    process.env.APP_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    ''
-  ).trim().replace(/\/$/, '');
+  const base = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim().replace(/\/$/, '');
   if (!base) return null;
   return `${base}/api/track/email-open?t=${encodeURIComponent(token)}`;
 }
