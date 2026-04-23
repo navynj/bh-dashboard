@@ -202,7 +202,7 @@ export function PeriodFilterBar({
           className={cn(
             'h-auto min-h-0 text-[11px] px-2.5 py-[3px] rounded-[5px] font-normal',
             activePeriod === 'all' &&
-              'bg-foreground text-background border-transparent hover:bg-foreground/90',
+              'bg-foreground text-background border-transparent hover:bg-foreground/90 hover:text-background',
             activePeriod !== 'all' &&
               'border-border text-muted-foreground bg-background hover:bg-muted',
           )}
@@ -221,7 +221,7 @@ export function PeriodFilterBar({
               className={cn(
                 'h-auto min-h-0 text-[11px] px-2.5 py-[3px] rounded-[5px] font-normal',
                 isOn &&
-                  'bg-foreground text-background border-transparent hover:bg-foreground/90',
+                  'bg-foreground text-background border-transparent hover:bg-foreground/90 hover:text-background',
                 !isOn &&
                   'border-border text-muted-foreground bg-background hover:bg-muted',
               )}
@@ -239,7 +239,7 @@ export function PeriodFilterBar({
             className={cn(
               'h-auto min-h-0 text-[11px] px-2.5 py-[3px] rounded-[5px] font-normal',
               activeInMore &&
-                'bg-foreground text-background border-transparent hover:bg-foreground/90',
+                'bg-foreground text-background border-transparent hover:bg-foreground/90 hover:text-background',
               !activeInMore &&
                 'border-border text-muted-foreground bg-background hover:bg-muted',
             )}
