@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -114,9 +114,27 @@ function poLocalKey(): string {
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
+function nextFulfillmentStatus(
+  qty: number,
+  quantityReceived: number,
+): LineFulfillmentStatus {
+  if (qty <= 0) return 'FULFILLED';
+  if (quantityReceived >= qty) return 'FULFILLED';
+  if (quantityReceived > 0) return 'PARTIALLY_FULFILLED';
+  return 'UNFULFILLED';
+}
+
 export function PoTable({ purchaseOrder }: Props) {
   const router = useRouter();
-  const items = purchaseOrder.lineItems;
+  const [optimisticLineItems, setOptimisticLineItems] = useState<
+    PoLineItemView[] | null
+  >(null);
+
+  useEffect(() => {
+    setOptimisticLineItems(null);
+  }, [purchaseOrder.id]);
+
+  const items = optimisticLineItems ?? purchaseOrder.lineItems;
 
   const fulfilled = items.filter(
     (i) => i.fulfillmentStatus === 'FULFILLED',
@@ -204,7 +222,8 @@ export function PoTable({ purchaseOrder }: Props) {
   const someChecked = checkedCount > 0 && !allItemsChecked;
 
   const handleFulfill = useCallback(async () => {
-    const toSave = items
+    const sourceItems = optimisticLineItems ?? purchaseOrder.lineItems;
+    const toSave = sourceItems
       .filter((i) => checked[i.id])
       .map((i) => ({
         id: i.id,
@@ -212,6 +231,17 @@ export function PoTable({ purchaseOrder }: Props) {
       }));
 
     if (toSave.length === 0) return;
+
+    const optimisticNext = sourceItems.map((i) => {
+      if (!checked[i.id]) return i;
+      const quantityReceived = Math.max(0, recvValues[i.id] ?? i.quantityReceived);
+      return {
+        ...i,
+        quantityReceived,
+        fulfillmentStatus: nextFulfillmentStatus(i.quantity, quantityReceived),
+      };
+    });
+    setOptimisticLineItems(optimisticNext);
 
     setSaving(true);
     setSaveError(null);
@@ -226,20 +256,46 @@ export function PoTable({ purchaseOrder }: Props) {
         },
       );
 
+      const body = (await res.json().catch(() => null)) as {
+        error?: string;
+        shopifyWarnings?: string[];
+      } | null;
+
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
+        setOptimisticLineItems(null);
         setSaveError(body?.error ?? 'Failed to save fulfillment');
+        toast.error(body?.error ?? 'Failed to save fulfillment');
         return;
       }
 
+      const warnings = body?.shopifyWarnings;
+      if (Array.isArray(warnings) && warnings.length > 0) {
+        toast.warning('Saved in hub; Shopify fulfillment issue', {
+          description: warnings.slice(0, 3).join(' · '),
+        });
+      } else {
+        toast.success('Fulfillment saved');
+      }
+
+      setOptimisticLineItems(null);
       exitFulfillMode();
       router.refresh();
     } catch {
+      setOptimisticLineItems(null);
       setSaveError('Network error — please try again');
+      toast.error('Network error — please try again');
     } finally {
       setSaving(false);
     }
-  }, [items, checked, recvValues, purchaseOrder.id, exitFulfillMode, router]);
+  }, [
+    purchaseOrder.lineItems,
+    optimisticLineItems,
+    checked,
+    recvValues,
+    purchaseOrder.id,
+    exitFulfillMode,
+    router,
+  ]);
 
   const enterOrderEditMode = useCallback(() => {
     setFulfillMode(false);

@@ -111,18 +111,32 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       >();
 
       for (const item of existingItems) {
-        const newQty = itemMap.get(item.id)!;
-        const delta = newQty - item.quantityReceived;
-        if (delta <= 0) continue; // No increase — skip
+        const newRecv = itemMap.get(item.id)!;
+        const prevRecv = item.quantityReceived;
+        const lineQty = item.quantity;
+        const deltaRecv = newRecv - prevRecv;
 
         const lineItemGid = item.shopifyOrderLineItem?.shopifyGid;
         const orderGid = item.shopifyOrderLineItem?.order?.shopifyGid;
         if (!lineItemGid || !orderGid) continue;
 
+        // Push the incremental receive to Shopify when quantityReceived goes up.
+        // Also push when this PATCH does not increase received qty but the line is
+        // already fully received in the hub (e.g. CSV/import matched qty first, or a
+        // prior Shopify call failed). `createShopifyFulfillment` caps by Shopify's
+        // remaining fulfillable quantity, so a full-line retry is safe.
+        let pushQty = 0;
+        if (deltaRecv > 0) {
+          pushQty = deltaRecv;
+        } else if (lineQty > 0 && newRecv >= lineQty) {
+          pushQty = Math.min(newRecv, lineQty);
+        }
+        if (pushQty <= 0) continue;
+
         if (!byOrder.has(orderGid)) byOrder.set(orderGid, []);
         byOrder
           .get(orderGid)!
-          .push({ shopifyLineItemGid: lineItemGid, quantity: delta });
+          .push({ shopifyLineItemGid: lineItemGid, quantity: pushQty });
       }
 
       if (byOrder.size > 0) {
