@@ -35,6 +35,16 @@ export type PrismaPoWithRelations = Prisma.PurchaseOrderGetPayload<{
   };
 }>;
 
+/** Slim variant — no lineItems, uses _count for total. Use with mapPrismaPoToSlimBlock. */
+export type PrismaPoSlimWithRelations = Prisma.PurchaseOrderGetPayload<{
+  include: {
+    _count: { select: { lineItems: true } };
+    shopifyOrders: { include: { customer: true } };
+    supplier: true;
+    emailDeliveries: true;
+  };
+}>;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function decimalToString(d: Prisma.Decimal | null | undefined): string | null {
@@ -201,6 +211,118 @@ export function mapPrismaPoToBlock(
     title: `Items for PO`,
     shopifyOrderCount: linkedOrders.length,
     lineItems,
+    panelMeta,
+    supplierOrderChannelType,
+    poCreatedAt: po.createdAt.toISOString(),
+    legacyExternalId: po.legacyExternalId,
+    emailDeliveryOutstanding,
+  };
+}
+
+/**
+ * Slim variant of mapPrismaPoToBlock — no lineItems fetched; returns lineItems: []
+ * (lazy-loaded client-side). Uses pre-computed lineCounts for panelMeta counts.
+ * Keep in sync with mapPrismaPoToBlock when changing shared logic.
+ */
+export function mapPrismaPoToSlimBlock(
+  po: PrismaPoSlimWithRelations,
+  lineCounts: { total: number; done: number },
+): OfficePurchaseOrderBlock {
+  const storedStatus = po.status as PurchaseOrderStatus;
+  const linkedOrders = po.shopifyOrders;
+  const firstOrder = linkedOrders[0];
+  const firstOrderName = firstOrder?.name ?? '—';
+
+  const supplierChannel = legacyFallbackOrderChannel({
+    orderChannelType: po.supplier.orderChannelType,
+    orderChannelPayload: po.supplier.orderChannelPayload,
+    contactEmails: po.supplier.contactEmails,
+    contactName: po.supplier.contactName,
+    link: po.supplier.link,
+    notes: po.supplier.notes,
+  });
+  const supplierOrderChannelType = supplierChannel.type;
+  const emailDeliveryOutstanding = computeEmailDeliveryOutstanding({
+    supplierOrderChannelType,
+    emailSentAt: po.emailSentAt,
+    archivedAt: po.archivedAt,
+    legacyExternalId: po.legacyExternalId,
+  });
+
+  const orderById = new Map(linkedOrders.map((o) => [o.id, o]));
+  void orderById;
+
+  const derivedFromShopify = derivePurchaseOrderStatusFromShopify(
+    linkedOrders.map((o) => ({
+      displayFulfillmentStatus: o.displayFulfillmentStatus,
+    })),
+    po.completedAt,
+  );
+
+  const poConsideredFulfilled =
+    derivedFromShopify === 'fulfilled' ||
+    derivedFromShopify === 'completed' ||
+    storedStatus === 'fulfilled' ||
+    storedStatus === 'completed';
+
+  const linesTotal = lineCounts.total;
+  const linesFulfilled = poConsideredFulfilled ? linesTotal : lineCounts.done;
+
+  const orderDates = linkedOrders
+    .map((o) => o.processedAt ?? o.shopifyCreatedAt)
+    .filter((d): d is Date => d != null)
+    .sort((a, b) => a.getTime() - b.getTime());
+  const orderedAt =
+    orderDates.length > 0 ? toOrderedAtIso(orderDates[0]) : null;
+
+  const linkedShopifyOrders: LinkedShopifyOrder[] = linkedOrders.map((o) => ({
+    id: o.id,
+    name: o.name,
+    customerName: o.customer?.displayName ?? o.customer?.email ?? null,
+    fulfillmentStatus: o.displayFulfillmentStatus,
+  }));
+
+  const syncDates = linkedOrders
+    .map((o) => o.syncedAt)
+    .filter((d): d is Date => d != null)
+    .sort((a, b) => b.getTime() - a.getTime());
+  const lastSyncedAt = syncDates.length > 0 ? syncDates[0].toISOString() : null;
+
+  const panelMeta: PoPanelMeta = {
+    poNumber: po.poNumber,
+    status: storedStatus,
+    currency: po.currency,
+    orderedAt,
+    dateCreated: dateToIso(po.dateCreated),
+    expectedDate: dateToIso(po.expectedDate),
+    fulfillDoneCount: linesFulfilled,
+    fulfillPendingCount: linesTotal - linesFulfilled,
+    fulfillTotalCount: linesTotal,
+    linkedShopifyOrders,
+    lastSyncedAt,
+    shippingAddress: (po.shippingAddress ?? null) as PoPanelMeta['shippingAddress'],
+    billingAddress: (po.billingAddress ?? null) as PoPanelMeta['billingAddress'],
+    billingSameAsShipping: po.billingSameAsShipping,
+    authorizedBy: po.authorizedBy?.trim() ?? null,
+    emailSentAt: po.emailSentAt ? po.emailSentAt.toISOString() : null,
+    emailOpenedAt: po.emailOpenedAt ? po.emailOpenedAt.toISOString() : null,
+    emailDeliveries: po.emailDeliveries.map((d): PoEmailDeliveryItem => ({
+      recipientEmail: d.recipientEmail,
+      recipientName: d.recipientName,
+      sentAt: d.sentAt.toISOString(),
+      openedAt: d.openedAt ? d.openedAt.toISOString() : null,
+    })),
+  };
+
+  return {
+    id: po.id,
+    poNumber: po.poNumber,
+    status: storedStatus,
+    currency: po.currency,
+    isAuto: po.isAuto,
+    title: `Items for PO`,
+    shopifyOrderCount: linkedOrders.length,
+    lineItems: [],
     panelMeta,
     supplierOrderChannelType,
     poCreatedAt: po.createdAt.toISOString(),

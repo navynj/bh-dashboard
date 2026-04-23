@@ -7,7 +7,10 @@ import { OrderManagementView } from '@/features/order/office/views/OrderManageme
 import { buildInboxData } from '@/features/order/office/mappers/build-inbox-data';
 import { buildWeekPeriods } from '@/features/order/office/mappers/periods';
 import { isShopifyAdminEnvConfigured } from '@/lib/shopify/env';
-import type { PrismaPoWithRelations } from '@/features/order/office/mappers/map-purchase-order';
+import type {
+  PrismaPoWithRelations,
+  PrismaPoSlimWithRelations,
+} from '@/features/order/office/mappers/map-purchase-order';
 import { executeShopifySync } from '@/lib/shopify/sync/run-shopify-sync';
 import OfficeOrderLoading from './loading';
 
@@ -54,13 +57,14 @@ async function OfficeInboxContent() {
     supplierGroups,
     unlinkedShopifyOrders,
     vendorMappings,
+    rawLineCounts,
   ] = await Promise.all([
-    // Active POs — lineItems without shopifyOrderLineItem (not needed for sidebar/counts)
+    // Active POs — skip lineItems entirely; use _count for total, separate query for done counts
     prisma.purchaseOrder.findMany({
       where: { archivedAt: null },
       orderBy: [{ dateCreated: 'desc' }, { createdAt: 'desc' }],
       include: {
-        lineItems: { orderBy: { sequence: 'asc' } },
+        _count: { select: { lineItems: true } },
         shopifyOrders: { include: { customer: true } },
         supplier: true,
         emailDeliveries: { orderBy: { sentAt: 'desc' } },
@@ -103,16 +107,23 @@ async function OfficeInboxContent() {
     prisma.shopifyVendorMapping.findMany({
       select: { vendorName: true, supplierId: true },
     }),
+    // Minimal line-item data for fulfillment counts — 3 columns only, no joins
+    prisma.purchaseOrderLineItem.findMany({
+      where: { purchaseOrder: { archivedAt: null } },
+      select: { purchaseOrderId: true, quantity: true, quantityReceived: true },
+    }),
   ]);
 
-  // Augment line items with shopifyOrderLineItem: null so mapPrismaPoToBlock
-  // stays type-compatible. The relation is only needed when the PO detail panel
-  // opens (images, Shopify GIDs) — at that point a router.refresh() or future
-  // on-demand fetch can supply the full data.
-  const activePurchaseOrders = rawActivePOs.map((po) => ({
-    ...po,
-    lineItems: po.lineItems.map((li) => ({ ...li, shopifyOrderLineItem: null })),
-  })) as unknown as PrismaPoWithRelations[];
+  // Build per-PO fulfillment counts from the minimal line query
+  const lineCountsByPoId = new Map<string, { total: number; done: number }>();
+  for (const li of rawLineCounts) {
+    const cur = lineCountsByPoId.get(li.purchaseOrderId) ?? { total: 0, done: 0 };
+    cur.total++;
+    if (li.quantity <= 0 || li.quantityReceived >= li.quantity) cur.done++;
+    lineCountsByPoId.set(li.purchaseOrderId, cur);
+  }
+
+  const activePurchaseOrders = rawActivePOs as unknown as PrismaPoSlimWithRelations[];
 
   const archivedPurchaseOrders = rawArchivedPOs.map((po) => ({
     ...po,
@@ -120,17 +131,17 @@ async function OfficeInboxContent() {
     emailDeliveries: [],
   })) as unknown as PrismaPoWithRelations[];
 
-  const purchaseOrders = [...activePurchaseOrders, ...archivedPurchaseOrders];
-
   console.log(
     `[OfficeInbox] DB loaded in ${Date.now() - t0}ms — ${activePurchaseOrders.length} active + ${archivedPurchaseOrders.length} archived POs, ${unlinkedShopifyOrders.length} unlinked orders`,
   );
 
   const inbox = buildInboxData(
-    purchaseOrders,
+    activePurchaseOrders,
+    archivedPurchaseOrders,
     supplierGroups,
     unlinkedShopifyOrders,
     vendorMappings,
+    lineCountsByPoId,
   );
 
   const periods = buildWeekPeriods();

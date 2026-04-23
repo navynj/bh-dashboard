@@ -4,6 +4,7 @@ import { prisma } from '@/lib/core/prisma';
 import { parseBody, purchaseOrderUpdateSchema } from '@/lib/api/schemas';
 import { toApiErrorResponse } from '@/lib/core/errors';
 import { recomputePurchaseOrderStatusById } from '@/lib/order/purchase-order-status';
+import { mapPrismaPoToBlock } from '@/features/order/office/mappers/map-purchase-order';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -24,9 +25,13 @@ export async function GET(
     const po = await prisma.purchaseOrder.findUnique({
       where: { id },
       include: {
-        lineItems: { orderBy: { sequence: 'asc' } },
-        shopifyOrders: true,
+        lineItems: {
+          orderBy: { sequence: 'asc' },
+          include: { shopifyOrderLineItem: true },
+        },
+        shopifyOrders: { include: { customer: true } },
         supplier: true,
+        emailDeliveries: { orderBy: { sentAt: 'desc' } },
       },
     });
 
@@ -37,7 +42,7 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ ok: true, purchaseOrder: po });
+    return NextResponse.json({ ok: true, officeBlock: mapPrismaPoToBlock(po) });
   } catch (err: unknown) {
     return toApiErrorResponse(err, 'GET /api/purchase-orders/[id] error:');
   }

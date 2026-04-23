@@ -11,8 +11,14 @@
  * All data comes from the DB — no live Shopify API calls needed.
  */
 
-import { mapPrismaPoToBlock } from './map-purchase-order';
-import type { PrismaPoWithRelations } from './map-purchase-order';
+import { mapPrismaPoToBlock, mapPrismaPoToSlimBlock } from './map-purchase-order';
+import type { PrismaPoWithRelations, PrismaPoSlimWithRelations } from './map-purchase-order';
+
+type AnyPo = PrismaPoSlimWithRelations | PrismaPoWithRelations;
+
+function isSlimPo(po: AnyPo): po is PrismaPoSlimWithRelations {
+  return '_count' in po;
+}
 import type {
   SupplierKey,
   SupplierEntry,
@@ -195,7 +201,7 @@ function isoDate(d: Date | null | undefined): string | null {
   }
 }
 
-function buildSidebarDates(pos: PrismaPoWithRelations[]): string {
+function buildSidebarDates(pos: AnyPo[]): string {
   if (pos.length === 0) return 'Without PO';
 
   const created = pos
@@ -304,7 +310,7 @@ function extractCustomerAddresses(customer: {
 }
 
 function getPoCustomerIdentity(
-  po: PrismaPoWithRelations,
+  po: AnyPo,
 ): CustomerIdentity | null {
   for (const so of po.shopifyOrders) {
     if (so.customer) {
@@ -472,11 +478,14 @@ function shopifyOrderToDraft(
 const UNKNOWN_CUSTOMER_KEY = '__unknown_customer__';
 
 export function buildInboxData(
-  purchaseOrders: PrismaPoWithRelations[],
+  activePurchaseOrders: PrismaPoSlimWithRelations[],
+  archivedPurchaseOrders: PrismaPoWithRelations[],
   supplierGroups: PrismaSupplierGroup[],
   unlinkedShopifyOrders: ShopifyOrderWithCustomer[],
   vendorMappings: VendorMapping[],
+  lineCountsByPoId: Map<string, { total: number; done: number }>,
 ): InboxData {
+  const purchaseOrders: AnyPo[] = [...activePurchaseOrders, ...archivedPurchaseOrders];
   const initialStates: Record<SupplierKey, SupplierEntry> = {};
   const viewDataMap: Record<SupplierKey, ViewData> = {};
 
@@ -501,7 +510,7 @@ export function buildInboxData(
 
   // ── Group POs by customer → supplier ──
 
-  const byCustSup = new Map<string, Map<string, PrismaPoWithRelations[]>>();
+  const byCustSup = new Map<string, Map<string, AnyPo[]>>();
   const custInfoMap = new Map<string, CustomerIdentity>();
 
   for (const po of purchaseOrders) {
@@ -600,7 +609,13 @@ export function buildInboxData(
 
       // ── Fulfillment stats (line rows — same as PoTable / mapPrismaPoToBlock panelMeta) ──
 
-      const poBlocks = hasPOs ? pos.map((p) => mapPrismaPoToBlock(p)) : [];
+      const poBlocks = hasPOs
+        ? pos.map((p) =>
+            isSlimPo(p)
+              ? mapPrismaPoToSlimBlock(p, lineCountsByPoId.get(p.id) ?? { total: 0, done: 0 })
+              : mapPrismaPoToBlock(p),
+          )
+        : [];
       let fulfillDone = 0;
       let fulfillTotal = 0;
       for (const b of poBlocks) {

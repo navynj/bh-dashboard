@@ -534,6 +534,21 @@ export function PoTable({ purchaseOrder }: Props) {
     setAddOpen(false);
   }, [customTitle, customPrice, customQty, linkedOrders, newLineTargetOrderId, purchaseOrder.id]);
 
+  // Show skeleton while line items are being lazy-loaded
+  const lazyLineCount = purchaseOrder.panelMeta?.fulfillTotalCount ?? 0;
+  if (items.length === 0 && lazyLineCount > 0) {
+    return (
+      <div className="bg-background border border-border rounded-[10px] overflow-hidden mb-2.5">
+        <div className="flex items-center justify-between px-3.5 py-2 border-b bg-muted/40">
+          <div className="text-[12px] font-medium">{purchaseOrder.title}</div>
+        </div>
+        {Array.from({ length: Math.min(lazyLineCount, 10) }).map((_, i) => (
+          <div key={i} className="h-9 border-b last:border-0 animate-pulse bg-muted/20" />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="bg-background border border-border rounded-[10px] overflow-hidden mb-2.5">
       {/* ── Table header ── */}

@@ -1,10 +1,12 @@
 import type {
   OfficePurchaseOrderBlock,
   PostViewData,
+  PreViewData,
   SupplierEntry,
   SupplierKey,
   ViewData,
 } from '../types';
+import { isOfficePoDeliveryDone } from './po-fulfillment-for-tab';
 
 function clonePoBlock(b: OfficePurchaseOrderBlock): OfficePurchaseOrderBlock {
   return {
@@ -153,5 +155,124 @@ export function patchSupplierEntryAfterPoCreate(args: {
         : entry.emailSent && !newBlock.emailDeliveryOutstanding,
     allFulfilled,
     allCompleted: false,
+  };
+}
+
+/**
+ * Removes PO rows that were optimistically deleted before `router.refresh()` lands.
+ */
+export function mergeViewDataWithOptimisticPoDeletes(
+  viewDataMap: Record<SupplierKey, ViewData>,
+  deletedIds: ReadonlySet<string>,
+  supplierNameByKey: Readonly<Record<SupplierKey, string>>,
+): Record<SupplierKey, ViewData> {
+  if (deletedIds.size === 0) return viewDataMap;
+
+  let any = false;
+  const out: Record<SupplierKey, ViewData> = { ...viewDataMap };
+
+  for (const key of Object.keys(viewDataMap)) {
+    const vd = viewDataMap[key];
+    if (vd.type !== 'post') continue;
+
+    const nextPos = vd.purchaseOrders.filter((p) => !deletedIds.has(p.id));
+    if (nextPos.length === vd.purchaseOrders.length) continue;
+
+    const supplierName = supplierNameByKey[key] ?? 'Supplier';
+    const preserveLabels =
+      vd.label != null || vd.extraLabel != null
+        ? { label: vd.label, extraLabel: vd.extraLabel }
+        : {};
+    const drafts = vd.shopifyOrderDrafts;
+
+    if (nextPos.length === 0) {
+      const nextPre: PreViewData = {
+        type: 'pre',
+        shopifyOrderDrafts: drafts ?? [],
+      };
+      any = true;
+      out[key] = nextPre;
+      continue;
+    }
+
+    const basePost = decoratePostViewMultiPo(nextPos, supplierName);
+    const next: PostViewData = {
+      ...preserveLabels,
+      ...basePost,
+      ...(drafts && drafts.length > 0 ? { shopifyOrderDrafts: drafts } : {}),
+    };
+    any = true;
+    out[key] = next;
+  }
+
+  return any ? out : viewDataMap;
+}
+
+/** Bumps sidebar/meta counters after a successful PO delete (approximate until refresh). */
+export function patchSupplierEntryAfterPoDelete(args: {
+  entry: SupplierEntry;
+  deleted: OfficePurchaseOrderBlock;
+  /** Real PO rows left for this supplier slice (`id !== 'new'`). */
+  remainingPoBlocks: OfficePurchaseOrderBlock[];
+}): SupplierEntry {
+  const { entry, deleted, remainingPoBlocks } = args;
+  const realRemaining = remainingPoBlocks.filter((p) => p.id !== 'new');
+  const m = deleted.panelMeta;
+
+  const nextArchivePoIds = entry.archivePurchaseOrderIds.filter(
+    (id) => id !== deleted.id,
+  );
+
+  const restoredDrafts = deleted.shopifyOrderCount;
+  const nextDraftCount = entry.withoutPoDraftCount + restoredDrafts;
+
+  let fulfillDone = entry.fulfillDoneCount;
+  let fulfillTotal = entry.fulfillTotalCount;
+  if (m) {
+    fulfillDone = Math.max(0, fulfillDone - m.fulfillDoneCount);
+    fulfillTotal = Math.max(0, fulfillTotal - m.fulfillTotalCount);
+  }
+  const fulfillPending = fulfillTotal - fulfillDone;
+
+  const expectedDatesAll = realRemaining
+    .map((b) => b.panelMeta?.expectedDate ?? null)
+    .filter((d): d is string => d != null && d !== '');
+  const expectedDates = [...new Set(expectedDatesAll)].sort();
+
+  const referenceKey =
+    realRemaining.length > 0
+      ? realRemaining.map((b) => b.poNumber).join('+')
+      : entry.referenceKey;
+
+  const allFulfilled =
+    realRemaining.length > 0 &&
+    realRemaining.every((b) => isOfficePoDeliveryDone(b));
+  const allCompleted =
+    allFulfilled &&
+    realRemaining.length > 0 &&
+    realRemaining.every((b) => b.status === 'completed');
+
+  const anyOutstanding =
+    entry.supplierOrderChannelType === 'email' &&
+    realRemaining.some((b) => b.emailDeliveryOutstanding);
+
+  return {
+    ...entry,
+    poCreated: realRemaining.length > 0,
+    withoutPoDraftCount: nextDraftCount,
+    archivePurchaseOrderIds: nextArchivePoIds,
+    fulfillDoneCount: fulfillDone,
+    fulfillPendingCount: fulfillPending,
+    fulfillTotalCount: fulfillTotal,
+    expectedDates,
+    referenceKey,
+    emailSent:
+      entry.supplierOrderChannelType !== 'email'
+        ? entry.emailSent
+        : realRemaining.length > 0
+          ? !anyOutstanding
+          : false,
+    allFulfilled,
+    allCompleted,
   };
 }

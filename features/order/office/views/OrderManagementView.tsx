@@ -31,6 +31,7 @@ import type {
   PoPanelMeta,
   ViewData,
   OfficePurchaseOrderBlock,
+  PoLineItemView,
   SidebarCustomerGroup,
   Period,
   ShopifyOrderDraft,
@@ -51,7 +52,9 @@ import {
 } from '../utils/po-fulfillment-for-tab';
 import {
   mergeViewDataWithOptimisticPoCreates,
+  mergeViewDataWithOptimisticPoDeletes,
   patchSupplierEntryAfterPoCreate,
+  patchSupplierEntryAfterPoDelete,
 } from '../utils/merge-optimistic-po-create';
 import { mergeViewDataWithOptimisticEmailSent } from '../utils/merge-view-data-optimistic-email-sent';
 
@@ -125,6 +128,29 @@ function mergeViewDataWithOptimisticDraftArchive(
   return anyChange ? out : viewDataMap;
 }
 
+function mergeViewDataWithLazyLineItems(
+  viewDataMap: Record<SupplierKey, ViewData>,
+  lazyItems: Record<string, PoLineItemView[]>,
+): Record<SupplierKey, ViewData> {
+  if (Object.keys(lazyItems).length === 0) return viewDataMap;
+  let any = false;
+  const out: Record<SupplierKey, ViewData> = { ...viewDataMap };
+  for (const [key, vd] of Object.entries(viewDataMap)) {
+    if (vd.type !== 'post') continue;
+    let changed = false;
+    const nextPos = vd.purchaseOrders.map((po) => {
+      const items = lazyItems[po.id];
+      if (!items || po.lineItems.length > 0) return po;
+      changed = true;
+      return { ...po, lineItems: items };
+    });
+    if (!changed) continue;
+    any = true;
+    out[key] = { ...vd, purchaseOrders: nextPos };
+  }
+  return any ? out : viewDataMap;
+}
+
 export type OrderManagementViewProps = {
   initialStates: Record<SupplierKey, SupplierEntry>;
   viewDataMap: Record<SupplierKey, ViewData>;
@@ -193,14 +219,32 @@ export function OrderManagementView({
     poId: string;
   } | null>(null);
 
+  /**
+   * After creating a PO from Inbox, `selectedPoBlockId` is forced to `__drafts__` while drafts remain.
+   * When the user opens the “PO created” tab, pick this PO instead of the default bucket’s first row.
+   */
+  const pendingNewPoForPoCreatedTabRef = useRef<{
+    supplierKey: SupplierKey;
+    poId: string;
+  } | null>(null);
+
   const [optimisticEmailSentAtByPoId, setOptimisticEmailSentAtByPoId] =
     useState<Record<string, string>>({});
+
+  const [optimisticDeletedPurchaseOrderIds, setOptimisticDeletedPurchaseOrderIds] =
+    useState(() => new Set<string>());
+
+  const [lazyPoLineItems, setLazyPoLineItems] = useState<Record<string, PoLineItemView[]>>({});
+  const fetchedPoIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
     setOptimisticArchivedOrderIds(new Set());
     setOptimisticUnarchivedOrderIds(new Set());
     setOptimisticPoPatchesByKey({});
     setOptimisticEmailSentAtByPoId({});
+    setOptimisticDeletedPurchaseOrderIds(new Set());
+    setLazyPoLineItems({});
+    fetchedPoIdsRef.current.clear();
   }, [viewDataMap]);
 
   const viewDataAfterDraftArchive = useMemo(
@@ -247,16 +291,51 @@ export function OrderManagementView({
       optimisticPoPatchSets,
       supplierCompanyByKey,
     );
-    return mergeViewDataWithOptimisticEmailSent(
+    const afterDeletes = mergeViewDataWithOptimisticPoDeletes(
       afterPoCreates,
+      optimisticDeletedPurchaseOrderIds,
+      supplierCompanyByKey,
+    );
+    const afterEmailSent = mergeViewDataWithOptimisticEmailSent(
+      afterDeletes,
       optimisticEmailSentAtByPoId,
     );
+    return mergeViewDataWithLazyLineItems(afterEmailSent, lazyPoLineItems);
   }, [
     viewDataAfterDraftArchive,
     optimisticPoPatchSets,
     supplierCompanyByKey,
+    optimisticDeletedPurchaseOrderIds,
     optimisticEmailSentAtByPoId,
+    lazyPoLineItems,
   ]);
+
+  const patchedViewDataMapRef = useRef(patchedViewDataMap);
+  patchedViewDataMapRef.current = patchedViewDataMap;
+
+  useEffect(() => {
+    if (!selectedPoBlockId || selectedPoBlockId === '__drafts__' || selectedPoBlockId === 'new') return;
+    if (fetchedPoIdsRef.current.has(selectedPoBlockId)) return;
+
+    const vd = patchedViewDataMapRef.current[activeKey];
+    if (!vd || vd.type !== 'post') return;
+    const block = vd.purchaseOrders.find((p) => p.id === selectedPoBlockId);
+    if (!block || block.lineItems.length > 0 || !block.panelMeta?.fulfillTotalCount) return;
+
+    fetchedPoIdsRef.current.add(selectedPoBlockId);
+    const poIdToFetch = selectedPoBlockId;
+
+    fetch(`/api/purchase-orders/${poIdToFetch}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((data: { officeBlock?: OfficePurchaseOrderBlock }) => {
+        if (data.officeBlock?.lineItems) {
+          setLazyPoLineItems((prev) => ({ ...prev, [poIdToFetch]: data.officeBlock!.lineItems }));
+        }
+      })
+      .catch(() => {
+        fetchedPoIdsRef.current.delete(poIdToFetch);
+      });
+  }, [selectedPoBlockId, activeKey]);
 
   const handleOptimisticPoEmailSent = useCallback((poId: string) => {
     setOptimisticEmailSentAtByPoId((prev) => ({
@@ -447,6 +526,10 @@ export function OrderManagementView({
           const officeBlock = body?.officeBlock?.id ? body.officeBlock : null;
           if (officeBlock) {
             const removedDraftIds = includedDrafts.map((d) => d.id);
+            pendingNewPoForPoCreatedTabRef.current = {
+              supplierKey: key,
+              poId: officeBlock.id,
+            };
             setOptimisticPoPatchesByKey((prev) => ({
               ...prev,
               [key]: { newBlock: officeBlock, removedDraftIds },
@@ -546,6 +629,10 @@ export function OrderManagementView({
           const officeBlock = body?.officeBlock?.id ? body.officeBlock : null;
           if (officeBlock) {
             const removedDraftIds = matchedDraft ? [matchedDraft.id] : [];
+            pendingNewPoForPoCreatedTabRef.current = {
+              supplierKey: activeKey,
+              poId: officeBlock.id,
+            };
             setOptimisticPoPatchesByKey((prev) => ({
               ...prev,
               [activeKey]: { newBlock: officeBlock, removedDraftIds },
@@ -615,22 +702,98 @@ export function OrderManagementView({
 
   const handleDeletePo = useCallback(
     async (poId: string) => {
+      let supplierKey: SupplierKey | null = null;
+      let deleted: OfficePurchaseOrderBlock | undefined;
+      let entrySnapshot: SupplierEntry | undefined;
+
+      for (const [key, vd] of Object.entries(patchedViewDataMap)) {
+        if (vd.type !== 'post') continue;
+        const b = vd.purchaseOrders.find((p) => p.id === poId);
+        if (b) {
+          supplierKey = key;
+          deleted = b;
+          entrySnapshot = states[key]
+            ? { ...states[key as SupplierKey] }
+            : undefined;
+          break;
+        }
+      }
+
+      const remainingReal = (() => {
+        if (!supplierKey) return [] as OfficePurchaseOrderBlock[];
+        const vd = patchedViewDataMap[supplierKey];
+        if (!vd || vd.type !== 'post') return [];
+        return vd.purchaseOrders.filter((p) => p.id !== poId && p.id !== 'new');
+      })();
+
+      if (supplierKey && deleted && entrySnapshot) {
+        setOptimisticDeletedPurchaseOrderIds((prev) => {
+          const next = new Set(prev);
+          next.add(poId);
+          return next;
+        });
+        setStates((prev) => {
+          const e = prev[supplierKey!];
+          if (!e) return prev;
+          return {
+            ...prev,
+            [supplierKey!]: patchSupplierEntryAfterPoDelete({
+              entry: e,
+              deleted,
+              remainingPoBlocks: remainingReal,
+            }),
+          };
+        });
+        setOptimisticPoPatchesByKey((prev) => {
+          const p = prev[supplierKey!];
+          if (p?.newBlock.id === poId) {
+            const { [supplierKey!]: _, ...rest } = prev;
+            return rest;
+          }
+          return prev;
+        });
+      }
+
+      setOptimisticEmailSentAtByPoId((prev) => {
+        if (!(poId in prev)) return prev;
+        const { [poId]: _, ...rest } = prev;
+        return rest;
+      });
+
+      if (pendingNewPoForPoCreatedTabRef.current?.poId === poId) {
+        pendingNewPoForPoCreatedTabRef.current = null;
+      }
+
+      setSelectedPoBlockId((sel) => (sel === poId ? null : sel));
+
+      const rollbackOptimistic = () => {
+        setOptimisticDeletedPurchaseOrderIds((prev) => {
+          const next = new Set(prev);
+          next.delete(poId);
+          return next;
+        });
+        if (supplierKey && entrySnapshot) {
+          setStates((prev) => ({ ...prev, [supplierKey!]: entrySnapshot }));
+        }
+      };
+
       try {
         const res = await fetch(`/api/purchase-orders/${poId}`, {
           method: 'DELETE',
         });
         if (res.ok) {
-          setSelectedPoBlockId(null);
           router.refresh();
           return;
         }
+        rollbackOptimistic();
         const body = await res.json().catch(() => null);
         console.error('Delete PO failed:', body?.error ?? res.statusText);
       } catch (err) {
+        rollbackOptimistic();
         console.error('Delete PO error:', err);
       }
     },
-    [router],
+    [patchedViewDataMap, states, router],
   );
 
   const handleArchive = useCallback(
@@ -1232,6 +1395,10 @@ export function OrderManagementView({
       prevStatusTabRef.current !== activeStatusTab;
     prevStatusTabRef.current = activeStatusTab;
 
+    if (tabChanged && activeStatusTab !== 'po_created') {
+      pendingNewPoForPoCreatedTabRef.current = null;
+    }
+
     const pending = pendingPoNavigationRef.current;
     if (pending) {
       pendingPoNavigationRef.current = null;
@@ -1242,6 +1409,30 @@ export function OrderManagementView({
         setActiveKey(pending.supplierKey);
         setSelectedPoBlockId(pending.poId);
         return;
+      }
+    }
+
+    const postCreatePick = pendingNewPoForPoCreatedTabRef.current;
+    if (activeStatusTab === 'po_created' && postCreatePick) {
+      const vd = patchedViewDataMap[postCreatePick.supplierKey];
+      const poExists =
+        vd?.type === 'post' &&
+        vd.purchaseOrders.some((p) => p.id === postCreatePick.poId);
+      const visible = filteredGroups.some((g) =>
+        g.suppliers.some((s) => s.key === postCreatePick.supplierKey),
+      );
+      if (!visible) {
+        pendingNewPoForPoCreatedTabRef.current = null;
+      } else if (poExists) {
+        pendingNewPoForPoCreatedTabRef.current = null;
+        setActiveKey(postCreatePick.supplierKey);
+        setSelectedPoBlockId(postCreatePick.poId);
+        return;
+      } else if (tabChanged) {
+        setActiveKey(postCreatePick.supplierKey);
+        return;
+      } else {
+        pendingNewPoForPoCreatedTabRef.current = null;
       }
     }
 
