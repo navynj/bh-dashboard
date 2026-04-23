@@ -39,6 +39,11 @@ type Props = {
       productTitle: string;
       quantity: number;
       itemPrice: number | null;
+      isCustom?: boolean;
+      shopifyLineItemId?: string | null;
+      shopifyLineItemGid?: string | null;
+      shopifyVariantGid?: string | null;
+      shopifyProductGid?: string | null;
     }[];
   }) => void;
   onArchive?: () => void;
@@ -89,6 +94,11 @@ export function SeparatePoDialog({
         productTitle: li.productTitle,
         quantity: quantities[idx],
         itemPrice: li.itemPrice ? parseFloat(li.itemPrice) : null,
+        isCustom: !li.shopifyVariantGid,
+        shopifyLineItemId: li.shopifyLineItemId ?? null,
+        shopifyLineItemGid: li.shopifyLineItemGid ?? null,
+        shopifyVariantGid: li.shopifyVariantGid ?? null,
+        shopifyProductGid: li.shopifyProductGid ?? null,
         included: included[idx],
       }))
       .filter((li) => li.included)

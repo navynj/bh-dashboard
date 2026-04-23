@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -33,7 +34,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-type Props = { purchaseOrder: OfficePurchaseOrderBlock };
+type Props = {
+  purchaseOrder: OfficePurchaseOrderBlock;
+  lineItemsLoading?: boolean;
+  onRetryLineItems?: () => void;
+};
 
 const badgeCompact = 'rounded px-1.5 text-[10px]';
 
@@ -124,7 +129,7 @@ function nextFulfillmentStatus(
   return 'UNFULFILLED';
 }
 
-export function PoTable({ purchaseOrder }: Props) {
+export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: Props) {
   const router = useRouter();
   const [optimisticLineItems, setOptimisticLineItems] = useState<
     PoLineItemView[] | null
@@ -133,6 +138,11 @@ export function PoTable({ purchaseOrder }: Props) {
   useEffect(() => {
     setOptimisticLineItems(null);
   }, [purchaseOrder.id]);
+
+  // Clear optimistic state when server data arrives with updated quantities
+  useEffect(() => {
+    setOptimisticLineItems(null);
+  }, [purchaseOrder.lineItems]);
 
   const items = optimisticLineItems ?? purchaseOrder.lineItems;
 
@@ -277,7 +287,6 @@ export function PoTable({ purchaseOrder }: Props) {
         toast.success('Fulfillment saved');
       }
 
-      setOptimisticLineItems(null);
       exitFulfillMode();
       router.refresh();
     } catch {
@@ -590,7 +599,6 @@ export function PoTable({ purchaseOrder }: Props) {
     setAddOpen(false);
   }, [customTitle, customPrice, customQty, linkedOrders, newLineTargetOrderId, purchaseOrder.id]);
 
-  // Show skeleton while line items are being lazy-loaded
   const lazyLineCount = purchaseOrder.panelMeta?.fulfillTotalCount ?? 0;
   if (items.length === 0 && lazyLineCount > 0) {
     return (
@@ -598,9 +606,26 @@ export function PoTable({ purchaseOrder }: Props) {
         <div className="flex items-center justify-between px-3.5 py-2 border-b bg-muted/40">
           <div className="text-[12px] font-medium">{purchaseOrder.title}</div>
         </div>
-        {Array.from({ length: Math.min(lazyLineCount, 10) }).map((_, i) => (
-          <div key={i} className="h-9 border-b last:border-0 animate-pulse bg-muted/20" />
-        ))}
+        {lineItemsLoading !== false ? (
+          <div className="flex items-center justify-center gap-2 py-6 text-[12px] text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Loading items…
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-2 py-6">
+            <p className="text-[12px] text-muted-foreground">Failed to load items.</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-[11px] gap-1.5"
+              onClick={() => onRetryLineItems?.()}
+            >
+              <RefreshCw className="size-3.5" />
+              Retry
+            </Button>
+          </div>
+        )}
       </div>
     );
   }

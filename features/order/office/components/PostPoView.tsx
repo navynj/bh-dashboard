@@ -5,9 +5,11 @@ import type { PostViewData } from '../types';
 type Props = {
   viewData: PostViewData;
   selectedPoBlockId: string | null;
+  lineItemsLoading?: boolean;
+  onRetryLineItems?: () => void;
 };
 
-export function PostPoView({ viewData, selectedPoBlockId }: Props) {
+export function PostPoView({ viewData, selectedPoBlockId, lineItemsLoading, onRetryLineItems }: Props) {
   const pos = viewData.purchaseOrders;
   const hasMulti = pos.length > 1;
 
@@ -32,7 +34,12 @@ export function PostPoView({ viewData, selectedPoBlockId }: Props) {
         </div>
       )}
       {visiblePos.map((po) => (
-        <PoTable key={po.id} purchaseOrder={po} />
+        <PoTable
+          key={po.id}
+          purchaseOrder={po}
+          lineItemsLoading={lineItemsLoading}
+          onRetryLineItems={onRetryLineItems}
+        />
       ))}
     </div>
   );

@@ -236,6 +236,7 @@ export function OrderManagementView({
 
   const [lazyPoLineItems, setLazyPoLineItems] = useState<Record<string, PoLineItemView[]>>({});
   const fetchedPoIdsRef = useRef(new Set<string>());
+  const [lineItemRetryCount, setLineItemRetryCount] = useState(0);
 
   useEffect(() => {
     setOptimisticArchivedOrderIds(new Set());
@@ -335,7 +336,14 @@ export function OrderManagementView({
       .catch(() => {
         fetchedPoIdsRef.current.delete(poIdToFetch);
       });
-  }, [selectedPoBlockId, activeKey]);
+  }, [selectedPoBlockId, activeKey, lineItemRetryCount]);
+
+  const handleRetryLineItemFetch = useCallback(() => {
+    if (selectedPoBlockId) {
+      fetchedPoIdsRef.current.delete(selectedPoBlockId);
+      setLineItemRetryCount((c) => c + 1);
+    }
+  }, [selectedPoBlockId]);
 
   const handleOptimisticPoEmailSent = useCallback((poId: string) => {
     setOptimisticEmailSentAtByPoId((prev) => ({
@@ -498,6 +506,11 @@ export function OrderManagementView({
             quantity: li.quantity,
             itemPrice: li.itemPrice ? parseFloat(li.itemPrice) : null,
             supplierRef: supplierRefFromSku(li.sku),
+            isCustom: !li.shopifyVariantGid,
+            shopifyLineItemId: li.shopifyLineItemId ?? null,
+            shopifyLineItemGid: li.shopifyLineItemGid ?? null,
+            shopifyVariantGid: li.shopifyVariantGid ?? null,
+            shopifyProductGid: li.shopifyProductGid ?? null,
           }));
       });
 
@@ -617,6 +630,11 @@ export function OrderManagementView({
               quantity: li.quantity,
               itemPrice: li.itemPrice,
               supplierRef: supplierRefFromSku(li.sku),
+              isCustom: li.isCustom ?? false,
+              shopifyLineItemId: li.shopifyLineItemId ?? null,
+              shopifyLineItemGid: li.shopifyLineItemGid ?? null,
+              shopifyVariantGid: li.shopifyVariantGid ?? null,
+              shopifyProductGid: li.shopifyProductGid ?? null,
             })),
             shopifyOrderRefs: [{ orderNumber: payload.shopifyOrderNumber }],
           }),
@@ -1866,6 +1884,8 @@ export function OrderManagementView({
                   <PostPoView
                     viewData={viewData}
                     selectedPoBlockId={selectedPoBlockId}
+                    lineItemsLoading={lineItemsLoading}
+                    onRetryLineItems={handleRetryLineItemFetch}
                   />
                 )}
               </div>

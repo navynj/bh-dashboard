@@ -37,6 +37,11 @@ type SeparatePoPayload = {
     productTitle: string;
     quantity: number;
     itemPrice: number | null;
+    isCustom?: boolean;
+    shopifyLineItemId?: string | null;
+    shopifyLineItemGid?: string | null;
+    shopifyVariantGid?: string | null;
+    shopifyProductGid?: string | null;
   }[];
 };
 

@@ -495,6 +495,10 @@ const purchaseOrderLineItemSchema = z.object({
   itemPrice: z.number().optional().nullable(),
   supplierRef: z.string().trim().optional().nullable(),
   isCustom: z.boolean().optional().default(false),
+  /** Hub `ShopifyOrderLineItem.id` (from pre-PO draft). */
+  shopifyLineItemId: z.string().trim().optional().nullable(),
+  /** Shopify Admin GraphQL LineItem GID. */
+  shopifyLineItemGid: z.string().trim().optional().nullable(),
   shopifyVariantGid: z.string().trim().optional().nullable(),
   shopifyProductGid: z.string().trim().optional().nullable(),
 });

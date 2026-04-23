@@ -4,6 +4,7 @@ import { prisma } from '@/lib/core/prisma';
 import { parseBody, purchaseOrderCreateSchema } from '@/lib/api/schemas';
 import { toApiErrorResponse } from '@/lib/core/errors';
 import { mapPrismaPoToBlock } from '@/features/order/office/mappers/map-purchase-order';
+import { resolvePoCreateLineShopifyLinks } from '@/lib/order/resolve-po-create-line-shopify-links';
 
 export async function GET() {
   try {
@@ -101,6 +102,12 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      const orderNamesFromRefs = (data.shopifyOrderRefs ?? []).map(
+        (ref) => ref.orderNumber,
+      );
+      const { shopifyOrderIds, lineShopifyOrderLineItemIds } =
+        await resolvePoCreateLineShopifyLinks(tx, orderNamesFromRefs, data.lineItems);
+
       if (data.lineItems.length > 0) {
         await tx.purchaseOrderLineItem.createMany({
           data: data.lineItems.map((li, idx) => ({
@@ -115,27 +122,20 @@ export async function POST(request: NextRequest) {
             isCustom: li.isCustom ?? false,
             shopifyVariantGid: li.shopifyVariantGid ?? null,
             shopifyProductGid: li.shopifyProductGid ?? null,
+            shopifyOrderLineItemId: lineShopifyOrderLineItemIds[idx] ?? null,
           })),
         });
       }
 
-      // Link to existing ShopifyOrder records by order name
-      if (data.shopifyOrderRefs && data.shopifyOrderRefs.length > 0) {
-        const orderNames = data.shopifyOrderRefs.map((ref) => ref.orderNumber);
-        const matchedOrders = await tx.shopifyOrder.findMany({
-          where: { name: { in: orderNames } },
-          select: { id: true },
-        });
-        if (matchedOrders.length > 0) {
-          await tx.purchaseOrder.update({
-            where: { id: created.id },
-            data: {
-              shopifyOrders: {
-                connect: matchedOrders.map((o) => ({ id: o.id })),
-              },
+      if (shopifyOrderIds.length > 0) {
+        await tx.purchaseOrder.update({
+          where: { id: created.id },
+          data: {
+            shopifyOrders: {
+              connect: shopifyOrderIds.map((id) => ({ id })),
             },
-          });
-        }
+          },
+        });
       }
 
       return tx.purchaseOrder.findUniqueOrThrow({
