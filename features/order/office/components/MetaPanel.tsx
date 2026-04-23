@@ -338,8 +338,12 @@ function WithoutPoMeta({
         billingAddress: billSame ? null : (isAddrEmpty(billAddr) ? null : billAddr),
         billingSameAsShipping: billSame,
       });
-      if (!result.ok && result.reason === 'duplicate_po_number') {
+      if (result.ok) {
+        // success toast is shown in OrderManagementView (needs access to navigation state)
+      } else if (result.reason === 'duplicate_po_number') {
         setCreatePoNumberError('duplicate');
+      } else {
+        toast.error('Failed to create PO — please try again');
       }
     } finally {
       setCreating(false);

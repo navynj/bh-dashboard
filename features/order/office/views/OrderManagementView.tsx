@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { toast } from 'sonner';
 import { StatusTabBar } from '../components/StatusTabBar';
 import { PeriodFilterBar } from '../components/PeriodFilterBar';
 import { Sidebar } from '../components/Sidebar';
@@ -463,7 +464,16 @@ export function OrderManagementView({
                 }),
               };
             });
-            setSelectedPoBlockId(officeBlock.id);
+            toast.success(`PO #${officeBlock.poNumber} created`, {
+              action: {
+                label: 'View PO',
+                onClick: () => {
+                  setActiveStatusTab('po_created');
+                  setActiveKey(key);
+                  setSelectedPoBlockId(officeBlock.id);
+                },
+              },
+            });
           }
           router.refresh();
           return { ok: true };
