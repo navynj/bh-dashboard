@@ -23,6 +23,8 @@ type Props = {
   emailDeliveries?: PoEmailDeliveryItem[];
   onPoEmailSent?: (poId: string) => void;
   onSendEmailComplete?: () => void;
+  /** Line items are being lazy-loaded — disable email send. */
+  lineItemsLoading?: boolean;
 };
 
 /** UI-only placeholder until outbound email events are wired. */
@@ -72,6 +74,7 @@ export function OrderProcessingBlock({
   emailDeliveries = [],
   onPoEmailSent,
   onSendEmailComplete,
+  lineItemsLoading = false,
 }: Props) {
   const t = entry.supplierOrderChannelType;
   const contacts = entry.supplierPoContacts;
@@ -201,7 +204,8 @@ export function OrderProcessingBlock({
               contacts.length === 0 ||
               !selectedPoBlockId ||
               selectedPoBlockId === '__drafts__' ||
-              sendingEmail
+              sendingEmail ||
+              lineItemsLoading
             }
             onClick={() => handleSendEmailClick()}
           >

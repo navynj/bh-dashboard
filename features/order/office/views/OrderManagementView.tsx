@@ -1731,6 +1731,14 @@ export function OrderManagementView({
     return g?.company?.trim() || g?.name?.trim() || null;
   }, [activeKey, customerGroups]);
 
+  const lineItemsLoading =
+    !!selectedPoBlockId &&
+    selectedPoBlockId !== '__drafts__' &&
+    selectedPoBlockId !== 'new' &&
+    selectedPoPrintBlock !== null &&
+    (selectedPoPrintBlock?.lineItems.length ?? 0) === 0 &&
+    (selectedPoPrintBlock?.panelMeta?.fulfillTotalCount ?? 0) > 0;
+
   return (
     <div className="flex flex-col border border-border rounded-xl overflow-hidden bg-background">
       <PoEmailDeliveryAlertsStrip
@@ -1818,6 +1826,7 @@ export function OrderManagementView({
               emailDeliveries={selectedPoPanelMeta?.emailDeliveries ?? []}
               onPoEmailSent={handleOptimisticPoEmailSent}
               onSendEmailComplete={() => router.refresh()}
+              lineItemsLoading={lineItemsLoading}
             />
 
             <div className="flex flex-1 min-h-0 bg-muted/30">
@@ -1880,6 +1889,7 @@ export function OrderManagementView({
                 customerBillingSameAsShipping={customerAddressDefaults.billingSame}
                 poPrintBlock={selectedPoPrintBlock}
                 poPrintHeadline={poPrintHeadline}
+                lineItemsLoading={lineItemsLoading}
               />
             </div>
           </div>

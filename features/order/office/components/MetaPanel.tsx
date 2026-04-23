@@ -97,6 +97,8 @@ type Props = {
   poPrintBlock?: OfficePurchaseOrderBlock | null;
   /** Customer company headline for the PDF (billing = shipping in most cases). */
   poPrintHeadline?: string | null;
+  /** Line items are being lazy-loaded — disable actions that depend on them. */
+  lineItemsLoading?: boolean;
 };
 
 export function MetaPanel({
@@ -119,6 +121,7 @@ export function MetaPanel({
   customerBillingSameAsShipping,
   poPrintBlock,
   poPrintHeadline,
+  lineItemsLoading,
 }: Props) {
   return (
     <div className="w-[192px] flex-shrink-0 border-l bg-background flex flex-col overflow-y-auto">
@@ -152,6 +155,7 @@ export function MetaPanel({
           poPrintHeadline={poPrintHeadline}
           customerDefaultBilling={customerDefaultBilling}
           customerDefaultShipping={customerDefaultShipping}
+          lineItemsLoading={lineItemsLoading}
         />
       )}
     </div>
@@ -535,6 +539,7 @@ function WithPoMeta({
   poPrintHeadline,
   customerDefaultBilling,
   customerDefaultShipping,
+  lineItemsLoading,
 }: {
   entry: SupplierEntry;
   poPanelMeta?: PoPanelMeta;
@@ -549,6 +554,7 @@ function WithPoMeta({
   poPrintHeadline?: string | null;
   customerDefaultBilling?: PoAddress | null;
   customerDefaultShipping?: PoAddress | null;
+  lineItemsLoading?: boolean;
 }) {
   const router = useRouter();
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -907,7 +913,7 @@ function WithPoMeta({
                     className="w-full justify-center text-[11px] rounded-[5px] bg-emerald-50 text-emerald-900 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-100 dark:border-emerald-800 dark:hover:bg-emerald-950/60"
                     variant="outline"
                     onClick={() => handleSendEmailClick()}
-                    disabled={sendingEmail}
+                    disabled={sendingEmail || lineItemsLoading}
                   >
                     {sendingEmail ? 'Sending…' : 'Email sent - resend?'}
                   </Button>
@@ -917,7 +923,7 @@ function WithPoMeta({
                     size="xs"
                     className="w-full justify-center text-[11px] rounded-[5px] border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500"
                     onClick={() => handleSendEmailClick()}
-                    disabled={sendingEmail}
+                    disabled={sendingEmail || lineItemsLoading}
                   >
                     {sendingEmail ? 'Sending…' : 'Send email'}
                   </Button>
@@ -965,7 +971,7 @@ function WithPoMeta({
               variant="outline"
               size="xs"
               className="w-full justify-center text-[11px] rounded-[5px]"
-              disabled={!canPrintPo}
+              disabled={!canPrintPo || lineItemsLoading}
               onClick={handlePrintPo}
             >
               Print PO
@@ -974,6 +980,7 @@ function WithPoMeta({
               variant="outline"
               size="xs"
               className="w-full justify-center text-[11px] rounded-[5px]"
+              disabled={lineItemsLoading}
               onClick={handleStartEdit}
             >
               Edit PO
