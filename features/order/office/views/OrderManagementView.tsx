@@ -155,6 +155,7 @@ export type OrderManagementViewProps = {
   initialStates: Record<SupplierKey, SupplierEntry>;
   viewDataMap: Record<SupplierKey, ViewData>;
   customerGroups: SidebarCustomerGroup[];
+  supplierGroupFilterOptions: { slug: string; name: string }[];
   statusTabCounts: Record<StatusTab, number>;
   defaultActiveKey: string | null;
   periods: Period[];
@@ -164,6 +165,7 @@ export function OrderManagementView({
   initialStates,
   viewDataMap,
   customerGroups,
+  supplierGroupFilterOptions,
   statusTabCounts: _statusTabCounts,
   defaultActiveKey,
   periods,
@@ -190,6 +192,11 @@ export function OrderManagementView({
     null,
   );
   const [showArchived, setShowArchived] = useState(false);
+
+  /** PO Created tab: group sidebar by delivery expected date (default) or PO creation date. */
+  const [poCreatedDateMode, setPoCreatedDateMode] = useState<'delivery_expected' | 'po_created'>('delivery_expected');
+  /** Active supplier group filter by `supplier_groups.slug` (null = all). Reset on tab change. */
+  const [activeSupplierGroupSlug, setActiveSupplierGroupSlug] = useState<string | null>(null);
 
   // ── Draft inclusion state (lifted from OrderBlock checkboxes) ──
   const [draftInclusions, setDraftInclusions] = useState<
@@ -337,6 +344,10 @@ export function OrderManagementView({
         fetchedPoIdsRef.current.delete(poIdToFetch);
       });
   }, [selectedPoBlockId, activeKey, lineItemRetryCount]);
+
+  const handleReplyReceivedChange = useCallback(() => {
+    router.refresh();
+  }, [router]);
 
   const handleRetryLineItemFetch = useCallback(() => {
     if (selectedPoBlockId) {
@@ -679,7 +690,7 @@ export function OrderManagementView({
         console.error('Separate PO error:', err);
       }
     },
-    [states, activeKey, router, customerGroups, patchedViewDataMap],
+    [states, activeKey, router, patchedViewDataMap],
   );
 
   const handleEditPo = useCallback(
@@ -1069,6 +1080,32 @@ export function OrderManagementView({
       };
     }
 
+    // PO Created tab in "PO Created" date mode — chip dates from poCreatedAt
+    if (activeStatusTab === 'po_created' && poCreatedDateMode === 'po_created') {
+      const dateSet = new Set<string>();
+      for (const [key, entry] of Object.entries(states)) {
+        if (entry.isArchived) continue;
+        const vd = patchedViewDataMap[key];
+        if (!entry.poCreated || !supplierRowHasOpenDeliveryPo(vd)) continue;
+        if (vd?.type !== 'post') continue;
+        for (const po of vd.purchaseOrders) {
+          if (po.id === 'new' || isOfficePoDeliveryDone(po)) continue;
+          const d = po.poCreatedAt?.slice(0, 10);
+          if (d) dateSet.add(d);
+        }
+      }
+      const allPresets: Period[] = [...dateSet].sort().reverse().map((d) => {
+        let displayLabel: string;
+        try { displayLabel = formatOfficeDateChip(d); } catch { displayLabel = d; }
+        return { id: `po_created_${d}`, label: displayLabel, from: d, to: d };
+      });
+      return {
+        tabPeriods: allPresets.slice(0, MAX_EXPECTED_DATE_CHIPS),
+        moreExpectedPeriods: allPresets.slice(MAX_EXPECTED_DATE_CHIPS),
+        dateLabel: 'PO Created',
+      };
+    }
+
     if (
       activeStatusTab === 'po_created' ||
       activeStatusTab === 'fulfilled' ||
@@ -1156,7 +1193,7 @@ export function OrderManagementView({
       moreExpectedPeriods: [] as Period[],
       dateLabel: 'Period',
     };
-  }, [activeStatusTab, showArchived, states, periods, patchedViewDataMap]);
+  }, [activeStatusTab, showArchived, states, periods, patchedViewDataMap, poCreatedDateMode]);
 
   const matchesStatusTab = useCallback(
     (e: SupplierEntry, vd: ViewData | undefined, tab: StatusTab): boolean => {
@@ -1210,6 +1247,13 @@ export function OrderManagementView({
     }
   }, []);
 
+  const handlePoCreatedDateModeChange = useCallback((mode: string) => {
+    setPoCreatedDateMode(mode as 'delivery_expected' | 'po_created');
+    setActivePeriod('all');
+    setCustomFrom('');
+    setCustomTo('');
+  }, []);
+
   const handleAlertStripNavigate = useCallback(
     (it: PoEmailDeliveryAlertItem) => {
       const entry = states[it.supplierKey];
@@ -1248,6 +1292,18 @@ export function OrderManagementView({
         return true;
       }
 
+      if (period.startsWith('po_created_')) {
+        const target = period.replace('po_created_', '');
+        const vd = patchedViewDataMap[supplierKey];
+        if (vd?.type !== 'post') return false;
+        return vd.purchaseOrders.some(
+          (po) =>
+            po.id !== 'new' &&
+            !isOfficePoDeliveryDone(po) &&
+            po.poCreatedAt?.startsWith(target),
+        );
+      }
+
       if (period.startsWith('expected_')) {
         const target = period.replace('expected_', '');
         if (activeStatusTab === 'po_created') {
@@ -1279,6 +1335,17 @@ export function OrderManagementView({
 
       if (period === 'custom') {
         if (!customFrom && !customTo) return true;
+        // PO Created tab in po_created date mode — range by poCreatedAt
+        if (activeStatusTab === 'po_created' && poCreatedDateMode === 'po_created') {
+          const vd = patchedViewDataMap[supplierKey];
+          if (vd?.type !== 'post') return false;
+          return vd.purchaseOrders.some((po) => {
+            if (po.id === 'new' || isOfficePoDeliveryDone(po)) return false;
+            const d = po.poCreatedAt?.slice(0, 10);
+            if (!d) return false;
+            return (!customFrom || d >= customFrom) && (!customTo || d <= customTo);
+          });
+        }
         if (
           activeStatusTab === 'po_created' ||
           activeStatusTab === 'fulfilled' ||
@@ -1338,6 +1405,7 @@ export function OrderManagementView({
       activeStatusTab,
       getDateForTab,
       patchedViewDataMap,
+      poCreatedDateMode,
     ],
   );
 
@@ -1356,7 +1424,8 @@ export function OrderManagementView({
     return undefined;
   }, [activeStatusTab]);
 
-  const filteredGroups = useMemo(() => {
+  // Tab + period filtered groups (before supplier group filter).
+  const tabPeriodFilteredGroups = useMemo(() => {
     const groups = customerGroups
       .map((g) => ({
         ...g,
@@ -1400,6 +1469,22 @@ export function OrderManagementView({
     matchesStatusTab,
     matchesPeriod,
   ]);
+
+  const filteredGroups = useMemo(() => {
+    if (!activeSupplierGroupSlug) return tabPeriodFilteredGroups;
+    return tabPeriodFilteredGroups
+      .map((g) => ({
+        ...g,
+        suppliers: g.suppliers.filter((s) => {
+          const e = states[s.key];
+          return e?.supplierGroupSlug === activeSupplierGroupSlug;
+        }),
+      }))
+      .filter((g) => g.suppliers.length > 0);
+  }, [tabPeriodFilteredGroups, activeSupplierGroupSlug, states]);
+
+  const usePoCreatedBuckets =
+    activeStatusTab === 'po_created' && poCreatedDateMode === 'po_created';
 
   /**
    * When the status tab changes or the current supplier row is no longer in the
@@ -1457,7 +1542,37 @@ export function OrderManagementView({
     const stillVisible = filteredGroups.some((g) =>
       g.suppliers.some((s) => s.key === activeKey),
     );
-    if (stillVisible && !tabChanged) return;
+
+    // Customer still in sidebar — check if selected PO disappeared (e.g. after fulfill moved it
+    // to a different tab). If so, stay on this customer and pick their next PO.
+    if (stillVisible && !tabChanged) {
+      if (
+        selectedPoBlockId &&
+        selectedPoBlockId !== '__drafts__' &&
+        activeStatusTab !== 'without_po'
+      ) {
+        const currentVd = patchedViewDataMap[activeKey];
+        const poStillPresent =
+          currentVd?.type === 'post' &&
+          currentVd.purchaseOrders.some((p) => p.id === selectedPoBlockId);
+        if (!poStillPresent && currentVd?.type === 'post') {
+          const filter = expectedDateBucketPoFilter;
+          const candidates = currentVd.purchaseOrders.filter(
+            (p) => p.id !== 'new' && (!filter || filter(p)),
+          );
+          const next = candidates[0] ?? currentVd.purchaseOrders.find((p) => p.id !== 'new');
+          if (next) {
+            setSelectedPoBlockId(next.id);
+            return;
+          }
+          // No more POs for this customer — fall through to default selection below.
+        } else {
+          return;
+        }
+      } else {
+        return;
+      }
+    }
 
     if (activeStatusTab === 'without_po') {
       setSelectedPoBlockId('__drafts__');
@@ -1472,9 +1587,12 @@ export function OrderManagementView({
     const bucketOpts = {
       onlyExpectedDateKey: activePeriod.startsWith('expected_')
         ? activePeriod.replace('expected_', '')
-        : null,
+        : activePeriod.startsWith('po_created_')
+          ? activePeriod.replace('po_created_', '')
+          : null,
       bucketStyle: showArchived ? ('ordered' as const) : ('delivery_expected' as const),
       includePo: expectedDateBucketPoFilter,
+      bucketByField: usePoCreatedBuckets ? ('po_created' as const) : undefined,
     };
     const buckets = buildExpectedDateBuckets(
       filteredGroups,
@@ -1508,6 +1626,7 @@ export function OrderManagementView({
     }
   }, [
     activeKey,
+    selectedPoBlockId,
     activeStatusTab,
     activePeriod,
     showArchived,
@@ -1516,14 +1635,18 @@ export function OrderManagementView({
     expectedDateBucketPoFilter,
   ]);
 
-  /** Delivery-expected bucket for the selected PO — scopes sidebar highlight to one date section. */
+  /** Bucket key for the selected PO — scopes sidebar highlight to one date section. */
   const selectionExpectedDateKey = useMemo(() => {
     if (!selectedPoBlockId || selectedPoBlockId === '__drafts__') return null;
     const vd = patchedViewDataMap[activeKey];
     if (!vd || vd.type !== 'post') return null;
     const po = vd.purchaseOrders.find((p) => p.id === selectedPoBlockId);
-    return expectedDateKeyFromPo(po?.panelMeta?.expectedDate ?? null);
-  }, [activeKey, selectedPoBlockId, patchedViewDataMap]);
+    if (!po) return null;
+    if (usePoCreatedBuckets) {
+      return po.poCreatedAt ? po.poCreatedAt.slice(0, 10) : '__none__';
+    }
+    return expectedDateKeyFromPo(po.panelMeta?.expectedDate ?? null);
+  }, [activeKey, selectedPoBlockId, patchedViewDataMap, usePoCreatedBuckets]);
 
   /** Inbox tab (without draft archive view): customer-first sidebar. Else: expected-date buckets. */
   const useInboxCustomerLayout =
@@ -1533,11 +1656,14 @@ export function OrderManagementView({
     if (useInboxCustomerLayout) return null;
     const onlyKey = activePeriod.startsWith('expected_')
       ? activePeriod.replace('expected_', '')
-      : null;
+      : activePeriod.startsWith('po_created_')
+        ? activePeriod.replace('po_created_', '')
+        : null;
     return buildExpectedDateBuckets(filteredGroups, patchedViewDataMap, {
       onlyExpectedDateKey: onlyKey,
       bucketStyle: showArchived ? 'ordered' : 'delivery_expected',
       includePo: expectedDateBucketPoFilter,
+      bucketByField: usePoCreatedBuckets ? 'po_created' : undefined,
     });
   }, [
     useInboxCustomerLayout,
@@ -1546,6 +1672,7 @@ export function OrderManagementView({
     activePeriod,
     showArchived,
     expectedDateBucketPoFilter,
+    usePoCreatedBuckets,
   ]);
 
   useEffect(() => {
@@ -1774,6 +1901,7 @@ export function OrderManagementView({
           setShowArchived(false);
           setActivePeriod('all');
           setActiveStatusTab(tab);
+          setActiveSupplierGroupSlug(null);
         }}
         archivedCount={computedCounts.archived}
         showArchived={showArchived}
@@ -1796,6 +1924,19 @@ export function OrderManagementView({
         archiveTo={showArchived ? customTo : undefined}
         onArchiveFromChange={showArchived ? setCustomFrom : undefined}
         onArchiveToChange={showArchived ? setCustomTo : undefined}
+        dateModeOptions={
+          activeStatusTab === 'po_created' && !showArchived
+            ? [
+                { value: 'delivery_expected', label: 'Delivery Expected' },
+                { value: 'po_created', label: 'PO Created' },
+              ]
+            : undefined
+        }
+        dateMode={activeStatusTab === 'po_created' ? poCreatedDateMode : undefined}
+        onDateModeChange={activeStatusTab === 'po_created' ? handlePoCreatedDateModeChange : undefined}
+        supplierGroupOptions={supplierGroupFilterOptions}
+        activeSupplierGroupSlug={activeSupplierGroupSlug}
+        onSupplierGroupChange={setActiveSupplierGroupSlug}
       />
 
       <div className="flex min-h-[600px] overflow-hidden">
@@ -1845,6 +1986,8 @@ export function OrderManagementView({
               onPoEmailSent={handleOptimisticPoEmailSent}
               onSendEmailComplete={() => router.refresh()}
               lineItemsLoading={lineItemsLoading}
+              poEmailReplyReceivedAt={selectedPoPanelMeta?.emailReplyReceivedAt ?? null}
+              onReplyReceivedChange={handleReplyReceivedChange}
             />
 
             <div className="flex flex-1 min-h-0 bg-muted/30">

@@ -36,7 +36,7 @@ export function expectedDateKeyFromPo(
 }
 
 export type BuildExpectedDateBucketsOptions = {
-  /** When set, only POs whose delivery-expected date matches this bucket key are included. */
+  /** When set, only POs whose bucket key matches this value are included. */
   onlyExpectedDateKey?: string | null;
   /** Archived: left label “Ordered at”. Default: “Delivery expected at”. */
   bucketStyle?: 'delivery_expected' | 'ordered';
@@ -45,6 +45,11 @@ export type BuildExpectedDateBucketsOptions = {
    * mixed supplier rows can list open vs fulfilled POs separately.
    */
   includePo?: (po: OfficePurchaseOrderBlock) => boolean;
+  /**
+   * When 'po_created', bucket rows by poCreatedAt date instead of panelMeta.expectedDate.
+   * Header label becomes “PO Created”.
+   */
+  bucketByField?: 'po_created';
 };
 
 /**
@@ -69,7 +74,10 @@ export function buildExpectedDateBuckets(
       for (const po of vd.purchaseOrders) {
         if (po.id === 'new') continue;
         if (options?.includePo && !options.includePo(po)) continue;
-        const ed = expectedDateKeyFromPo(po.panelMeta?.expectedDate ?? null);
+        const ed =
+          options?.bucketByField === 'po_created'
+            ? (po.poCreatedAt ? po.poCreatedAt.slice(0, 10) : '__none__')
+            : expectedDateKeyFromPo(po.panelMeta?.expectedDate ?? null);
         if (
           options?.onlyExpectedDateKey &&
           ed !== options.onlyExpectedDateKey
@@ -128,7 +136,11 @@ export function buildExpectedDateBuckets(
           })();
 
     const headerLeft =
-      options?.bucketStyle === 'ordered' ? 'Ordered at' : 'Delivery expected at';
+      options?.bucketByField === 'po_created'
+        ? 'PO Created'
+        : options?.bucketStyle === 'ordered'
+          ? 'Ordered at'
+          : 'Delivery expected at';
 
     const headerLabel = `${headerLeft} ${headerRight}`;
 

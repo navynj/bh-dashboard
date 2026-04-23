@@ -151,6 +151,7 @@ async function OfficeInboxContent() {
       initialStates={inbox.initialStates}
       viewDataMap={inbox.viewDataMap}
       customerGroups={inbox.customerGroups}
+      supplierGroupFilterOptions={inbox.supplierGroupFilterOptions}
       statusTabCounts={inbox.statusTabCounts}
       defaultActiveKey={inbox.defaultActiveKey}
       periods={periods}

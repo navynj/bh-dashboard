@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ExternalLink, Mail } from 'lucide-react';
+import { ExternalLink, Mail, MailCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +25,9 @@ type Props = {
   onSendEmailComplete?: () => void;
   /** Line items are being lazy-loaded — disable email send. */
   lineItemsLoading?: boolean;
+  /** ISO timestamp when supplier reply was manually marked as received. */
+  poEmailReplyReceivedAt?: string | null;
+  onReplyReceivedChange?: () => void;
 };
 
 
@@ -57,11 +60,14 @@ export function OrderProcessingBlock({
   onPoEmailSent,
   onSendEmailComplete,
   lineItemsLoading = false,
+  poEmailReplyReceivedAt = null,
+  onReplyReceivedChange,
 }: Props) {
   const t = entry.supplierOrderChannelType;
   const contacts = entry.supplierPoContacts;
   const savedInstruction = entry.supplierOrderInstruction?.trim() ?? '';
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [togglingReply, setTogglingReply] = useState(false);
 
   const deliveryByEmail = new Map(emailDeliveries.map((d) => [d.recipientEmail.toLowerCase(), d]));
 
@@ -124,6 +130,23 @@ export function OrderProcessingBlock({
     void performSendEmail();
   };
 
+  const handleToggleReplyReceived = async () => {
+    if (!selectedPoBlockId || selectedPoBlockId === '__drafts__') return;
+    setTogglingReply(true);
+    try {
+      const method = poEmailReplyReceivedAt ? 'DELETE' : 'PATCH';
+      const res = await fetch(`/api/purchase-orders/${selectedPoBlockId}/reply-received`, { method });
+      if (!res.ok) { toast.error('Could not update reply status'); return; }
+      const body = await res.json() as { emailReplyReceivedAt: string | null };
+      onReplyReceivedChange?.();
+      toast.success(poEmailReplyReceivedAt ? 'Reply mark removed.' : 'Reply marked as received.');
+    } catch {
+      toast.error('Network error');
+    } finally {
+      setTogglingReply(false);
+    }
+  };
+
   return (
     <div className="flex-shrink-0 border-b bg-muted/15 px-4 py-3">
       <div
@@ -173,31 +196,52 @@ export function OrderProcessingBlock({
           </div>
         </div>
         {t === 'email' && includePoEmailTools ? (
-          <Button
-            type="button"
-            size="sm"
-            className={
-              poEmailSentAt
-                ? 'h-8 shrink-0 text-[11px] rounded-md gap-1.5 bg-emerald-50 text-emerald-900 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-100 dark:border-emerald-800 dark:hover:bg-emerald-950/60'
-                : 'h-8 shrink-0 text-[11px] rounded-md gap-1.5 border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500'
-            }
-            variant="outline"
-            disabled={
-              contacts.length === 0 ||
-              !selectedPoBlockId ||
-              selectedPoBlockId === '__drafts__' ||
-              sendingEmail ||
-              lineItemsLoading
-            }
-            onClick={() => handleSendEmailClick()}
-          >
-            <Mail className="size-3.5" aria-hidden />
-            {sendingEmail
-              ? 'Sending…'
-              : poEmailSentAt
-                ? 'Email sent - resend?'
-                : 'Send email to all contacts'}
-          </Button>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <Button
+              type="button"
+              size="sm"
+              className={
+                poEmailSentAt
+                  ? 'h-8 shrink-0 text-[11px] rounded-md gap-1.5 bg-emerald-50 text-emerald-900 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-100 dark:border-emerald-800 dark:hover:bg-emerald-950/60'
+                  : 'h-8 shrink-0 text-[11px] rounded-md gap-1.5 border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500'
+              }
+              variant="outline"
+              disabled={
+                contacts.length === 0 ||
+                !selectedPoBlockId ||
+                selectedPoBlockId === '__drafts__' ||
+                sendingEmail ||
+                lineItemsLoading
+              }
+              onClick={() => handleSendEmailClick()}
+            >
+              <Mail className="size-3.5" aria-hidden />
+              {sendingEmail
+                ? 'Sending…'
+                : poEmailSentAt
+                  ? 'Email sent - resend?'
+                  : 'Send email to all contacts'}
+            </Button>
+            {poEmailSentAt ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={
+                  poEmailReplyReceivedAt
+                    ? 'h-7 shrink-0 text-[10px] rounded-md gap-1 bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-100 dark:border-blue-800'
+                    : 'h-7 shrink-0 text-[10px] rounded-md gap-1 text-muted-foreground'
+                }
+                disabled={togglingReply || !selectedPoBlockId || selectedPoBlockId === '__drafts__'}
+                onClick={handleToggleReplyReceived}
+              >
+                <MailCheck className="size-3" aria-hidden />
+                {poEmailReplyReceivedAt
+                  ? `Reply received ${formatVancouverOrderedSidebar(poEmailReplyReceivedAt)}`
+                  : 'Mark reply received'}
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </div>
 

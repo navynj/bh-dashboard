@@ -73,6 +73,7 @@ export type PoPanelMeta = {
   billingSameAsShipping: boolean;
   authorizedBy: string | null;
   emailSentAt: string | null;
+  emailReplyReceivedAt: string | null;
   emailDeliveries: PoEmailDeliveryItem[];
 };
 

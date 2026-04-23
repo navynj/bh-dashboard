@@ -13,6 +13,9 @@ import { cn } from '@/lib/utils/cn';
 import type { Period, PeriodKey } from '../types';
 import { formatOfficeDateChip } from '../utils/format-date-label';
 
+export type FilterDropdownOption = { value: string; label: string };
+export type SupplierGroupFilterOption = { slug: string; name: string };
+
 type Props = {
   periods: Period[];
   /** Extra presets (e.g. older expected dates) — chosen via “More” dialog. */
@@ -31,6 +34,14 @@ type Props = {
   archiveTo?: string;
   onArchiveFromChange?: (v: string) => void;
   onArchiveToChange?: (v: string) => void;
+  /** When provided, the dateLabel becomes a dropdown instead of plain text. */
+  dateModeOptions?: FilterDropdownOption[];
+  dateMode?: string;
+  onDateModeChange?: (v: string) => void;
+  /** Supplier group filter (`supplier_groups.slug`); always rendered when not `orderedDateOnly`. */
+  supplierGroupOptions?: SupplierGroupFilterOption[];
+  activeSupplierGroupSlug?: string | null;
+  onSupplierGroupChange?: (slug: string | null) => void;
 };
 
 export function PeriodFilterBar({
@@ -45,6 +56,12 @@ export function PeriodFilterBar({
   archiveTo,
   onArchiveFromChange,
   onArchiveToChange,
+  dateModeOptions,
+  dateMode,
+  onDateModeChange,
+  supplierGroupOptions = [],
+  activeSupplierGroupSlug,
+  onSupplierGroupChange,
 }: Props) {
   const today = new Date().toISOString().slice(0, 10);
   const [from, setFrom] = useState(orderedDateOnly ? '' : today);
@@ -74,6 +91,22 @@ export function PeriodFilterBar({
   if (orderedDateOnly) {
     return (
       <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-5 py-[7px] border-b bg-background flex-shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-[10px] text-muted-foreground">Supplier group</span>
+          <select
+            value={activeSupplierGroupSlug ?? ''}
+            onChange={(e) => onSupplierGroupChange?.(e.target.value || null)}
+            className="text-[11px] h-[22px] px-1.5 rounded-[5px] border border-border bg-background text-foreground cursor-pointer"
+          >
+            <option value="">All</option>
+            {supplierGroupOptions.map((g) => (
+              <option key={g.slug} value={g.slug}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="h-4 w-px bg-border flex-shrink-0 self-center" />
         <span className="flex-shrink-0 text-[11px] font-medium text-foreground">
           {dateLabel}
         </span>
@@ -124,9 +157,41 @@ export function PeriodFilterBar({
 
   return (
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 px-5 py-[7px] border-b bg-background flex-shrink-0">
-      <span className="flex-shrink-0 text-[10px] font-medium text-muted-foreground uppercase tracking-wide mr-0.5">
-        {dateLabel}
-      </span>
+      <div className="flex items-center gap-1 shrink-0">
+        <span className="text-[10px] text-muted-foreground">Supplier group</span>
+        <select
+          value={activeSupplierGroupSlug ?? ''}
+          onChange={(e) => onSupplierGroupChange?.(e.target.value || null)}
+          className="text-[11px] h-[22px] px-1.5 rounded-[5px] border border-border bg-background text-foreground cursor-pointer"
+        >
+          <option value="">All</option>
+          {supplierGroupOptions.map((g) => (
+            <option key={g.slug} value={g.slug}>
+              {g.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="h-4 w-px bg-border flex-shrink-0 self-center" />
+
+      {dateModeOptions && dateModeOptions.length >= 2 ? (
+        <select
+          value={dateMode ?? ''}
+          onChange={(e) => onDateModeChange?.(e.target.value)}
+          className="flex-shrink-0 text-[10px] font-medium text-muted-foreground uppercase tracking-wide h-[22px] px-1.5 rounded-[5px] border border-border bg-background cursor-pointer mr-0.5"
+        >
+          {dateModeOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span className="flex-shrink-0 text-[10px] font-medium text-muted-foreground uppercase tracking-wide mr-0.5">
+          {dateLabel}
+        </span>
+      )}
 
       <div className="flex min-w-0 flex-1 flex-wrap gap-1 items-center">
         <Button

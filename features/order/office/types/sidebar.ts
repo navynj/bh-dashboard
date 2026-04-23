@@ -12,6 +12,8 @@ export type SupplierEntry = {
   dateCreated: string | null;
   expectedDate: string | null;
   supplierCompany: string;
+  /** `order.supplier_groups.slug` when the supplier has a group; null if ungrouped or unassigned row. */
+  supplierGroupSlug: string | null;
   /** One-line subtitle under supplier name in meta (email, link host, or “Direct”). */
   supplierOrderChannelSummary: string;
   supplierContactEmail: string;

@@ -741,6 +741,7 @@ model PurchaseOrder {
   emailSentAt           DateTime?               @map("email_sent_at") @db.Timestamptz
   emailTrackingToken    String?                 @unique @map("email_tracking_token")
   emailOpenedAt         DateTime?               @map("email_opened_at") @db.Timestamptz
+  emailReplyReceivedAt  DateTime?               @map("email_reply_received_at") @db.Timestamptz
   /// Shipping address for this PO (JSON: address1, address2, city, province, postalCode, country).
   shippingAddress       Json?                   @map("shipping_address")
   /// Billing address for this PO (JSON, same shape as shipping).

@@ -194,6 +194,7 @@ export function mapPrismaPoToBlock(
     billingSameAsShipping: po.billingSameAsShipping,
     authorizedBy: po.authorizedBy?.trim() ?? null,
     emailSentAt: po.emailSentAt ? po.emailSentAt.toISOString() : null,
+    emailReplyReceivedAt: po.emailReplyReceivedAt ? po.emailReplyReceivedAt.toISOString() : null,
     emailDeliveries: po.emailDeliveries.map((d): PoEmailDeliveryItem => ({
       recipientEmail: d.recipientEmail,
       recipientName: d.recipientName,
@@ -304,6 +305,7 @@ export function mapPrismaPoToSlimBlock(
     billingSameAsShipping: po.billingSameAsShipping,
     authorizedBy: po.authorizedBy?.trim() ?? null,
     emailSentAt: po.emailSentAt ? po.emailSentAt.toISOString() : null,
+    emailReplyReceivedAt: po.emailReplyReceivedAt ? po.emailReplyReceivedAt.toISOString() : null,
     emailDeliveries: po.emailDeliveries.map((d): PoEmailDeliveryItem => ({
       recipientEmail: d.recipientEmail,
       recipientName: d.recipientName,

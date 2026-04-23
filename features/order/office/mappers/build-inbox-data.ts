@@ -180,6 +180,8 @@ export type InboxData = {
   initialStates: Record<SupplierKey, SupplierEntry>;
   viewDataMap: Record<SupplierKey, ViewData>;
   customerGroups: SidebarCustomerGroup[];
+  /** Preset rows from DB (`supplier_groups`), for office filter UI. */
+  supplierGroupFilterOptions: { slug: string; name: string }[];
   statusTabCounts: Record<StatusTab, number>;
   defaultActiveKey: SupplierKey | null;
 };
@@ -489,6 +491,15 @@ export function buildInboxData(
   const initialStates: Record<SupplierKey, SupplierEntry> = {};
   const viewDataMap: Record<SupplierKey, ViewData> = {};
 
+  const groupSlugById = new Map<string, string>();
+  for (const g of supplierGroups) {
+    groupSlugById.set(g.id, g.slug);
+  }
+  const supplierGroupFilterOptions = supplierGroups.map((g) => ({
+    slug: g.slug,
+    name: g.name,
+  }));
+
   type SupplierMeta = PrismaSupplierGroup['suppliers'][0];
   const supplierById = new Map<string, SupplierMeta>();
   for (const g of supplierGroups) {
@@ -603,6 +614,10 @@ export function buildInboxData(
         supId === UNASSIGNED_SUPPLIER_ID
           ? 'Unassigned'
           : (supplier?.company ?? 'Unknown Supplier');
+      const supplierGroupSlug =
+        supId === UNASSIGNED_SUPPLIER_ID || !supplier?.groupId
+          ? null
+          : (groupSlugById.get(supplier.groupId) ?? null);
       const entryKey: SupplierKey = `${custKey}::${supId}`;
 
       const drafts = draftOrders.map((o) => shopifyOrderToDraft(o, supId, vendorLookup));
@@ -777,6 +792,7 @@ export function buildInboxData(
         dateCreated: isoDate(earliestDate),
         expectedDate: isoDate(latestExpected),
         supplierCompany: supplierName,
+        supplierGroupSlug,
         ...channelFields,
         fulfillDoneCount: fulfillDone,
         fulfillPendingCount: fulfillPending,
@@ -928,6 +944,7 @@ export function buildInboxData(
     initialStates,
     viewDataMap,
     customerGroups,
+    supplierGroupFilterOptions,
     statusTabCounts: statusCounts,
     defaultActiveKey,
   };

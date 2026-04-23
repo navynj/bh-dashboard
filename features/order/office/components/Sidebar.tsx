@@ -61,6 +61,7 @@ function PoSidebarEmailStatusLine({ po }: { po: OfficePurchaseOrderBlock }) {
   }
 
   const total = deliveries.length > 0 ? deliveries.length : 1;
+  const replyReceivedAt = po.panelMeta?.emailReplyReceivedAt;
 
   return (
     <div className="flex items-center gap-1.5 mt-px">
@@ -74,6 +75,9 @@ function PoSidebarEmailStatusLine({ po }: { po: OfficePurchaseOrderBlock }) {
       <span className="text-[8px] leading-none font-medium text-emerald-700">
         Sent {total > 1 ? `×${total}` : ''}
       </span>
+      {replyReceivedAt ? (
+        <span className="text-[8px] leading-none font-medium text-blue-600">· Reply ✓</span>
+      ) : null}
     </div>
   );
 }
