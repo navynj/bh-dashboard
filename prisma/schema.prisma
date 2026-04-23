@@ -757,6 +757,8 @@ model PurchaseOrder {
   @@index([poType])
   @@index([status])
   @@index([supplierId])
+  @@index([archivedAt])
+  @@index([expectedDate])
   @@map("purchase_orders")
   @@schema("order")
 }

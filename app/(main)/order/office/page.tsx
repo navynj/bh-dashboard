@@ -1,6 +1,7 @@
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
 import { redirect } from 'next/navigation';
+import { after } from 'next/server';
 import { OrderManagementView } from '@/features/order/office/views/OrderManagementView';
 import { buildInboxData } from '@/features/order/office/mappers/build-inbox-data';
 import { buildWeekPeriods } from '@/features/order/office/mappers/periods';
@@ -16,16 +17,19 @@ export default async function OfficeOrderInboxPage() {
   const session = await auth();
   if (!session?.user?.id) redirect('/auth');
 
+  // Run Shopify sync AFTER the response is sent so it never blocks page render.
   if (getOfficeOrAdmin(session.user.role) && isShopifyAdminEnvConfigured()) {
-    const tSync = Date.now();
-    try {
-      const syncResult = await executeShopifySync('incremental');
-      console.log(
-        `[OfficeInbox] incremental sync ${Date.now() - tSync}ms — orders synced: ${syncResult.synced}/${syncResult.fetched}, customers: ${syncResult.customersSynced}`,
-      );
-    } catch (err) {
-      console.error('[OfficeInbox] incremental sync failed:', err);
-    }
+    after(async () => {
+      const tSync = Date.now();
+      try {
+        const syncResult = await executeShopifySync('incremental');
+        console.log(
+          `[OfficeInbox] background sync ${Date.now() - tSync}ms — orders synced: ${syncResult.synced}/${syncResult.fetched}, customers: ${syncResult.customersSynced}`,
+        );
+      } catch (err) {
+        console.error('[OfficeInbox] background sync failed:', err);
+      }
+    });
   }
 
   const t0 = Date.now();
