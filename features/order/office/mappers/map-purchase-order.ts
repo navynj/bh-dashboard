@@ -193,12 +193,10 @@ export function mapPrismaPoToBlock(
     billingSameAsShipping: po.billingSameAsShipping,
     authorizedBy: po.authorizedBy?.trim() ?? null,
     emailSentAt: po.emailSentAt ? po.emailSentAt.toISOString() : null,
-    emailOpenedAt: po.emailOpenedAt ? po.emailOpenedAt.toISOString() : null,
     emailDeliveries: po.emailDeliveries.map((d): PoEmailDeliveryItem => ({
       recipientEmail: d.recipientEmail,
       recipientName: d.recipientName,
       sentAt: d.sentAt.toISOString(),
-      openedAt: d.openedAt ? d.openedAt.toISOString() : null,
     })),
   };
 
@@ -305,12 +303,10 @@ export function mapPrismaPoToSlimBlock(
     billingSameAsShipping: po.billingSameAsShipping,
     authorizedBy: po.authorizedBy?.trim() ?? null,
     emailSentAt: po.emailSentAt ? po.emailSentAt.toISOString() : null,
-    emailOpenedAt: po.emailOpenedAt ? po.emailOpenedAt.toISOString() : null,
     emailDeliveries: po.emailDeliveries.map((d): PoEmailDeliveryItem => ({
       recipientEmail: d.recipientEmail,
       recipientName: d.recipientName,
       sentAt: d.sentAt.toISOString(),
-      openedAt: d.openedAt ? d.openedAt.toISOString() : null,
     })),
   };
 

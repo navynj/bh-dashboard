@@ -54,7 +54,6 @@ export type PoEmailDeliveryItem = {
   recipientEmail: string;
   recipientName: string | null;
   sentAt: string;
-  openedAt: string | null;
 };
 
 export type PoPanelMeta = {
@@ -74,7 +73,6 @@ export type PoPanelMeta = {
   billingSameAsShipping: boolean;
   authorizedBy: string | null;
   emailSentAt: string | null;
-  emailOpenedAt: string | null;
   emailDeliveries: PoEmailDeliveryItem[];
 };
 

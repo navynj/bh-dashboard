@@ -27,24 +27,6 @@ type Props = {
   lineItemsLoading?: boolean;
 };
 
-/** UI-only placeholder until outbound email events are wired. */
-type EmailDeliveryUiStatus =
-  | 'not_sent'
-  | 'queued'
-  | 'sent'
-  | 'delivered'
-  | 'failed';
-
-const EMAIL_STATUS_META: Record<
-  EmailDeliveryUiStatus,
-  { label: string; variant: 'secondary' | 'outline' | 'blue' | 'green' | 'red' }
-> = {
-  not_sent: { label: 'Not sent', variant: 'secondary' },
-  queued: { label: 'Queued', variant: 'outline' },
-  sent: { label: 'Sent', variant: 'blue' },
-  delivered: { label: 'Delivered', variant: 'green' },
-  failed: { label: 'Failed', variant: 'red' },
-};
 
 function InstructionsBox({
   title,
@@ -259,32 +241,15 @@ export function OrderProcessingBlock({
                         </span>
                         <div className="flex items-center gap-1.5 shrink-0">
                           {delivery ? (
-                            <>
-                              <span className="text-[9px] text-muted-foreground">
-                                Sent {formatVancouverOrderedSidebar(delivery.sentAt)}
-                              </span>
-                              {delivery.openedAt ? (
-                                <Badge
-                                  variant="green"
-                                  className="rounded px-1.5 text-[9px]"
-                                >
-                                  Opened
-                                </Badge>
-                              ) : (
-                                <Badge
-                                  variant="outline"
-                                  className="rounded px-1.5 text-[9px] bg-amber-50 text-amber-700 border-amber-200"
-                                >
-                                  Unread
-                                </Badge>
-                              )}
-                            </>
+                            <span className="text-[9px] text-muted-foreground">
+                              Sent {formatVancouverOrderedSidebar(delivery.sentAt)}
+                            </span>
                           ) : (
                             <Badge
-                              variant={EMAIL_STATUS_META['not_sent'].variant}
+                              variant="secondary"
                               className="rounded px-1.5 text-[9px]"
                             >
-                              {EMAIL_STATUS_META['not_sent'].label}
+                              Not sent
                             </Badge>
                           )}
                         </div>

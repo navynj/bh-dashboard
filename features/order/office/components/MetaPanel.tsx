@@ -942,20 +942,6 @@ function WithPoMeta({
                     {emailSendError}
                   </p>
                 )}
-                {(emailSentLocal || poPanelMeta?.emailSentAt) && (
-                  <div className="text-[9px] text-center leading-snug">
-                    {poPanelMeta?.emailOpenedAt ? (
-                      <span className="text-emerald-600 font-medium">
-                        Opened{' '}
-                        {formatDistanceToNow(new Date(poPanelMeta.emailOpenedAt), {
-                          addSuffix: true,
-                        })}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">Not opened yet</span>
-                    )}
-                  </div>
-                )}
               </>
             ) : (
               <p className="text-[10px] text-muted-foreground text-center leading-snug px-1">

@@ -60,47 +60,19 @@ function PoSidebarEmailStatusLine({ po }: { po: OfficePurchaseOrderBlock }) {
     );
   }
 
-  // Legacy PO sent before per-recipient tracking — show single-dot fallback
-  if (deliveries.length === 0 && sentIso) {
-    const opened = !!po.panelMeta?.emailOpenedAt;
-    return (
-      <div className="flex items-center gap-1.5 mt-px">
-        <div className="flex items-center gap-0.5">
-          <span
-            className={`inline-block w-2 h-2 rounded-sm ${opened ? 'bg-emerald-500' : 'bg-amber-400'}`}
-          />
-        </div>
-        <span className="text-[8px] leading-none text-muted-foreground">
-          {opened ? '1/1 read' : '0/1 read'}
-        </span>
-      </div>
-    );
-  }
-
-  // Per-recipient delivery records
-  const openedCount = deliveries.filter((d) => d.openedAt !== null).length;
-  const total = deliveries.length;
+  const total = deliveries.length > 0 ? deliveries.length : 1;
 
   return (
     <div className="flex items-center gap-1.5 mt-px">
       <div className="flex items-center gap-0.5">
-        {deliveries.map((d, i) => (
-          <span
-            key={i}
-            className={`inline-block w-2 h-2 rounded-sm ${d.openedAt ? 'bg-emerald-500' : 'bg-amber-400'}`}
-          />
-        ))}
+        {deliveries.length > 0
+          ? deliveries.map((_, i) => (
+              <span key={i} className="inline-block w-2 h-2 rounded-sm bg-emerald-500" />
+            ))
+          : <span className="inline-block w-2 h-2 rounded-sm bg-emerald-500" />}
       </div>
-      <span
-        className={`text-[8px] leading-none font-medium ${
-          openedCount === total
-            ? 'text-emerald-700'
-            : openedCount > 0
-              ? 'text-emerald-600'
-              : 'text-amber-600'
-        }`}
-      >
-        {openedCount}/{total} read
+      <span className="text-[8px] leading-none font-medium text-emerald-700">
+        Sent {total > 1 ? `×${total}` : ''}
       </span>
     </div>
   );
