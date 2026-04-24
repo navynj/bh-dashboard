@@ -5,6 +5,7 @@ import { parseBody, purchaseOrderCreateSchema } from '@/lib/api/schemas';
 import { toApiErrorResponse } from '@/lib/core/errors';
 import { mapPrismaPoToBlock } from '@/features/order/office/mappers/map-purchase-order';
 import { resolvePoCreateLineShopifyLinks } from '@/lib/order/resolve-po-create-line-shopify-links';
+import { loadVariantOfficeNotesMap } from '@/lib/order/shopify-variant-office-note';
 
 export async function GET() {
   try {
@@ -109,21 +110,55 @@ export async function POST(request: NextRequest) {
         await resolvePoCreateLineShopifyLinks(tx, orderNamesFromRefs, data.lineItems);
 
       if (data.lineItems.length > 0) {
+        const soliIds = lineShopifyOrderLineItemIds.filter((id): id is string => Boolean(id));
+        const soliById =
+          soliIds.length > 0
+            ? new Map(
+                (
+                  await tx.shopifyOrderLineItem.findMany({
+                    where: { id: { in: soliIds } },
+                    select: { id: true, variantGid: true },
+                  })
+                ).map((r) => [r.id, r.variantGid]),
+              )
+            : new Map<string, string | null>();
+
+        const resolvedVariantGids: string[] = [];
+        for (let idx = 0; idx < data.lineItems.length; idx++) {
+          const li = data.lineItems[idx];
+          let vg = li.shopifyVariantGid?.trim() ?? null;
+          if (!vg) {
+            const sid = lineShopifyOrderLineItemIds[idx];
+            if (sid) vg = soliById.get(sid)?.trim() ?? null;
+          }
+          if (vg) resolvedVariantGids.push(vg);
+        }
+        const noteByVariant = await loadVariantOfficeNotesMap(tx, resolvedVariantGids);
+
         await tx.purchaseOrderLineItem.createMany({
-          data: data.lineItems.map((li, idx) => ({
-            purchaseOrderId: created.id,
-            sequence: idx + 1,
-            quantity: li.quantity,
-            sku: li.sku ?? null,
-            variantTitle: li.variantTitle ?? null,
-            productTitle: li.productTitle ?? null,
-            itemPrice: li.itemPrice ?? null,
-            supplierRef: li.supplierRef ?? null,
-            isCustom: li.isCustom ?? false,
-            shopifyVariantGid: li.shopifyVariantGid ?? null,
-            shopifyProductGid: li.shopifyProductGid ?? null,
-            shopifyOrderLineItemId: lineShopifyOrderLineItemIds[idx] ?? null,
-          })),
+          data: data.lineItems.map((li, idx) => {
+            let vg = li.shopifyVariantGid?.trim() ?? null;
+            if (!vg) {
+              const sid = lineShopifyOrderLineItemIds[idx];
+              if (sid) vg = soliById.get(sid)?.trim() ?? null;
+            }
+            const defaultNote = vg ? noteByVariant.get(vg) ?? null : null;
+            return {
+              purchaseOrderId: created.id,
+              sequence: idx + 1,
+              quantity: li.quantity,
+              sku: li.sku ?? null,
+              variantTitle: li.variantTitle ?? null,
+              productTitle: li.productTitle ?? null,
+              itemPrice: li.itemPrice ?? null,
+              supplierRef: li.supplierRef ?? null,
+              isCustom: li.isCustom ?? false,
+              shopifyVariantGid: li.shopifyVariantGid ?? null,
+              shopifyProductGid: li.shopifyProductGid ?? null,
+              shopifyOrderLineItemId: lineShopifyOrderLineItemIds[idx] ?? null,
+              note: defaultNote,
+            };
+          }),
         });
       }
 

@@ -1,0 +1,1027 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
+import { ChevronDown } from 'lucide-react';
+import { OFFICE_TABLE_VIEW_FETCH_LIMIT } from '../constants/office-table-view';
+import { formatOfficeDateFromDate } from '../utils/format-date-label';
+import type {
+  OfficePoTableLineItem,
+  OfficeShopifyTableLineItem,
+  OfficeTableViewLinkedPo,
+  OfficeTableViewPoRow,
+  OfficeTableViewShopifyRow,
+} from '../types/office-table-view';
+import { OfficeOrderLineItemsDialog } from './OfficeOrderLineItemsDialog';
+
+type TableTab = 'shopify' | 'po';
+
+export type OfficeTableFilterOption = { id: string; label: string };
+
+const PAGE_SIZE = 25;
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return `${formatOfficeDateFromDate(d)} ${d.toLocaleTimeString('en-CA', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'America/Vancouver',
+    })}`;
+  } catch {
+    return '—';
+  }
+}
+
+function formatDateOnly(iso: string | null): string {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso.length === 10 ? `${iso}T12:00:00` : iso);
+    if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+    return formatOfficeDateFromDate(d);
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+const th =
+  'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide px-2 py-2 border-b bg-muted/50';
+const td = 'px-2 py-1.5 text-sm border-b align-top';
+
+function TablePaginationBar({
+  page,
+  pageCount,
+  total,
+  loaded,
+  loading,
+  onPageChange,
+}: {
+  page: number;
+  pageCount: number;
+  total: number;
+  loaded: number;
+  loading: boolean;
+  onPageChange: (page: number) => void;
+}) {
+  const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const to = Math.min(page * PAGE_SIZE, total);
+  const loadedHint =
+    loaded < total ? ` · ${loaded.toLocaleString()} loaded` : '';
+  return (
+    <div className="flex shrink-0 flex-col gap-2 border-t bg-muted/20 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-muted-foreground tabular-nums">
+          {total === 0
+            ? 'No rows'
+            : `${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()}${loadedHint}`}
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            disabled={page <= 1 || loading}
+            onClick={() => onPageChange(page - 1)}
+          >
+            Previous
+          </Button>
+          {loading ? (
+            <Spinner className="size-5 shrink-0 text-muted-foreground" />
+          ) : (
+            <span className="min-w-[4.5rem] text-center tabular-nums text-muted-foreground">
+              {page} / {pageCount}
+            </span>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            disabled={page >= pageCount || loading}
+            onClick={() => onPageChange(page + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShopifyPoLinksCell({
+  linked,
+  onSelectPo,
+}: {
+  linked: OfficeTableViewLinkedPo[];
+  onSelectPo: (poId: string) => void;
+}) {
+  if (linked.length === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-auto gap-1 px-1.5 py-0.5 text-xs font-medium text-primary"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {linked.length} POs
+          <ChevronDown className="size-3.5 opacity-70" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-[10rem]">
+        <DropdownMenuLabel className="text-xs">Open PO</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {linked.map((p) => (
+          <DropdownMenuItem
+            key={p.id}
+            className="cursor-pointer text-sm"
+            onSelect={() => onSelectPo(p.id)}
+          >
+            {p.poNumber}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function TabCount({ active, n }: { active: boolean; n: number }) {
+  return (
+    <span
+      className={cn(
+        'text-[10px] font-medium px-1.5 py-px rounded-full',
+        active
+          ? 'bg-[#FAEEDA] text-[#633806]'
+          : 'bg-muted text-muted-foreground',
+      )}
+    >
+      {n.toLocaleString()}
+    </span>
+  );
+}
+
+export function OfficeTableSplitView({
+  initialShopifyRows,
+  initialPoRows,
+  shopifyTotal,
+  poTotal,
+  customerFilterOptions,
+  supplierFilterOptions,
+  onOpenPoDetail,
+}: {
+  initialShopifyRows: OfficeTableViewShopifyRow[];
+  initialPoRows: OfficeTableViewPoRow[];
+  shopifyTotal: number;
+  poTotal: number;
+  customerFilterOptions: OfficeTableFilterOption[];
+  supplierFilterOptions: OfficeTableFilterOption[];
+  onOpenPoDetail: (purchaseOrderId: string) => void | Promise<void>;
+}) {
+  const [tab, setTab] = useState<TableTab>('shopify');
+  const [shopifyRows, setShopifyRows] = useState(initialShopifyRows);
+  const [poRows, setPoRows] = useState(initialPoRows);
+  const [shopifyPage, setShopifyPage] = useState(1);
+  const [poPage, setPoPage] = useState(1);
+  const [shopifyLoading, setShopifyLoading] = useState(false);
+  const [poLoading, setPoLoading] = useState(false);
+
+  const [qInput, setQInput] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
+  const [customerId, setCustomerId] = useState('');
+  const [supplierId, setSupplierId] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [poDateField, setPoDateField] = useState<'created' | 'expected'>('created');
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(qInput), 400);
+    return () => clearTimeout(t);
+  }, [qInput]);
+
+  const filtersActive = useMemo(
+    () =>
+      Boolean(
+        debouncedQ.trim() ||
+          customerId ||
+          supplierId ||
+          dateFrom ||
+          dateTo,
+      ),
+    [debouncedQ, customerId, supplierId, dateFrom, dateTo],
+  );
+
+  const [shopifyDisplayTotal, setShopifyDisplayTotal] = useState(shopifyTotal);
+  const [poDisplayTotal, setPoDisplayTotal] = useState(poTotal);
+
+  const shopifyRowsRef = useRef(shopifyRows);
+  const poRowsRef = useRef(poRows);
+  shopifyRowsRef.current = shopifyRows;
+  poRowsRef.current = poRows;
+
+  const shopifyInFlight = useRef(false);
+  const poInFlight = useRef(false);
+  /** Empty API page — stop auto-fetch / hide load-more (avoids infinite retry). */
+  const [shopifyNoMore, setShopifyNoMore] = useState(false);
+  const [poNoMore, setPoNoMore] = useState(false);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const [lineDialogOpen, setLineDialogOpen] = useState(false);
+  const [linePreview, setLinePreview] = useState<{
+    kind: 'shopify' | 'po';
+    id: string;
+    title: string;
+    subtitle: string;
+  } | null>(null);
+  const [lineLoading, setLineLoading] = useState(false);
+  const [lineError, setLineError] = useState<string | null>(null);
+  const [lineDialogCurrency, setLineDialogCurrency] = useState('USD');
+  const [shopifyDialogLines, setShopifyDialogLines] = useState<OfficeShopifyTableLineItem[]>([]);
+  const [poDialogLines, setPoDialogLines] = useState<OfficePoTableLineItem[]>([]);
+
+  const buildShopifyQueryString = useCallback(
+    (offset: number) => {
+      const p = new URLSearchParams({
+        offset: String(offset),
+        limit: String(OFFICE_TABLE_VIEW_FETCH_LIMIT),
+      });
+      const q = debouncedQ.trim();
+      if (q) p.set('q', q);
+      if (customerId) p.set('customerId', customerId);
+      if (supplierId) p.set('supplierId', supplierId);
+      if (dateFrom) p.set('dateFrom', dateFrom);
+      if (dateTo) p.set('dateTo', dateTo);
+      return p.toString();
+    },
+    [debouncedQ, customerId, supplierId, dateFrom, dateTo],
+  );
+
+  const buildPoQueryString = useCallback(
+    (offset: number) => {
+      const p = new URLSearchParams({
+        offset: String(offset),
+        limit: String(OFFICE_TABLE_VIEW_FETCH_LIMIT),
+        poDateField,
+      });
+      const q = debouncedQ.trim();
+      if (q) p.set('q', q);
+      if (customerId) p.set('customerId', customerId);
+      if (supplierId) p.set('supplierId', supplierId);
+      if (dateFrom) p.set('dateFrom', dateFrom);
+      if (dateTo) p.set('dateTo', dateTo);
+      return p.toString();
+    },
+    [debouncedQ, customerId, supplierId, dateFrom, dateTo, poDateField],
+  );
+
+  useEffect(() => {
+    if (filtersActive) return;
+    setShopifyRows(initialShopifyRows);
+    setShopifyDisplayTotal(shopifyTotal);
+    setShopifyNoMore(false);
+    setShopifyPage(1);
+  }, [initialShopifyRows, shopifyTotal, filtersActive]);
+
+  useEffect(() => {
+    if (filtersActive) return;
+    setPoRows(initialPoRows);
+    setPoDisplayTotal(poTotal);
+    setPoNoMore(false);
+    setPoPage(1);
+  }, [initialPoRows, poTotal, filtersActive]);
+
+  useEffect(() => {
+    if (tab !== 'shopify' || !filtersActive) return;
+    const ac = new AbortController();
+    (async () => {
+      setShopifyLoading(true);
+      try {
+        const res = await fetch(
+          `/api/order-office/table-view/shopify?${buildShopifyQueryString(0)}`,
+          { signal: ac.signal },
+        );
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          rows?: OfficeTableViewShopifyRow[];
+          total?: number;
+        };
+        if (ac.signal.aborted) return;
+        const rows = body.rows ?? [];
+        const total = body.total ?? 0;
+        setShopifyRows(rows);
+        setShopifyDisplayTotal(total);
+        setShopifyPage(1);
+        setShopifyNoMore(rows.length === 0 || rows.length >= total);
+      } finally {
+        if (!ac.signal.aborted) setShopifyLoading(false);
+      }
+    })();
+    return () => ac.abort();
+  }, [tab, filtersActive, buildShopifyQueryString]);
+
+  useEffect(() => {
+    if (tab !== 'po' || !filtersActive) return;
+    const ac = new AbortController();
+    (async () => {
+      setPoLoading(true);
+      try {
+        const res = await fetch(
+          `/api/order-office/table-view/po?${buildPoQueryString(0)}`,
+          { signal: ac.signal },
+        );
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          rows?: OfficeTableViewPoRow[];
+          total?: number;
+        };
+        if (ac.signal.aborted) return;
+        const rows = body.rows ?? [];
+        const total = body.total ?? 0;
+        setPoRows(rows);
+        setPoDisplayTotal(total);
+        setPoPage(1);
+        setPoNoMore(rows.length === 0 || rows.length >= total);
+      } finally {
+        if (!ac.signal.aborted) setPoLoading(false);
+      }
+    })();
+    return () => ac.abort();
+  }, [tab, filtersActive, buildPoQueryString]);
+
+  const shopifyPageCount = useMemo(
+    () => Math.max(1, Math.ceil(shopifyDisplayTotal / PAGE_SIZE)),
+    [shopifyDisplayTotal],
+  );
+  const poPageCount = useMemo(
+    () => Math.max(1, Math.ceil(poDisplayTotal / PAGE_SIZE)),
+    [poDisplayTotal],
+  );
+
+  useEffect(() => {
+    setShopifyPage((p) => Math.min(Math.max(1, p), shopifyPageCount));
+  }, [shopifyPageCount]);
+
+  useEffect(() => {
+    setPoPage((p) => Math.min(Math.max(1, p), poPageCount));
+  }, [poPageCount]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [tab, shopifyPage, poPage]);
+
+  useEffect(() => {
+    if (!lineDialogOpen || !linePreview) return;
+    const ac = new AbortController();
+    (async () => {
+      setLineLoading(true);
+      setLineError(null);
+      setShopifyDialogLines([]);
+      setPoDialogLines([]);
+      try {
+        if (linePreview.kind === 'shopify') {
+          const res = await fetch(
+            `/api/order-office/table-view/shopify/${linePreview.id}/line-items`,
+            { signal: ac.signal },
+          );
+          const data = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            lines?: OfficeShopifyTableLineItem[];
+            currencyCode?: string;
+          };
+          if (ac.signal.aborted) return;
+          if (!res.ok) {
+            setLineError(typeof data.error === 'string' ? data.error : 'Failed to load lines');
+            return;
+          }
+          setShopifyDialogLines(Array.isArray(data.lines) ? data.lines : []);
+          setLineDialogCurrency(
+            typeof data.currencyCode === 'string' && data.currencyCode.trim()
+              ? data.currencyCode.trim()
+              : 'USD',
+          );
+        } else {
+          const res = await fetch(
+            `/api/order-office/table-view/po/${linePreview.id}/line-items`,
+            { signal: ac.signal },
+          );
+          const data = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            lines?: OfficePoTableLineItem[];
+            currency?: string;
+          };
+          if (ac.signal.aborted) return;
+          if (!res.ok) {
+            setLineError(typeof data.error === 'string' ? data.error : 'Failed to load lines');
+            return;
+          }
+          setPoDialogLines(Array.isArray(data.lines) ? data.lines : []);
+          setLineDialogCurrency(
+            typeof data.currency === 'string' && data.currency.trim()
+              ? data.currency.trim()
+              : 'USD',
+          );
+        }
+      } catch (e) {
+        if (!ac.signal.aborted) {
+          setLineError(e instanceof Error ? e.message : 'Failed to load lines');
+        }
+      } finally {
+        if (!ac.signal.aborted) setLineLoading(false);
+      }
+    })();
+    return () => ac.abort();
+  }, [lineDialogOpen, linePreview]);
+
+  const openShopifyLineDialog = useCallback((r: OfficeTableViewShopifyRow) => {
+    if (r.lineItemCount <= 0) return;
+    setLinePreview({
+      kind: 'shopify',
+      id: r.id,
+      title: `${r.orderLabel} — line items`,
+      subtitle: r.customerLabel,
+    });
+    setLineDialogOpen(true);
+  }, []);
+
+  const openPoLineDialog = useCallback((r: OfficeTableViewPoRow) => {
+    if (r.lineItemCount <= 0) return;
+    setLinePreview({
+      kind: 'po',
+      id: r.id,
+      title: `${r.poNumber} — line items`,
+      subtitle: r.supplierCompany,
+    });
+    setLineDialogOpen(true);
+  }, []);
+
+  const handleLineDialogOpenChange = useCallback((open: boolean) => {
+    setLineDialogOpen(open);
+    if (!open) {
+      setLinePreview(null);
+      setLineError(null);
+      setShopifyDialogLines([]);
+      setPoDialogLines([]);
+    }
+  }, []);
+
+  const fetchMoreShopify = useCallback(async () => {
+    if (shopifyInFlight.current || shopifyNoMore) return;
+    const offset = shopifyRowsRef.current.length;
+    if (offset >= shopifyDisplayTotal) return;
+    shopifyInFlight.current = true;
+    setShopifyLoading(true);
+    try {
+      const res = await fetch(
+        `/api/order-office/table-view/shopify?${buildShopifyQueryString(offset)}`,
+      );
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        rows?: OfficeTableViewShopifyRow[];
+        total?: number;
+      };
+      const rows = body.rows ?? [];
+      const total = body.total ?? shopifyDisplayTotal;
+      if (rows.length === 0) {
+        setShopifyNoMore(true);
+        return;
+      }
+      const nextLen = offset + rows.length;
+      setShopifyDisplayTotal(total);
+      setShopifyNoMore(
+        nextLen >= total || rows.length < OFFICE_TABLE_VIEW_FETCH_LIMIT,
+      );
+      setShopifyRows((prev) => [...prev, ...rows]);
+    } finally {
+      shopifyInFlight.current = false;
+      setShopifyLoading(false);
+    }
+  }, [shopifyDisplayTotal, shopifyNoMore, buildShopifyQueryString]);
+
+  const fetchMorePo = useCallback(async () => {
+    if (poInFlight.current || poNoMore) return;
+    const offset = poRowsRef.current.length;
+    if (offset >= poDisplayTotal) return;
+    poInFlight.current = true;
+    setPoLoading(true);
+    try {
+      const res = await fetch(
+        `/api/order-office/table-view/po?${buildPoQueryString(offset)}`,
+      );
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        rows?: OfficeTableViewPoRow[];
+        total?: number;
+      };
+      const rows = body.rows ?? [];
+      const total = body.total ?? poDisplayTotal;
+      if (rows.length === 0) {
+        setPoNoMore(true);
+        return;
+      }
+      const nextLen = offset + rows.length;
+      setPoDisplayTotal(total);
+      setPoNoMore(
+        nextLen >= total || rows.length < OFFICE_TABLE_VIEW_FETCH_LIMIT,
+      );
+      setPoRows((prev) => [...prev, ...rows]);
+    } finally {
+      poInFlight.current = false;
+      setPoLoading(false);
+    }
+  }, [poDisplayTotal, poNoMore, buildPoQueryString]);
+
+  useEffect(() => {
+    if (tab !== 'shopify' || shopifyNoMore) return;
+    const needed = Math.min(shopifyPage * PAGE_SIZE, shopifyDisplayTotal);
+    if (
+      shopifyRows.length >= needed ||
+      shopifyRows.length >= shopifyDisplayTotal
+    )
+      return;
+    void fetchMoreShopify();
+  }, [
+    tab,
+    shopifyPage,
+    shopifyRows.length,
+    shopifyDisplayTotal,
+    shopifyNoMore,
+    fetchMoreShopify,
+  ]);
+
+  useEffect(() => {
+    if (tab !== 'po' || poNoMore) return;
+    const needed = Math.min(poPage * PAGE_SIZE, poDisplayTotal);
+    if (poRows.length >= needed || poRows.length >= poDisplayTotal) return;
+    void fetchMorePo();
+  }, [tab, poPage, poRows.length, poDisplayTotal, poNoMore, fetchMorePo]);
+
+  const shopifySlice = useMemo(() => {
+    const start = (shopifyPage - 1) * PAGE_SIZE;
+    return shopifyRows.slice(start, start + PAGE_SIZE);
+  }, [shopifyRows, shopifyPage]);
+
+  const poSlice = useMemo(() => {
+    const start = (poPage - 1) * PAGE_SIZE;
+    return poRows.slice(start, start + PAGE_SIZE);
+  }, [poRows, poPage]);
+
+  const shopifyGap =
+    tab === 'shopify' &&
+    shopifySlice.length < PAGE_SIZE &&
+    shopifyRows.length < shopifyDisplayTotal &&
+    shopifyLoading;
+
+  const poGap =
+    tab === 'po' &&
+    poSlice.length < PAGE_SIZE &&
+    poRows.length < poDisplayTotal &&
+    poLoading;
+
+  const clearFilters = useCallback(() => {
+    setQInput('');
+    setDebouncedQ('');
+    setCustomerId('');
+    setSupplierId('');
+    setDateFrom('');
+    setDateTo('');
+    setPoDateField('created');
+  }, []);
+
+  const selectCls =
+    'h-9 max-w-full min-w-0 rounded-md border border-input bg-white px-2 text-sm shadow-xs dark:bg-input/30';
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center overflow-x-auto border-b bg-background">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => setTab('shopify')}
+          className={cn(
+            'h-10 gap-1.5 rounded-none px-3.5 text-[12px] font-normal -mb-px border-b-2 hover:bg-transparent',
+            tab === 'shopify'
+              ? 'border-foreground font-medium text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground',
+          )}
+        >
+          Shopify
+          <TabCount active={tab === 'shopify'} n={shopifyTotal} />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => setTab('po')}
+          className={cn(
+            'h-10 gap-1.5 rounded-none px-3.5 text-[12px] font-normal -mb-px border-b-2 hover:bg-transparent',
+            tab === 'po'
+              ? 'border-foreground font-medium text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground',
+          )}
+        >
+          PO
+          <TabCount active={tab === 'po'} n={poTotal} />
+        </Button>
+      </div>
+
+      <p className="shrink-0 border-b bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+        Newest first
+        {tab === 'shopify' ? ' — Shopify orders' : ' — Purchase orders'}
+        {filtersActive ? (
+          <span className="ml-2 text-foreground/80">
+            ·{' '}
+            {tab === 'shopify'
+              ? shopifyDisplayTotal.toLocaleString()
+              : poDisplayTotal.toLocaleString()}{' '}
+            {tab === 'shopify'
+              ? shopifyDisplayTotal === 1
+                ? 'order'
+                : 'orders'
+              : poDisplayTotal === 1
+                ? 'PO'
+                : 'POs'}{' '}
+            after filter
+          </span>
+        ) : null}
+      </p>
+
+      <div className="shrink-0 space-y-2 border-b bg-background px-3 py-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex min-w-[12rem] max-w-[20rem] flex-1 flex-col gap-1">
+            <label htmlFor="office-table-q" className="text-[11px] font-medium text-muted-foreground">
+              Search
+            </label>
+            <Input
+              id="office-table-q"
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+              placeholder="Order #, PO #, SKU, item, supplier…"
+              className="h-9 text-sm"
+            />
+          </div>
+          <div className="flex min-w-[9rem] max-w-[14rem] flex-col gap-1">
+            <label htmlFor="office-table-customer" className="text-[11px] font-medium text-muted-foreground">
+              Customer
+            </label>
+            <select
+              id="office-table-customer"
+              className={selectCls}
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value)}
+            >
+              <option value="">All</option>
+              {customerFilterOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex min-w-[9rem] max-w-[14rem] flex-col gap-1">
+            <label htmlFor="office-table-supplier" className="text-[11px] font-medium text-muted-foreground">
+              Supplier
+            </label>
+            <select
+              id="office-table-supplier"
+              className={selectCls}
+              value={supplierId}
+              onChange={(e) => setSupplierId(e.target.value)}
+            >
+              <option value="">All</option>
+              {supplierFilterOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium text-muted-foreground">From</span>
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-9 w-[10.5rem] text-sm tabular-nums"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium text-muted-foreground">To</span>
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-9 w-[10.5rem] text-sm tabular-nums"
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0 text-xs"
+            disabled={
+              !qInput.trim() &&
+              !customerId &&
+              !supplierId &&
+              !dateFrom &&
+              !dateTo &&
+              (tab !== 'po' || poDateField === 'created')
+            }
+            onClick={clearFilters}
+          >
+            Clear
+          </Button>
+        </div>
+        {tab === 'po' ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-muted-foreground">PO date range uses</span>
+            <div className="inline-flex rounded-md border border-input bg-muted/30 p-0.5">
+              <Button
+                type="button"
+                variant={poDateField === 'created' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setPoDateField('created')}
+              >
+                Created
+              </Button>
+              <Button
+                type="button"
+                variant={poDateField === 'expected' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setPoDateField('expected')}
+              >
+                Expected delivery
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto">
+        {((tab === 'shopify' && shopifyLoading) || (tab === 'po' && poLoading)) ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center bg-background/50"
+            aria-busy
+            aria-label="Loading"
+          >
+            <Spinner className="size-8 text-muted-foreground" />
+          </div>
+        ) : null}
+        {tab === 'shopify' ? (
+          <table className="w-full border-collapse table-fixed">
+            <colgroup>
+              <col className="w-[11%]" />
+              <col className="w-[20%]" />
+              <col className="w-[17%]" />
+              <col className="w-[9%]" />
+              <col className="w-[9%]" />
+              <col className="w-[8%]" />
+              <col className="w-[17%]" />
+            </colgroup>
+            <thead className="sticky top-0 z-[1]">
+              <tr>
+                <th className={th}>Order</th>
+                <th className={th}>Customer</th>
+                <th className={th}>Created</th>
+                <th className={th}>Fulfill</th>
+                <th className={th}>Pay</th>
+                <th className={th}>Lines</th>
+                <th className={th}>Linked POs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shopifySlice.map((r) => (
+                <tr
+                  key={r.id}
+                  role="button"
+                  tabIndex={0}
+                  className={cn(
+                    r.archived ? 'bg-muted/40 text-muted-foreground' : undefined,
+                    r.shopifyAdminOrderUrl
+                      ? 'cursor-pointer hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none'
+                      : undefined,
+                  )}
+                  onClick={() => {
+                    if (!r.shopifyAdminOrderUrl) return;
+                    window.open(
+                      r.shopifyAdminOrderUrl,
+                      '_blank',
+                      'noopener,noreferrer',
+                    );
+                  }}
+                  onKeyDown={(e) => {
+                    if (!r.shopifyAdminOrderUrl) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      window.open(
+                        r.shopifyAdminOrderUrl,
+                        '_blank',
+                        'noopener,noreferrer',
+                      );
+                    }
+                  }}
+                >
+                  <td className={td}>
+                    <span className="font-mono tabular-nums">{r.orderLabel}</span>
+                    {r.archived ? (
+                      <span className="ml-1 text-[10px] uppercase text-muted-foreground">
+                        archived
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className={`${td} break-words`}>{r.customerLabel}</td>
+                  <td className={`${td} whitespace-nowrap`}>
+                    {formatDateTime(r.shopifyCreatedAt)}
+                  </td>
+                  <td className={`${td} text-xs`}>
+                    {r.displayFulfillmentStatus ?? '—'}
+                  </td>
+                  <td className={`${td} text-xs`}>
+                    {r.displayFinancialStatus ?? '—'}
+                  </td>
+                  <td className={td} onClick={(e) => e.stopPropagation()}>
+                    {r.lineItemCount > 0 ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto min-h-0 px-1.5 py-0.5 text-xs font-medium tabular-nums text-primary underline-offset-2 hover:underline"
+                        onClick={() => openShopifyLineDialog(r)}
+                      >
+                        {r.lineItemCount}
+                      </Button>
+                    ) : (
+                      <span className="tabular-nums text-muted-foreground">0</span>
+                    )}
+                  </td>
+                  <td className={td} onClick={(e) => e.stopPropagation()}>
+                    <ShopifyPoLinksCell
+                      linked={r.linkedPurchaseOrders}
+                      onSelectPo={onOpenPoDetail}
+                    />
+                  </td>
+                </tr>
+              ))}
+              {shopifyGap ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="py-12 text-center align-middle text-muted-foreground"
+                  >
+                    <Spinner className="mx-auto size-6" />
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        ) : (
+          <table className="w-full border-collapse table-fixed">
+            <colgroup>
+              <col className="w-[32%]" />
+              <col className="w-[14%]" />
+              <col className="w-[9%]" />
+              <col className="w-[17%]" />
+              <col className="w-[12%]" />
+              <col className="w-[8%]" />
+              <col className="w-[8%]" />
+            </colgroup>
+            <thead className="sticky top-0 z-[1]">
+              <tr>
+                <th className={th}>PO #</th>
+                <th className={th}>Supplier</th>
+                <th className={th}>Status</th>
+                <th className={th}>Created</th>
+                <th className={th}>Expected</th>
+                <th className={th}>Lines</th>
+                <th className={th}>Orders</th>
+              </tr>
+            </thead>
+            <tbody>
+              {poSlice.map((r) => (
+                <tr
+                  key={r.id}
+                  role="button"
+                  tabIndex={0}
+                  className={cn(
+                    r.archived ? 'bg-muted/40 text-muted-foreground' : undefined,
+                    'cursor-pointer hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none',
+                  )}
+                  onClick={() => void onOpenPoDetail(r.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      void onOpenPoDetail(r.id);
+                    }
+                  }}
+                >
+                  <td className={td}>
+                    <span className="font-medium">{r.poNumber}</span>
+                    {r.archived ? (
+                      <span className="ml-1 text-[10px] uppercase text-muted-foreground">
+                        archived
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className={`${td} break-words`}>{r.supplierCompany}</td>
+                  <td className={`${td} text-xs`}>{r.status}</td>
+                  <td className={`${td} whitespace-nowrap`}>
+                    {formatDateTime(r.createdAt)}
+                  </td>
+                  <td className={`${td} whitespace-nowrap`}>
+                    {formatDateOnly(r.expectedDate)}
+                  </td>
+                  <td className={td} onClick={(e) => e.stopPropagation()}>
+                    {r.lineItemCount > 0 ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto min-h-0 px-1.5 py-0.5 text-xs font-medium tabular-nums text-primary underline-offset-2 hover:underline"
+                        onClick={() => openPoLineDialog(r)}
+                      >
+                        {r.lineItemCount}
+                      </Button>
+                    ) : (
+                      <span className="tabular-nums text-muted-foreground">0</span>
+                    )}
+                  </td>
+                  <td className={`${td} tabular-nums`}>{r.shopifyOrderCount}</td>
+                </tr>
+              ))}
+              {poGap ? (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="py-12 text-center align-middle text-muted-foreground"
+                  >
+                    <Spinner className="mx-auto size-6" />
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {tab === 'shopify' ? (
+        <TablePaginationBar
+          page={shopifyPage}
+          pageCount={shopifyPageCount}
+          total={shopifyDisplayTotal}
+          loaded={shopifyRows.length}
+          loading={shopifyLoading}
+          onPageChange={setShopifyPage}
+        />
+      ) : (
+        <TablePaginationBar
+          page={poPage}
+          pageCount={poPageCount}
+          total={poDisplayTotal}
+          loaded={poRows.length}
+          loading={poLoading}
+          onPageChange={setPoPage}
+        />
+      )}
+
+      <OfficeOrderLineItemsDialog
+        open={Boolean(lineDialogOpen && linePreview)}
+        onOpenChange={handleLineDialogOpenChange}
+        loading={lineLoading}
+        error={lineError}
+        {...(linePreview?.kind === 'po'
+          ? {
+              variant: 'po' as const,
+              title: linePreview.title,
+              subtitle: linePreview.subtitle,
+              currency: lineDialogCurrency,
+              lines: poDialogLines,
+            }
+          : {
+              variant: 'shopify' as const,
+              title: linePreview?.title ?? '',
+              subtitle: linePreview?.subtitle ?? '',
+              currency: lineDialogCurrency,
+              lines: shopifyDialogLines,
+            })}
+      />
+    </div>
+  );
+}

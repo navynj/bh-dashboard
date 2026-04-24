@@ -7,6 +7,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/core/prisma';
 import { recomputePurchaseOrderStatusById } from '@/lib/order/purchase-order-status';
+import { loadVariantOfficeNotesMap } from '@/lib/order/shopify-variant-office-note';
 
 export type ResyncPurchaseOrderFromShopifyOptions = {
   purchaseOrderId: string;
@@ -119,18 +120,27 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
 
   let maxSeq = refreshed.lineItems.reduce((m, l) => Math.max(m, l.sequence), 0);
 
-  for (const li of orderWithLines.lineItems) {
-    if (li.quantity <= 0) continue;
-    if (usedShopifyLineIds.has(li.id)) continue;
+  const appendCandidates = orderWithLines.lineItems.filter((li) => {
+    if (li.quantity <= 0) return false;
+    if (usedShopifyLineIds.has(li.id)) return false;
     if (vendorNorm) {
       const v = li.vendor?.trim().toLowerCase() ?? '';
-      if (v && v !== vendorNorm) continue;
+      if (v && v !== vendorNorm) return false;
     }
+    return true;
+  });
+  const appendVariantGids = appendCandidates
+    .map((li) => li.variantGid?.trim())
+    .filter((g): g is string => Boolean(g));
+  const noteByVariant = await loadVariantOfficeNotesMap(prisma, appendVariantGids);
 
+  for (const li of appendCandidates) {
     maxSeq += 1;
     const price = li.price;
     const subtotal =
       price != null ? new Prisma.Decimal(price).mul(li.quantity) : null;
+    const vg = li.variantGid?.trim() ?? null;
+    const defaultNote = vg ? noteByVariant.get(vg) ?? null : null;
 
     await prisma.purchaseOrderLineItem.create({
       data: {
@@ -146,6 +156,7 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
         isCustom: !li.variantGid,
         itemPrice: toDecimal(price),
         lineSubtotalPrice: subtotal,
+        note: defaultNote,
       },
     });
     usedShopifyLineIds.add(li.id);

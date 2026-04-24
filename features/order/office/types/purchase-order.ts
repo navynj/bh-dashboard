@@ -32,6 +32,8 @@ export type PoLineItemView = {
   shopifyOrderId?: string | null;
   shopifyOrderNumber: string;
   fulfillmentStatus: LineFulfillmentStatus;
+  /** PO / PDF line note (editable per PO; defaults from Item settings mapping). */
+  note: string | null;
 };
 
 export type LinkedShopifyOrder = {

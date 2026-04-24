@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -144,6 +145,11 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
     setOptimisticLineItems(null);
   }, [purchaseOrder.lineItems]);
 
+  useEffect(() => {
+    setNoteEditingId(null);
+    setNoteDraft('');
+  }, [purchaseOrder.id]);
+
   const items = optimisticLineItems ?? purchaseOrder.lineItems;
 
   const fulfilled = items.filter(
@@ -182,6 +188,10 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
   const [customTitle, setCustomTitle] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [customQty, setCustomQty] = useState('1');
+
+  const [noteEditingId, setNoteEditingId] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
 
   const enterFulfillMode = useCallback(() => {
     const initChecked: Record<string, boolean> = {};
@@ -546,6 +556,7 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
           shopifyOrderId: newLineTargetOrderId || null,
           shopifyOrderNumber: ord?.name ?? '—',
           fulfillmentStatus: 'UNFULFILLED' as LineFulfillmentStatus,
+          note: null,
           _local: key,
           _isNew: true,
           _newKind: 'variant' as const,
@@ -588,6 +599,7 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
         shopifyOrderId: newLineTargetOrderId || null,
         shopifyOrderNumber: ord?.name ?? '—',
         fulfillmentStatus: 'UNFULFILLED' as LineFulfillmentStatus,
+        note: null,
         _local: key,
         _isNew: true,
         _newKind: 'custom' as const,
@@ -818,12 +830,13 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
       >
         <colgroup>
           <col style={{ width: '8%' }} />
-          <col style={{ width: fulfillMode ? '30%' : orderEditMode ? '26%' : '32%' }} />
-          <col style={{ width: '10%' }} />
+          <col style={{ width: fulfillMode ? '24%' : orderEditMode ? '22%' : '26%' }} />
           <col style={{ width: '9%' }} />
-          <col style={{ width: '9%' }} />
-          <col style={{ width: fulfillMode ? '10%' : '9%' }} />
-          <col style={{ width: fulfillMode ? '18%' : orderEditMode ? '16%' : '22%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: '8%' }} />
+          <col style={{ width: fulfillMode ? '9%' : '8%' }} />
+          <col style={{ width: fulfillMode ? '14%' : orderEditMode ? '13%' : '16%' }} />
+          <col style={{ width: fulfillMode ? '12%' : orderEditMode ? '11%' : '13%' }} />
           {orderEditMode && <col style={{ width: '10%' }} />}
           {fulfillMode && <col style={{ width: '6%' }} />}
         </colgroup>
@@ -837,6 +850,7 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
               'Price',
               'Qty',
               'Received',
+              'Note',
               'Status',
             ].map((h) => (
               <TableHead
@@ -986,6 +1000,98 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
                     <span className={recvCellTone(item.fulfillmentStatus)}>
                       {item.quantityReceived === 0 ? '—' : item.quantityReceived}
                     </span>
+                  )}
+                </TableCell>
+
+                <TableCell className="px-2 py-[7px] align-top min-w-0">
+                  {fulfillMode || orderEditMode ? (
+                    <span className="text-[10px] text-muted-foreground break-words whitespace-pre-wrap">
+                      {item.note?.trim() ? item.note : '—'}
+                    </span>
+                  ) : noteEditingId === item.id ? (
+                    <div className="flex flex-col gap-1">
+                      <Textarea
+                        className="min-h-[5.5rem] max-h-40 resize-y text-[10px] leading-snug py-1.5"
+                        value={noteDraft}
+                        onChange={(e) => setNoteDraft(e.target.value)}
+                        maxLength={4000}
+                        rows={4}
+                        placeholder="PO line note (shown on PDF). Enter for new lines."
+                      />
+                      <div className="flex gap-1 justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          className="h-6 text-[10px]"
+                          disabled={noteSaving}
+                          onClick={() => {
+                            setNoteEditingId(null);
+                            setNoteDraft('');
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          size="xs"
+                          className="h-6 text-[10px]"
+                          disabled={noteSaving}
+                          onClick={() => {
+                            void (async () => {
+                              setNoteSaving(true);
+                              try {
+                                const res = await fetch(
+                                  `/api/purchase-orders/${purchaseOrder.id}/line-items`,
+                                  {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      items: [{ id: item.id, note: noteDraft || null }],
+                                    }),
+                                  },
+                                );
+                                const body = (await res.json().catch(() => null)) as {
+                                  error?: string;
+                                } | null;
+                                if (!res.ok) {
+                                  toast.error(body?.error ?? 'Failed to save note');
+                                  return;
+                                }
+                                toast.success('Note saved');
+                                setNoteEditingId(null);
+                                setNoteDraft('');
+                                router.refresh();
+                              } catch {
+                                toast.error('Network error');
+                              } finally {
+                                setNoteSaving(false);
+                              }
+                            })();
+                          }}
+                        >
+                          {noteSaving ? '…' : 'Save'}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <p className="text-[10px] text-muted-foreground break-words whitespace-pre-wrap max-h-[4.5rem] overflow-y-auto">
+                        {item.note?.trim() ? item.note : '—'}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        className="h-6 text-[10px] self-start"
+                        onClick={() => {
+                          setNoteEditingId(item.id);
+                          setNoteDraft(item.note ?? '');
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    </div>
                   )}
                 </TableCell>
 

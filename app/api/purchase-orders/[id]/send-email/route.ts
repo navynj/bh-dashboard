@@ -109,6 +109,7 @@ export async function POST(_request: NextRequest, context: RouteContext) {
         description,
         supplierRef,
         quantity: li.quantity,
+        note: li.note?.trim() ?? '',
       };
     });
 

@@ -705,6 +705,18 @@ model ShopifyVendorMapping {
   @@schema("order")
 }
 
+/// Default PO line / PDF note per Shopify catalog variant (Admin `ProductVariant` GID).
+model ShopifyVariantOfficeNote {
+  id                 String   @id @default(cuid())
+  shopifyVariantGid  String   @unique @map("shopify_variant_gid")
+  note               String   @db.Text
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("shopify_variant_office_notes")
+  @@schema("order")
+}
+
 // --- Purchase Orders ---
 
 model PurchaseOrder {
@@ -785,6 +797,8 @@ model PurchaseOrderLineItem {
   lineSubtotalPrice       Decimal?              @map("line_subtotal_price") @db.Decimal(14, 2)
   lineTotalTaxPrice       Decimal?              @map("line_total_tax_price") @db.Decimal(14, 2)
   productProperties       String?               @map("product_properties") @db.Text
+  /// Shown on PO PDF (right column). Defaults from `ShopifyVariantOfficeNote` at PO create; editable per PO line.
+  note                    String?               @db.Text
   shopifyOrderLineItemId  String?               @map("shopify_order_line_item_id")
   shopifyOrderLineItem    ShopifyOrderLineItem? @relation(fields: [shopifyOrderLineItemId], references: [id])
   purchaseOrder           PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)

@@ -4,6 +4,11 @@ import { redirect } from 'next/navigation';
 import { after } from 'next/server';
 import { Suspense } from 'react';
 import { OrderManagementView } from '@/features/order/office/views/OrderManagementView';
+import { OFFICE_TABLE_VIEW_FETCH_LIMIT } from '@/features/order/office/constants/office-table-view';
+import {
+  fetchPurchaseOrdersForOfficeTableView,
+  fetchShopifyOrdersForOfficeTableView,
+} from '@/lib/order/office-table-view-fetch';
 import { buildInboxData } from '@/features/order/office/mappers/build-inbox-data';
 import { buildWeekPeriods } from '@/features/order/office/mappers/periods';
 import { isShopifyAdminEnvConfigured } from '@/lib/shopify/env';
@@ -58,6 +63,10 @@ async function OfficeInboxContent() {
     unlinkedShopifyOrders,
     vendorMappings,
     rawLineCounts,
+    tableViewShopifyTotal,
+    tableViewPoTotal,
+    tableViewShopifyRows,
+    tableViewPoRows,
   ] = await Promise.all([
     // Active POs — skip lineItems entirely; use _count for total, separate query for done counts
     prisma.purchaseOrder.findMany({
@@ -112,6 +121,10 @@ async function OfficeInboxContent() {
       where: { purchaseOrder: { archivedAt: null } },
       select: { purchaseOrderId: true, quantity: true, quantityReceived: true },
     }),
+    prisma.shopifyOrder.count(),
+    prisma.purchaseOrder.count(),
+    fetchShopifyOrdersForOfficeTableView(0, OFFICE_TABLE_VIEW_FETCH_LIMIT),
+    fetchPurchaseOrdersForOfficeTableView(0, OFFICE_TABLE_VIEW_FETCH_LIMIT),
   ]);
 
   // Build per-PO fulfillment counts from the minimal line query
@@ -155,6 +168,10 @@ async function OfficeInboxContent() {
       statusTabCounts={inbox.statusTabCounts}
       defaultActiveKey={inbox.defaultActiveKey}
       periods={periods}
+      tableViewShopifyRows={tableViewShopifyRows}
+      tableViewPoRows={tableViewPoRows}
+      tableViewShopifyTotal={tableViewShopifyTotal}
+      tableViewPoTotal={tableViewPoTotal}
     />
   );
 }

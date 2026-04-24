@@ -12,6 +12,7 @@ const SETTINGS_PREFIXES = [
   `${OFFICE_BASE}/supplier`,
   `${OFFICE_BASE}/customer-settings`,
   `${OFFICE_BASE}/contact-settings`,
+  `${OFFICE_BASE}/item-settings`,
   `${OFFICE_BASE}/settings`,
 ];
 
@@ -57,6 +58,7 @@ export function OfficeSettingsBar() {
   const isSuppliers = pathname.startsWith(`${OFFICE_BASE}/supplier`);
   const isCustomers = pathname.startsWith(`${OFFICE_BASE}/customer-settings`);
   const isContact = pathname.startsWith(`${OFFICE_BASE}/contact-settings`);
+  const isItemSettings = pathname.startsWith(`${OFFICE_BASE}/item-settings`);
   const isDataSync = pathname.startsWith(`${OFFICE_BASE}/settings`);
   const isSettingsPage = SETTINGS_PREFIXES.some((p) => pathname.startsWith(p));
 
@@ -98,7 +100,9 @@ export function OfficeSettingsBar() {
         detail?: string;
       };
       if (!res.ok) {
-        const msg = [json.error, json.detail].filter(Boolean).join(': ') || `HTTP ${res.status}`;
+        const msg =
+          [json.error, json.detail].filter(Boolean).join(': ') ||
+          `HTTP ${res.status}`;
         setSyncError(msg);
         return;
       }
@@ -106,7 +110,9 @@ export function OfficeSettingsBar() {
         await fetchStatus();
         router.refresh();
       } else {
-        setSyncError([json.error, json.detail].filter(Boolean).join(': ') || 'Sync failed');
+        setSyncError(
+          [json.error, json.detail].filter(Boolean).join(': ') || 'Sync failed',
+        );
       }
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : String(e));
@@ -116,7 +122,7 @@ export function OfficeSettingsBar() {
   }, [fetchStatus, router]);
 
   return (
-    <div className="flex items-center justify-between mb-2">
+    <div className="flex items-center justify-between mb-2 flex-wrap">
       {/* Left: sync status + refresh */}
       <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-1.5 min-w-0">
         {isSettingsPage && (
@@ -158,7 +164,7 @@ export function OfficeSettingsBar() {
       </div>
 
       {/* Right: settings tabs */}
-      <div className="flex gap-1.5">
+      <div className="flex gap-1.5 flex-wrap">
         <Link
           href={`${OFFICE_BASE}/supplier`}
           prefetch={false}
@@ -203,6 +209,21 @@ export function OfficeSettingsBar() {
           )}
         >
           Contact Settings
+        </Link>
+        <Link
+          href={`${OFFICE_BASE}/item-settings`}
+          prefetch={false}
+          scroll={false}
+          className={cn(
+            buttonVariants({
+              variant: isItemSettings ? 'default' : 'outline',
+              size: 'xs',
+            }),
+            'text-[11px] rounded-[5px]',
+            !isItemSettings && 'text-muted-foreground',
+          )}
+        >
+          Item settings
         </Link>
         <Link
           href={`${OFFICE_BASE}/settings`}

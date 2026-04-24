@@ -22,6 +22,14 @@ import {
   formatVancouverYmdChip,
   toVancouverYmdFromIso,
 } from '../utils/vancouver-datetime';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { OfficeTableSplitView } from '../components/OfficeTableSplitView';
+import { findSupplierKeyForPurchaseOrderId } from '../utils/find-supplier-key-for-po';
+import type {
+  OfficeTableViewPoRow,
+  OfficeTableViewShopifyRow,
+} from '../types/office-table-view';
 import type {
   SupplierKey,
   SupplierEntry,
@@ -159,6 +167,10 @@ export type OrderManagementViewProps = {
   statusTabCounts: Record<StatusTab, number>;
   defaultActiveKey: string | null;
   periods: Period[];
+  tableViewShopifyRows: OfficeTableViewShopifyRow[];
+  tableViewPoRows: OfficeTableViewPoRow[];
+  tableViewShopifyTotal: number;
+  tableViewPoTotal: number;
 };
 
 export function OrderManagementView({
@@ -169,8 +181,15 @@ export function OrderManagementView({
   statusTabCounts: _statusTabCounts,
   defaultActiveKey,
   periods,
+  tableViewShopifyRows,
+  tableViewPoRows,
+  tableViewShopifyTotal,
+  tableViewPoTotal,
 }: OrderManagementViewProps) {
   void _statusTabCounts;
+  const [mainPanel, setMainPanel] = useState<'grouped' | 'table'>('grouped');
+  /** Table view: drill-in to same center/meta UI as Grouped view for one PO. */
+  const [tablePoDetailPoId, setTablePoDetailPoId] = useState<string | null>(null);
   const [states, setStates] =
     useState<Record<SupplierKey, SupplierEntry>>(initialStates);
 
@@ -180,6 +199,10 @@ export function OrderManagementView({
   }, [initialStates]);
 
   const router = useRouter();
+
+  useEffect(() => {
+    if (mainPanel !== 'table') setTablePoDetailPoId(null);
+  }, [mainPanel]);
 
   const firstKey = defaultActiveKey ?? Object.keys(initialStates)[0] ?? null;
 
@@ -321,6 +344,38 @@ export function OrderManagementView({
   const patchedViewDataMapRef = useRef(patchedViewDataMap);
   patchedViewDataMapRef.current = patchedViewDataMap;
 
+  const openPoFromTable = useCallback(
+    async (poId: string) => {
+      let key = findSupplierKeyForPurchaseOrderId(patchedViewDataMap, poId);
+      if (!key) {
+        try {
+          const res = await fetch(
+            `/api/order-office/table-view/resolve-po-key?id=${encodeURIComponent(poId)}`,
+          );
+          if (!res.ok) {
+            toast.error('Could not resolve this PO.');
+            return;
+          }
+          const body = (await res.json()) as { supplierKey?: string };
+          key = (body.supplierKey as SupplierKey) ?? null;
+        } catch {
+          toast.error('Could not resolve this PO.');
+          return;
+        }
+      }
+      if (!key || !states[key]) {
+        toast.error(
+          'This PO is not in the current inbox. Open Grouped view or refresh the page.',
+        );
+        return;
+      }
+      setActiveKey(key);
+      setSelectedPoBlockId(poId);
+      setTablePoDetailPoId(poId);
+    },
+    [patchedViewDataMap, states],
+  );
+
   useEffect(() => {
     if (!selectedPoBlockId || selectedPoBlockId === '__drafts__' || selectedPoBlockId === 'new') return;
     if (fetchedPoIdsRef.current.has(selectedPoBlockId)) return;
@@ -362,6 +417,33 @@ export function OrderManagementView({
       [poId]: new Date().toISOString(),
     }));
   }, []);
+
+  const tableCustomerFilterOptions = useMemo(
+    () =>
+      customerGroups
+        .filter(
+          (g) =>
+            g.id !== '__unknown_customer__' && !g.id.startsWith('email::'),
+        )
+        .map((g) => ({ id: g.id, label: g.name }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [customerGroups],
+  );
+
+  const tableSupplierFilterOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const g of customerGroups) {
+      for (const s of g.suppliers) {
+        const supId = s.key.split('::')[1] ?? '';
+        if (!supId || supId === 'without-po' || supId === '__unassigned__')
+          continue;
+        if (!byId.has(supId)) byId.set(supId, s.name);
+      }
+    }
+    return [...byId.entries()]
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [customerGroups]);
 
   const computedCounts = useMemo(() => {
     const counts = {
@@ -1493,6 +1575,8 @@ export function OrderManagementView({
    * Keeps one effect so a follow-up “repair” effect does not clear `selectedPoBlockId`.
    */
   useEffect(() => {
+    if (mainPanel === 'table') return;
+
     const tabChanged =
       prevStatusTabRef.current != null &&
       prevStatusTabRef.current !== activeStatusTab;
@@ -1633,6 +1717,7 @@ export function OrderManagementView({
     filteredGroups,
     patchedViewDataMap,
     expectedDateBucketPoFilter,
+    mainPanel,
   ]);
 
   /** Bucket key for the selected PO — scopes sidebar highlight to one date section. */
@@ -1676,6 +1761,7 @@ export function OrderManagementView({
   ]);
 
   useEffect(() => {
+    if (mainPanel === 'table') return;
     if (useInboxCustomerLayout || !activePeriod.startsWith('expected_')) return;
     if (!allExpectedBuckets?.length) return;
 
@@ -1704,6 +1790,7 @@ export function OrderManagementView({
     allExpectedBuckets,
     activeKey,
     selectedPoBlockId,
+    mainPanel,
   ]);
 
   const [expectedDateSidebarPage, setExpectedDateSidebarPage] = useState(0);
@@ -1730,6 +1817,7 @@ export function OrderManagementView({
   }, [activeStatusTab, showArchived, activePeriod, filteredGroups]);
 
   useEffect(() => {
+    if (mainPanel === 'table') return;
     if (useInboxCustomerLayout || !allExpectedBuckets?.length) return;
     if (
       selectedPoBlockId === '__drafts__' ||
@@ -1750,6 +1838,7 @@ export function OrderManagementView({
     selectedPoBlockId,
     allExpectedBuckets,
     useInboxCustomerLayout,
+    mainPanel,
   ]);
 
   const entry = states[activeKey] ?? null;
@@ -1782,6 +1871,7 @@ export function OrderManagementView({
       : (rawViewData ?? { type: 'pre' as const, shopifyOrderDrafts: [] });
 
   useEffect(() => {
+    if (mainPanel === 'table') return;
     if (!entry) return;
     const raw = patchedViewDataMap[activeKey];
     if (!raw) return;
@@ -1836,7 +1926,7 @@ export function OrderManagementView({
       if (stillValid) return prev;
       return vd.purchaseOrders[0].id;
     });
-  }, [activeKey, activeStatusTab, entry?.poCreated, patchedViewDataMap, entry]);
+  }, [activeKey, activeStatusTab, entry?.poCreated, patchedViewDataMap, entry, mainPanel]);
 
   let selectedPoPanelMeta: PoPanelMeta | undefined;
   if (viewData.type === 'post' && selectedPoBlockId) {
@@ -1884,184 +1974,258 @@ export function OrderManagementView({
     (selectedPoPrintBlock?.lineItems.length ?? 0) === 0 &&
     (selectedPoPrintBlock?.panelMeta?.fulfillTotalCount ?? 0) > 0;
 
-  return (
-    <div className="flex flex-col border border-border rounded-xl overflow-hidden bg-background">
-      <PoEmailDeliveryAlertsStrip
-        items={poEmailDeliveryAlertItems}
-        onNavigateToPo={handleAlertStripNavigate}
-        onSent={(poId) => {
-          handleOptimisticPoEmailSent(poId);
-          router.refresh();
-        }}
-      />
-      <StatusTabBar
-        tabs={statusTabs}
-        activeTab={activeStatusTab}
-        onChange={(tab) => {
-          setShowArchived(false);
-          setActivePeriod('all');
-          setActiveStatusTab(tab);
-          setActiveSupplierGroupSlug(null);
-        }}
-        archivedCount={computedCounts.archived}
-        showArchived={showArchived}
-        onToggleArchived={() => setShowArchived((v) => !v)}
-      />
-      <PeriodFilterBar
-        key={showArchived ? 'archived-period' : 'main-period'}
-        periods={tabPeriods}
-        morePeriods={moreExpectedPeriods}
-        activePeriod={activePeriod}
-        onPeriodChange={handlePeriodChange}
-        onCustomApply={(from, to) => {
-          setCustomFrom(from);
-          setCustomTo(to);
-          setActivePeriod('custom');
-        }}
-        dateLabel={dateLabel}
-        orderedDateOnly={showArchived}
-        archiveFrom={showArchived ? customFrom : undefined}
-        archiveTo={showArchived ? customTo : undefined}
-        onArchiveFromChange={showArchived ? setCustomFrom : undefined}
-        onArchiveToChange={showArchived ? setCustomTo : undefined}
-        dateModeOptions={
-          activeStatusTab === 'po_created' && !showArchived
-            ? [
-                { value: 'delivery_expected', label: 'Delivery Expected' },
-                { value: 'po_created', label: 'PO Created' },
-              ]
-            : undefined
-        }
-        dateMode={activeStatusTab === 'po_created' ? poCreatedDateMode : undefined}
-        onDateModeChange={activeStatusTab === 'po_created' ? handlePoCreatedDateModeChange : undefined}
-        supplierGroupOptions={supplierGroupFilterOptions}
-        activeSupplierGroupSlug={activeSupplierGroupSlug}
-        onSupplierGroupChange={setActiveSupplierGroupSlug}
+  const orderCenterAndMetaPanel = entry ? (
+    <div className="flex min-w-0 flex-1 flex-col">
+      <CenterBar
+        entry={entry}
+        activeKey={activeKey}
+        poPanelMeta={selectedPoPanelMeta}
+        selectedPoBlockId={selectedPoBlockId}
       />
 
-      <div className="flex min-h-[600px] overflow-hidden">
-        <Sidebar
-          layout={useInboxCustomerLayout ? 'customer' : 'expected_date'}
-          customerGroups={filteredGroups}
-          expectedDateBuckets={
-            useInboxCustomerLayout ? undefined : (pagedExpectedBuckets ?? [])
-          }
-          expectedDatePage={expectedDateSidebarPage}
-          expectedDatePageCount={expectedDateSidebarPageCount}
-          onExpectedDatePageChange={setExpectedDateSidebarPage}
+      <OrderProcessingBlock
+        entry={entry}
+        includePoEmailTools={
+          entry.poCreated && selectedPoBlockId !== '__drafts__'
+        }
+        poEmailSentAt={selectedPoPanelMeta?.emailSentAt ?? null}
+        poEmailDeliveryOutstanding={
+          selectedPoPrintBlock?.emailDeliveryOutstanding ?? false
+        }
+        selectedPoBlockId={selectedPoBlockId}
+        emailDeliveries={selectedPoPanelMeta?.emailDeliveries ?? []}
+        onPoEmailSent={handleOptimisticPoEmailSent}
+        onSendEmailComplete={() => router.refresh()}
+        lineItemsLoading={lineItemsLoading}
+        poEmailReplyReceivedAt={
+          selectedPoPanelMeta?.emailReplyReceivedAt ?? null
+        }
+        onReplyReceivedChange={handleReplyReceivedChange}
+      />
+
+      <div className="flex min-h-0 flex-1 bg-muted/30">
+        <div className="min-w-0 flex-1 overflow-y-auto p-3.5">
+          {selectedPoBlockId === '__drafts__' &&
+          viewData.type === 'post' &&
+          viewData.shopifyOrderDrafts?.length ? (
+            <PrePoView
+              viewData={{
+                type: 'pre',
+                shopifyOrderDrafts: viewData.shopifyOrderDrafts,
+              }}
+              inclusions={draftInclusions}
+              onToggleInclude={handleToggleInclude}
+              onSeparatePo={handleSeparatePo}
+              showArchived={showArchived}
+              onArchiveShopifyOrder={handleArchiveShopifyOrder}
+              onUnarchiveShopifyOrder={handleUnarchiveShopifyOrder}
+              purchaseOrderId={
+                (
+                  viewData.purchaseOrders.find((p) => p.id !== 'new') ??
+                  viewData.purchaseOrders[0]
+                )?.id ?? null
+              }
+            />
+          ) : viewData.type === 'pre' ? (
+            <PrePoView
+              viewData={viewData}
+              inclusions={draftInclusions}
+              onToggleInclude={handleToggleInclude}
+              onSeparatePo={handleSeparatePo}
+              showArchived={showArchived}
+              onArchiveShopifyOrder={handleArchiveShopifyOrder}
+              onUnarchiveShopifyOrder={handleUnarchiveShopifyOrder}
+            />
+          ) : (
+            <PostPoView
+              viewData={viewData}
+              selectedPoBlockId={selectedPoBlockId}
+              lineItemsLoading={lineItemsLoading}
+              onRetryLineItems={handleRetryLineItemFetch}
+            />
+          )}
+        </div>
+        <MetaPanel
+          entry={entry}
           activeKey={activeKey}
-          states={states}
-          viewDataMap={patchedViewDataMap}
-          onSelect={setActiveKey}
+          onCreatePo={handleCreatePo}
+          onEditPo={handleEditPo}
+          onDeletePo={handleDeletePo}
+          onPoEmailSent={handleOptimisticPoEmailSent}
+          poPanelMeta={selectedPoPanelMeta}
           selectedPoBlockId={selectedPoBlockId}
-          selectionExpectedDateKey={selectionExpectedDateKey}
-          showArchived={showArchived}
-          onSelectPo={(key, poBlockId) => {
-            setActiveKey(key);
-            setSelectedPoBlockId(poBlockId);
+          onArchive={handleArchive}
+          onUnarchive={handleUnarchive}
+          draftPoNumber={effectivePoNumber}
+          poNumberIsManual={poNumberIsManual}
+          onPoNumberChange={handlePoNumberChange}
+          onPoNumberReset={handlePoNumberReset}
+          customerDefaultShipping={customerAddressDefaults.shipping}
+          customerDefaultBilling={customerAddressDefaults.billing}
+          customerBillingSameAsShipping={
+            customerAddressDefaults.billingSame
+          }
+          poPrintBlock={selectedPoPrintBlock}
+          poPrintHeadline={poPrintHeadline}
+          lineItemsLoading={lineItemsLoading}
+        />
+      </div>
+    </div>
+  ) : (
+    <div className="flex min-w-0 flex-1 flex-col items-center justify-center bg-muted/30">
+      <span className="text-sm text-muted-foreground">No order selected</span>
+    </div>
+  );
+
+  const navBtn =
+    'w-full rounded-md px-2.5 py-2 text-left text-sm font-medium transition-colors';
+  const navBtnActive = 'bg-background text-foreground shadow-sm ring-1 ring-border';
+  const navBtnIdle =
+    'text-muted-foreground hover:bg-muted/60 hover:text-foreground';
+
+  return (
+    <div className="flex border border-border rounded-xl overflow-hidden bg-background min-h-[600px]">
+      <nav
+        className="flex w-[9.75rem] shrink-0 flex-col gap-1 border-r border-border bg-muted/25 p-2"
+        aria-label="Office view"
+      >
+        <button
+          type="button"
+          className={cn(navBtn, mainPanel === 'grouped' ? navBtnActive : navBtnIdle)}
+          onClick={() => setMainPanel('grouped')}
+        >
+          Grouped view
+        </button>
+        <button
+          type="button"
+          className={cn(navBtn, mainPanel === 'table' ? navBtnActive : navBtnIdle)}
+          onClick={() => setMainPanel('table')}
+        >
+          Table view
+        </button>
+      </nav>
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <PoEmailDeliveryAlertsStrip
+          items={poEmailDeliveryAlertItems}
+          onNavigateToPo={handleAlertStripNavigate}
+          onSent={(poId) => {
+            handleOptimisticPoEmailSent(poId);
+            router.refresh();
           }}
-          activeStatusTab={activeStatusTab}
         />
 
-        {entry ? (
-          <div className="flex flex-col flex-1 min-w-0">
-            <CenterBar
-              entry={entry}
-              activeKey={activeKey}
-              poPanelMeta={selectedPoPanelMeta}
-              selectedPoBlockId={selectedPoBlockId}
-            />
-
-            <OrderProcessingBlock
-              entry={entry}
-              includePoEmailTools={
-                entry.poCreated && selectedPoBlockId !== '__drafts__'
-              }
-              poEmailSentAt={selectedPoPanelMeta?.emailSentAt ?? null}
-              poEmailDeliveryOutstanding={
-                selectedPoPrintBlock?.emailDeliveryOutstanding ?? false
-              }
-              selectedPoBlockId={selectedPoBlockId}
-              emailDeliveries={selectedPoPanelMeta?.emailDeliveries ?? []}
-              onPoEmailSent={handleOptimisticPoEmailSent}
-              onSendEmailComplete={() => router.refresh()}
-              lineItemsLoading={lineItemsLoading}
-              poEmailReplyReceivedAt={selectedPoPanelMeta?.emailReplyReceivedAt ?? null}
-              onReplyReceivedChange={handleReplyReceivedChange}
-            />
-
-            <div className="flex flex-1 min-h-0 bg-muted/30">
-              <div className="flex-1 min-w-0 p-3.5 overflow-y-auto">
-                {selectedPoBlockId === '__drafts__' &&
-                viewData.type === 'post' &&
-                viewData.shopifyOrderDrafts?.length ? (
-                  <PrePoView
-                    viewData={{
-                      type: 'pre',
-                      shopifyOrderDrafts: viewData.shopifyOrderDrafts,
-                    }}
-                    inclusions={draftInclusions}
-                    onToggleInclude={handleToggleInclude}
-                    onSeparatePo={handleSeparatePo}
-                    showArchived={showArchived}
-                    onArchiveShopifyOrder={handleArchiveShopifyOrder}
-                    onUnarchiveShopifyOrder={handleUnarchiveShopifyOrder}
-                    purchaseOrderId={
-                      (
-                        viewData.purchaseOrders.find((p) => p.id !== 'new') ??
-                        viewData.purchaseOrders[0]
-                      )?.id ?? null
-                    }
-                  />
-                ) : viewData.type === 'pre' ? (
-                  <PrePoView
-                    viewData={viewData}
-                    inclusions={draftInclusions}
-                    onToggleInclude={handleToggleInclude}
-                    onSeparatePo={handleSeparatePo}
-                    showArchived={showArchived}
-                    onArchiveShopifyOrder={handleArchiveShopifyOrder}
-                    onUnarchiveShopifyOrder={handleUnarchiveShopifyOrder}
-                  />
-                ) : (
-                  <PostPoView
-                    viewData={viewData}
-                    selectedPoBlockId={selectedPoBlockId}
-                    lineItemsLoading={lineItemsLoading}
-                    onRetryLineItems={handleRetryLineItemFetch}
-                  />
-                )}
-              </div>
-              <MetaPanel
-                entry={entry}
-                activeKey={activeKey}
-                onCreatePo={handleCreatePo}
-                onEditPo={handleEditPo}
-                onDeletePo={handleDeletePo}
-                onPoEmailSent={handleOptimisticPoEmailSent}
-                poPanelMeta={selectedPoPanelMeta}
-                selectedPoBlockId={selectedPoBlockId}
-                onArchive={handleArchive}
-                onUnarchive={handleUnarchive}
-                draftPoNumber={effectivePoNumber}
-                poNumberIsManual={poNumberIsManual}
-                onPoNumberChange={handlePoNumberChange}
-                onPoNumberReset={handlePoNumberReset}
-                customerDefaultShipping={customerAddressDefaults.shipping}
-                customerDefaultBilling={customerAddressDefaults.billing}
-                customerBillingSameAsShipping={customerAddressDefaults.billingSame}
-                poPrintBlock={selectedPoPrintBlock}
-                poPrintHeadline={poPrintHeadline}
-                lineItemsLoading={lineItemsLoading}
+        {mainPanel === 'table' ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {tablePoDetailPoId ? (
+              <>
+                <div className="flex shrink-0 items-center gap-2 border-b bg-muted/30 px-3 py-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5"
+                    onClick={() => setTablePoDetailPoId(null)}
+                  >
+                    ← Table view
+                  </Button>
+                </div>
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  {orderCenterAndMetaPanel}
+                </div>
+              </>
+            ) : (
+              <OfficeTableSplitView
+                initialShopifyRows={tableViewShopifyRows}
+                initialPoRows={tableViewPoRows}
+                shopifyTotal={tableViewShopifyTotal}
+                poTotal={tableViewPoTotal}
+                customerFilterOptions={tableCustomerFilterOptions}
+                supplierFilterOptions={tableSupplierFilterOptions}
+                onOpenPoDetail={openPoFromTable}
               />
-            </div>
+            )}
           </div>
         ) : (
-          <div className="flex flex-col flex-1 min-w-0 items-center justify-center bg-muted/30">
-            <span className="text-sm text-muted-foreground">
-              No order selected
-            </span>
-          </div>
+          <>
+            <StatusTabBar
+              tabs={statusTabs}
+              activeTab={activeStatusTab}
+              onChange={(tab) => {
+                setShowArchived(false);
+                setActivePeriod('all');
+                setActiveStatusTab(tab);
+                setActiveSupplierGroupSlug(null);
+              }}
+              archivedCount={computedCounts.archived}
+              showArchived={showArchived}
+              onToggleArchived={() => setShowArchived((v) => !v)}
+            />
+            <PeriodFilterBar
+              key={showArchived ? 'archived-period' : 'main-period'}
+              periods={tabPeriods}
+              morePeriods={moreExpectedPeriods}
+              activePeriod={activePeriod}
+              onPeriodChange={handlePeriodChange}
+              onCustomApply={(from, to) => {
+                setCustomFrom(from);
+                setCustomTo(to);
+                setActivePeriod('custom');
+              }}
+              dateLabel={dateLabel}
+              orderedDateOnly={showArchived}
+              archiveFrom={showArchived ? customFrom : undefined}
+              archiveTo={showArchived ? customTo : undefined}
+              onArchiveFromChange={showArchived ? setCustomFrom : undefined}
+              onArchiveToChange={showArchived ? setCustomTo : undefined}
+              dateModeOptions={
+                activeStatusTab === 'po_created' && !showArchived
+                  ? [
+                      { value: 'delivery_expected', label: 'Delivery Expected' },
+                      { value: 'po_created', label: 'PO Created' },
+                    ]
+                  : undefined
+              }
+              dateMode={
+                activeStatusTab === 'po_created' ? poCreatedDateMode : undefined
+              }
+              onDateModeChange={
+                activeStatusTab === 'po_created'
+                  ? handlePoCreatedDateModeChange
+                  : undefined
+              }
+              supplierGroupOptions={supplierGroupFilterOptions}
+              activeSupplierGroupSlug={activeSupplierGroupSlug}
+              onSupplierGroupChange={setActiveSupplierGroupSlug}
+            />
+
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+              <Sidebar
+                layout={useInboxCustomerLayout ? 'customer' : 'expected_date'}
+                customerGroups={filteredGroups}
+                expectedDateBuckets={
+                  useInboxCustomerLayout ? undefined : (pagedExpectedBuckets ?? [])
+                }
+                expectedDatePage={expectedDateSidebarPage}
+                expectedDatePageCount={expectedDateSidebarPageCount}
+                onExpectedDatePageChange={setExpectedDateSidebarPage}
+                activeKey={activeKey}
+                states={states}
+                viewDataMap={patchedViewDataMap}
+                onSelect={setActiveKey}
+                selectedPoBlockId={selectedPoBlockId}
+                selectionExpectedDateKey={selectionExpectedDateKey}
+                showArchived={showArchived}
+                onSelectPo={(key, poBlockId) => {
+                  setActiveKey(key);
+                  setSelectedPoBlockId(poBlockId);
+                }}
+                activeStatusTab={activeStatusTab}
+              />
+
+              {orderCenterAndMetaPanel}
+            </div>
+          </>
         )}
       </div>
     </div>

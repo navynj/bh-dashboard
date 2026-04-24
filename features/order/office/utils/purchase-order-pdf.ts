@@ -17,17 +17,20 @@ const ROW_BOT = 0.3;   // last text baseline → hairline
 // Horizontal inset for the leftmost and rightmost table cells
 const CELL_PAD_H = 2.5;
 
-// Table column x-positions (Order no. | Item | Supplier Ref. | Qty)
+// Table column x-positions (Order no. | Item | Supplier Ref. | Qty | Note)
 const X_ORDER = MARGIN + CELL_PAD_H; // 16.5
 const W_ORDER_COL = 20;              // Shopify order name (#…)
 const X_ITEM  = X_ORDER + W_ORDER_COL + 2;
-const X_REF   = MARGIN + 100;        // Ref col start (item wraps to here)
+const X_REF   = MARGIN + 86;         // Ref col start (item wraps to here)
 const X_RIGHT = PAGE_W - MARGIN;      // 201.9
 
 const W_ITEM  = X_REF - X_ITEM - 2;  // item description wrap width
 
-// Right edge of the Qty column (rightmost column now)
-const X_QTY_R  = X_RIGHT - CELL_PAD_H;
+/** Rightmost: line note (PO-specific; also shown in hub UI). */
+const W_NOTE_COL = 34;
+const X_NOTE_R = X_RIGHT - CELL_PAD_H;
+// Qty sits just left of the note column
+const X_QTY_R = X_NOTE_R - W_NOTE_COL - 4;
 
 // Address section: Ship to + Bill to stacked on left; signature box on right
 const W_ADDR_COL = 104;                               // text wrap width for address columns
@@ -121,6 +124,24 @@ function drawSignatureBox(doc: jsPDF, x: number, y: number, w: number, h: number
   doc.setTextColor(0, 0, 0);
 }
 
+/** Wrap note for PDF: explicit newlines + width; right column uses same line height as body. */
+function wrapNoteLinesForPdf(doc: jsPDF, note: string, maxW: number): string[] {
+  const t = note.trim();
+  if (!t) return ['—'];
+  const paragraphs = t.split(/\r\n|\n|\r/);
+  const out: string[] = [];
+  for (const p of paragraphs) {
+    const chunk = p.trimEnd();
+    if (chunk.length === 0) {
+      out.push('');
+      continue;
+    }
+    const wrapped = doc.splitTextToSize(chunk, maxW) as string[];
+    for (const line of wrapped) out.push(line);
+  }
+  return out.length > 0 ? out : ['—'];
+}
+
 function rule(doc: jsPDF, y: number, rgb: [number, number, number] = [200, 200, 200]): void {
   doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
   doc.setLineWidth(0.1);
@@ -189,6 +210,8 @@ export type PoPdfInput = {
     description: string;
     supplierRef: string;
     quantity: number;
+    /** Right column on the PDF line table. */
+    note: string;
   }[];
 };
 
@@ -302,6 +325,7 @@ function buildDoc(input: PoPdfInput): jsPDF {
   doc.text('Item',          X_ITEM,  hdrY);
   doc.text('Supplier Ref.', X_REF,   hdrY);
   doc.text('Qty',           X_QTY_R, hdrY, { align: 'right' });
+  doc.text('Note',          X_NOTE_R, hdrY, { align: 'right' });
   y += hdrH;
 
   // ── Table rows ────────────────────────────────────────────────────────────
@@ -314,7 +338,8 @@ function buildDoc(input: PoPdfInput): jsPDF {
       W_ORDER_COL - 1,
     ) as string[];
     const descLines = doc.splitTextToSize(row.description || '(untitled)', W_ITEM) as string[];
-    const contentLines = Math.max(orderBits.length, descLines.length);
+    const noteLines = wrapNoteLinesForPdf(doc, row.note ?? '', W_NOTE_COL);
+    const contentLines = Math.max(orderBits.length, descLines.length, noteLines.length);
     const rowH =
       ROW_TOP + (contentLines - 1) * LH + FONT_H + ROW_BOT;
     y = ensurePage(doc, y, rowH);
@@ -327,8 +352,11 @@ function buildDoc(input: PoPdfInput): jsPDF {
       doc.text(descLines[i] ?? '', X_ITEM, rowY + i * LH);
     }
 
-    doc.text(row.supplierRef || '—', X_REF,   rowY);
-    doc.text(String(row.quantity),   X_QTY_R, rowY, { align: 'right' });
+    doc.text(row.supplierRef || '—', X_REF, rowY);
+    doc.text(String(row.quantity), X_QTY_R, rowY, { align: 'right' });
+    for (let i = 0; i < noteLines.length; i++) {
+      doc.text(noteLines[i] ?? '', X_NOTE_R, rowY + i * LH, { align: 'right' });
+    }
 
     y += rowH;
     rule(doc, y);
@@ -385,6 +413,7 @@ export function buildPoPdfInput(args: {
     description: formatProductLabel(li),
     supplierRef: (li.supplierRef?.trim() || li.sku?.trim() || '—').slice(0, 40),
     quantity: li.quantity,
+    note: li.note?.trim() ?? '',
   }));
 
   return {

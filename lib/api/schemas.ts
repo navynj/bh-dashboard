@@ -551,6 +551,30 @@ export const receiveLineItemsSchema = z.object({
 
 export type ReceiveLineItemsBody = z.infer<typeof receiveLineItemsSchema>;
 
+/** PATCH /api/purchase-orders/[id]/line-items — per-line PO note (PDF + UI). */
+export const purchaseOrderLineItemsNotePatchSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        note: z.string().max(4000).nullable(),
+      }),
+    )
+    .min(1),
+});
+
+export type PurchaseOrderLineItemsNotePatchBody = z.infer<
+  typeof purchaseOrderLineItemsNotePatchSchema
+>;
+
+/** PUT /api/order-office/shopify-variant-notes — catalog default note per variant GID. */
+export const shopifyVariantOfficeNotePutSchema = z.object({
+  shopifyVariantGid: z.string().min(1).transform((s) => s.trim()),
+  note: z.string().max(8000).nullable(),
+});
+
+export type ShopifyVariantOfficeNotePutBody = z.infer<typeof shopifyVariantOfficeNotePutSchema>;
+
 // ─── parseBody ────────────────────────────────────────────────────────────────
 
 /**

@@ -145,6 +145,7 @@ export function mapPrismaPoToBlock(
         shopifyOrderId: srcOrder?.id ?? firstOrder?.id ?? null,
         shopifyOrderNumber: srcOrder?.name ?? firstOrderName,
         fulfillmentStatus: lineFulfillmentStatus(li),
+        note: li.note?.trim() ? li.note.trim() : null,
       };
     }),
   );

@@ -9,6 +9,7 @@ import { parse as parseDf, isValid } from 'date-fns';
 import { prisma } from '@/lib/core/prisma';
 import { shippingBillingPayloadFromShopifyExportRow } from '@/lib/order/shopify-po-export-csv-address';
 import { looseContactEmailsFromRaw } from '@/lib/order/supplier-order-channel';
+import { loadVariantOfficeNotesMap } from '@/lib/order/shopify-variant-office-note';
 
 /** Per-PO interactive tx: default 5s is too small for large line lists + relation writes. */
 const PO_CSV_IMPORT_TX = { maxWait: 20_000, timeout: 120_000 } as const;
@@ -365,7 +366,16 @@ export async function runPurchaseOrdersCsvImport(
         ...linePayload(r, seq),
         purchaseOrderId: poId,
       }));
-      await tx.purchaseOrderLineItem.createMany({ data: lines });
+      const variantGids = lines
+        .map((l) => l.shopifyVariantGid?.trim())
+        .filter((g): g is string => Boolean(g));
+      const noteByVariant = await loadVariantOfficeNotesMap(tx, variantGids);
+      const linesWithNotes = lines.map((l) => {
+        const vg = l.shopifyVariantGid?.trim() ?? null;
+        const note = vg ? noteByVariant.get(vg) ?? null : null;
+        return { ...l, note };
+      });
+      await tx.purchaseOrderLineItem.createMany({ data: linesWithNotes });
     },
       PO_CSV_IMPORT_TX,
     );
