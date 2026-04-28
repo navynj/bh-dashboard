@@ -47,10 +47,17 @@ export async function GET(_request: NextRequest, context: RouteContext) {
             title: true,
             variantTitle: true,
             sku: true,
+            variantGid: true,
             vendor: true,
             quantity: true,
             price: true,
             imageUrl: true,
+            purchaseOrderLineItems: {
+              select: {
+                shopifyProductGid: true,
+              },
+              take: 1,
+            },
           },
         },
       },
@@ -96,6 +103,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         quantity: l.quantity,
         price: dec(l.price),
         imageUrl: l.imageUrl?.trim() || null,
+        shopifyProductGid: l.purchaseOrderLineItems[0]?.shopifyProductGid ?? null,
+        shopifyVariantGid: l.variantGid?.trim() || null,
         shopifyVendor: v,
         supplierCompany,
       };

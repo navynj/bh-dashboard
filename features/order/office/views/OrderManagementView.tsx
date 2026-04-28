@@ -2525,6 +2525,7 @@ export function OrderManagementView({
               </>
             ) : (
               <OfficeTableSplitView
+                shopifyAdminStoreHandle={shopifyAdminStoreHandle}
                 initialShopifyRows={tableViewShopifyRows}
                 initialPoRows={tableViewPoRows}
                 shopifyTotal={tableViewShopifyTotal}

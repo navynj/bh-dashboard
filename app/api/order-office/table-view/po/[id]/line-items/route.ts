@@ -43,6 +43,11 @@ export async function GET(_request: NextRequest, context: RouteContext) {
             quantity: true,
             supplierRef: true,
             itemPrice: true,
+            shopifyProductGid: true,
+            shopifyVariantGid: true,
+            shopifyOrderLineItem: {
+              select: { imageUrl: true },
+            },
           },
         },
       },
@@ -60,6 +65,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       quantity: l.quantity,
       supplierRef: l.supplierRef,
       itemPrice: dec(l.itemPrice),
+      imageUrl: l.shopifyOrderLineItem?.imageUrl?.trim() || null,
+      shopifyProductGid: l.shopifyProductGid?.trim() || null,
+      shopifyVariantGid: l.shopifyVariantGid?.trim() || null,
     }));
 
     return NextResponse.json({

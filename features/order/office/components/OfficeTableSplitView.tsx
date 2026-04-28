@@ -180,6 +180,7 @@ function TabCount({ active, n }: { active: boolean; n: number }) {
 }
 
 export function OfficeTableSplitView({
+  shopifyAdminStoreHandle,
   initialShopifyRows,
   initialPoRows,
   shopifyTotal,
@@ -189,6 +190,7 @@ export function OfficeTableSplitView({
   supplierGroupFilterOptions = [],
   onOpenPoDetail,
 }: {
+  shopifyAdminStoreHandle?: string | null;
   initialShopifyRows: OfficeTableViewShopifyRow[];
   initialPoRows: OfficeTableViewPoRow[];
   shopifyTotal: number;
@@ -1045,6 +1047,7 @@ export function OfficeTableSplitView({
         onOpenChange={handleLineDialogOpenChange}
         loading={lineLoading}
         error={lineError}
+        shopifyAdminStoreHandle={shopifyAdminStoreHandle}
         {...(linePreview?.kind === 'po'
           ? {
               variant: 'po' as const,

@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Spinner } from '@/components/ui/spinner';
-import { LineItemThumb } from './LineItemThumb';
+import { ShopifyLineProductCell } from './ShopifyLineProductCell';
 import type {
   OfficePoTableLineItem,
   OfficeShopifyTableLineItem,
@@ -18,6 +18,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   loading: boolean;
   error: string | null;
+  shopifyAdminStoreHandle?: string | null;
 } & (
   | {
       variant: 'shopify';
@@ -62,7 +63,7 @@ function formatUnitPrice(amount: string | null, currency: string): string {
 }
 
 export function OfficeOrderLineItemsDialog(props: Props) {
-  const { open, onOpenChange, loading, error } = props;
+  const { open, onOpenChange, loading, error, shopifyAdminStoreHandle } = props;
   const title = props.variant === 'shopify' || props.variant === 'po' ? props.title : '';
   const subtitle =
     props.variant === 'shopify' || props.variant === 'po' ? props.subtitle : '';
@@ -96,9 +97,16 @@ export function OfficeOrderLineItemsDialog(props: Props) {
                     key={`${l.sku ?? ''}-${i}`}
                     className="flex gap-2.5 border-b border-border/60 pb-3 last:border-0 last:pb-0"
                   >
-                    <LineItemThumb imageUrl={l.imageUrl} label={shopifyLineLabel(l)} />
                     <div className="min-w-0 flex-1 text-[12px] leading-snug">
-                      <div className="font-medium">{shopifyLineLabel(l)}</div>
+                      <ShopifyLineProductCell
+                        shopifyAdminStoreHandle={shopifyAdminStoreHandle}
+                        shopifyProductGid={l.shopifyProductGid}
+                        shopifyVariantGid={l.shopifyVariantGid}
+                        imageUrl={l.imageUrl}
+                        label={shopifyLineLabel(l)}
+                        sku={l.sku}
+                        className="items-start"
+                      />
                       <div className="mt-0.5 text-[11px] text-muted-foreground font-mono">
                         {l.sku?.trim() || '—'} · Qty {l.quantity}
                         {l.price != null && l.price !== ''
@@ -136,7 +144,15 @@ export function OfficeOrderLineItemsDialog(props: Props) {
                   className="flex gap-2.5 border-b border-border/60 pb-3 last:border-0 last:pb-0"
                 >
                   <div className="min-w-0 flex-1 text-[12px] leading-snug">
-                    <div className="font-medium">{poLineLabel(l)}</div>
+                    <ShopifyLineProductCell
+                      shopifyAdminStoreHandle={shopifyAdminStoreHandle}
+                      shopifyProductGid={l.shopifyProductGid}
+                      shopifyVariantGid={l.shopifyVariantGid}
+                      imageUrl={l.imageUrl}
+                      label={poLineLabel(l)}
+                      sku={l.sku}
+                      className="items-start"
+                    />
                     <div className="mt-0.5 text-[11px] text-muted-foreground font-mono">
                       {l.sku?.trim() || '—'} · Qty {l.quantity}
                       {l.supplierRef?.trim() ? ` · Ref ${l.supplierRef.trim()}` : ''}

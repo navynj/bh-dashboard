@@ -30,6 +30,8 @@ export type OfficeShopifyTableLineItem = {
   quantity: number;
   price: string | null;
   imageUrl: string | null;
+  shopifyProductGid: string | null;
+  shopifyVariantGid: string | null;
   /** Frozen Shopify product vendor on the line. */
   shopifyVendor: string | null;
   /** Hub supplier company when `shopifyVendor` maps via ShopifyVendorMapping. */
@@ -45,6 +47,9 @@ export type OfficePoTableLineItem = {
   quantity: number;
   supplierRef: string | null;
   itemPrice: string | null;
+  imageUrl: string | null;
+  shopifyProductGid: string | null;
+  shopifyVariantGid: string | null;
 };
 
 export type OfficeTableViewPoRow = {

@@ -72,7 +72,8 @@ function addrLines(addr: PoAddress | null | undefined): string[] {
 }
 
 function ensurePage(doc: jsPDF, y: number, need: number): number {
-  if (y + need > PAGE_H - MARGIN - 22) {
+  // Reserve extra space for repeating footer metadata on every page.
+  if (y + need > PAGE_H - MARGIN - 28) {
     doc.addPage();
     return MARGIN;
   }
@@ -148,6 +149,12 @@ function rule(doc: jsPDF, y: number, rgb: [number, number, number] = [200, 200, 
   doc.setLineWidth(0.1);
   doc.line(MARGIN, y, PAGE_W - MARGIN, y);
   doc.setDrawColor(0, 0, 0);
+}
+
+function footerShippingAddressLine(lines: string[]): string {
+  const merged = lines.map((s) => s.trim()).filter(Boolean).join(', ');
+  if (!merged) return '—';
+  return merged.length > 90 ? `${merged.slice(0, 87)}...` : merged;
 }
 
 /**
@@ -363,14 +370,19 @@ function buildDoc(input: PoPdfInput): jsPDF {
     rule(doc, y);
   }
 
-  // ── Page numbers ──────────────────────────────────────────────────────────
+  // ── Repeating footer (all pages) ─────────────────────────────────────────
   const pageCount = doc.getNumberOfPages();
+  const shippingDateLabel = ymd2display(input.expectedDate) ?? '—';
+  const shippingAddressLabel = footerShippingAddressLine(input.shippingAddressLines);
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120, 120, 120);
-    doc.text(`Page ${i} of ${pageCount}`, PAGE_W / 2, PAGE_H - 9, { align: 'center' });
+    doc.text(`PO #${input.poNumber}`, MARGIN, PAGE_H - 14);
+    doc.text(`Ship To: ${shippingAddressLabel}`, MARGIN, PAGE_H - 10);
+    doc.text(`Shipping Date: ${shippingDateLabel}`, MARGIN, PAGE_H - 6);
+    doc.text(`Page ${i} of ${pageCount}`, PAGE_W - MARGIN, PAGE_H - 6, { align: 'right' });
     doc.setTextColor(0, 0, 0);
   }
 
