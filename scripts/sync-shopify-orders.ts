@@ -150,19 +150,26 @@ async function main() {
     const lineItems = order.lineItems.edges.map((edge) => edge.node);
     if (lineItems.length > 0) {
       await prisma.shopifyOrderLineItem.createMany({
-        data: lineItems.map((li) => ({
-          shopifyGid: li.id,
-          orderId: shopifyOrder.id,
-          title: li.title,
-          sku: li.sku ?? li.variant?.sku ?? null,
-          variantTitle: li.variant?.title ?? null,
-          variantGid: li.variant?.id ?? null,
-          imageUrl: lineItemImageUrlFromShopifyNode(li),
-          vendor: li.vendor ?? null,
-          quantity: li.quantity,
-          price: toDecimalOrNull(li.discountedUnitPriceSet?.shopMoney?.amount),
-          unitCost: toDecimalOrNull(li.variant?.inventoryItem?.unitCost?.amount),
-        })),
+        data: lineItems.map((li) => {
+          const productGid =
+            li.variant?.product?.id?.trim() ||
+            li.product?.id?.trim() ||
+            null;
+          return {
+            shopifyGid: li.id,
+            orderId: shopifyOrder.id,
+            title: li.title,
+            sku: li.sku ?? li.variant?.sku ?? null,
+            variantTitle: li.variant?.title ?? null,
+            productGid,
+            variantGid: li.variant?.id ?? null,
+            imageUrl: lineItemImageUrlFromShopifyNode(li),
+            vendor: li.vendor ?? null,
+            quantity: li.quantity,
+            price: toDecimalOrNull(li.discountedUnitPriceSet?.shopMoney?.amount),
+            unitCost: toDecimalOrNull(li.variant?.inventoryItem?.unitCost?.amount),
+          };
+        }),
         skipDuplicates: true,
       });
     }

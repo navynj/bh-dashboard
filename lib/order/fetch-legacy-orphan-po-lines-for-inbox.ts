@@ -26,7 +26,7 @@ export async function fetchLegacyOrphanPoLinesForInbox(
       shopifyOrderLineItemId: null,
       quantity: { gt: 0 },
       purchaseOrder: {
-        archivedAt: null,
+        /** Archived PO lines still “claim” inbox capacity (same as FK’d lines). */
         shopifyOrders: { some: { id: { in: shopifyOrderIds } } },
       },
     },

@@ -47,9 +47,17 @@ export async function PUT(request: NextRequest, ctx: RouteCtx) {
       data.orderChannelType !== undefined &&
       data.orderChannelPayload !== undefined
     ) {
+      const instruction = (data.instruction ?? data.notes ?? '')?.trim() ?? '';
+      const payloadWithInstruction =
+        data.orderChannelPayload && typeof data.orderChannelPayload === 'object'
+          ? {
+              ...(data.orderChannelPayload as Record<string, unknown>),
+              instruction,
+            }
+          : { instruction };
       const channel = assertSupplierOrderChannel(
         data.orderChannelType,
-        data.orderChannelPayload,
+        payloadWithInstruction,
       );
       if (!channel.ok) {
         return NextResponse.json(
@@ -92,7 +100,9 @@ export async function PUT(request: NextRequest, ctx: RouteCtx) {
           shopifyVendorName: data.shopifyVendorName ?? null,
         }),
         ...(data.groupId !== undefined && { groupId: resolvedGroupId }),
-        ...(data.notes !== undefined && { notes: data.notes ?? null }),
+        ...((data.instruction !== undefined || data.notes !== undefined) && {
+          notes: null,
+        }),
         ...(deliveryScheduleUpdate !== undefined && {
           deliverySchedule: deliveryScheduleUpdate,
         }),

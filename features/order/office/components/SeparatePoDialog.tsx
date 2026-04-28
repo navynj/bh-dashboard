@@ -59,7 +59,6 @@ type Props = {
     }[];
     shippingAddress: PoAddress | null;
   }) => void;
-  onArchive?: () => void;
   /** Inbox draft notes (parallel to `order.lineItems`); snapshotted when dialog opens. */
   lineItemNotes?: string[];
 };
@@ -71,7 +70,6 @@ export function SeparatePoDialog({
   open,
   onOpenChange,
   onCreatePo,
-  onArchive,
   lineItemNotes,
 }: Props) {
   const minOrderExpectedYmd = order.orderedAt
@@ -408,22 +406,6 @@ export function SeparatePoDialog({
             >
               Cancel
             </Button>
-            {onArchive && (
-              <>
-                <div className="flex-1" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-muted-foreground"
-                  onClick={() => {
-                    onArchive();
-                    onOpenChange(false);
-                  }}
-                >
-                  Archive
-                </Button>
-              </>
-            )}
           </div>
         </div>
       </DialogContent>

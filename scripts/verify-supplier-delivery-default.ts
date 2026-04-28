@@ -58,13 +58,26 @@ assert.equal(
 assert.equal(
   computeDefaultExpectedYmd({
     schedule: {
-      deliveryWeekdays: [3],
+      deliveryWeekdays: [2, 5],
       rule: { kind: 'next_delivery_day' },
     },
-    referenceYmd: '2026-04-20',
+    referenceYmd: '2026-04-21',
     creationYmd,
   }),
-  '2026-04-22',
+  '2026-04-24',
+);
+
+// Sat -> next Tue for Tue/Fri schedule
+assert.equal(
+  computeDefaultExpectedYmd({
+    schedule: {
+      deliveryWeekdays: [2, 5],
+      rule: { kind: 'next_delivery_day' },
+    },
+    referenceYmd: '2026-04-25',
+    creationYmd,
+  }),
+  '2026-04-28',
 );
 
 assert.equal(

@@ -226,6 +226,10 @@ export async function upsertShopifyOrder(
   for (const li of lineItems) {
     const imageUrl = lineItemImageUrlFromShopifyNode(li);
     const qty = effectiveAdminGraphqlLineItemQuantity(li);
+    const productGid =
+      li.variant?.product?.id?.trim() ||
+      li.product?.id?.trim() ||
+      null;
     await prisma.shopifyOrderLineItem.upsert({
       where: { shopifyGid: li.id },
       create: {
@@ -234,6 +238,7 @@ export async function upsertShopifyOrder(
         title: li.title,
         sku: li.sku ?? li.variant?.sku ?? null,
         variantTitle: li.variant?.title ?? null,
+        productGid,
         variantGid: li.variant?.id ?? null,
         imageUrl,
         vendor: li.vendor ?? null,
@@ -246,6 +251,7 @@ export async function upsertShopifyOrder(
         title: li.title,
         sku: li.sku ?? li.variant?.sku ?? null,
         variantTitle: li.variant?.title ?? null,
+        productGid,
         variantGid: li.variant?.id ?? null,
         imageUrl,
         vendor: li.vendor ?? null,

@@ -33,10 +33,12 @@ export function mapShopifyOrderToTableRow(o: {
   displayFulfillmentStatus: string | null;
   displayFinancialStatus: string | null;
   archivedAt: Date | null;
+  customerNote?: string | null;
   customer: ShopifyCustomerForTable;
   purchaseOrders: { id: string; poNumber: string }[];
   _count: { lineItems: number };
 }): OfficeTableViewShopifyRow {
+  const memo = o.customerNote?.trim() ?? '';
   return {
     id: o.id,
     orderLabel: o.name,
@@ -52,6 +54,7 @@ export function mapShopifyOrderToTableRow(o: {
       id: p.id,
       poNumber: p.poNumber,
     })),
+    orderMemo: memo.length > 0 ? memo : null,
   };
 }
 
@@ -87,6 +90,7 @@ export const shopifySelect = {
   displayFulfillmentStatus: true,
   displayFinancialStatus: true,
   archivedAt: true,
+  customerNote: true,
   customer: {
     select: {
       displayName: true,

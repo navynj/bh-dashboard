@@ -12,8 +12,6 @@ type Props = {
   inclusions?: Record<string, boolean[]>;
   onToggleInclude?: (orderId: string, itemIdx: number) => void;
   onSeparatePo?: (payload: SeparatePoPayload) => void;
-  /** Archive only this order (Separate PO dialog), not every draft in the row. */
-  onArchiveShopifyOrder?: (shopifyOrderDbId: string) => void;
   showArchived?: boolean;
   onUnarchiveShopifyOrder?: (shopifyOrderDbId: string) => void;
   /** When editing drafts under a PO tab, pass PO id for Shopify save + resync. */
@@ -35,7 +33,6 @@ export function PrePoView({
   inclusions,
   onToggleInclude,
   onSeparatePo,
-  onArchiveShopifyOrder,
   showArchived,
   onUnarchiveShopifyOrder,
   purchaseOrderId,
@@ -102,7 +99,6 @@ export function PrePoView({
               ? defaultSeparatePoNumberForOrder(order)
               : undefined
           }
-          onArchiveShopifyOrder={onArchiveShopifyOrder}
           showArchived={showArchived}
           onUnarchiveShopifyOrder={onUnarchiveShopifyOrder}
           purchaseOrderId={purchaseOrderId ?? undefined}

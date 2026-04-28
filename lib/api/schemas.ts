@@ -370,6 +370,9 @@ const supplierWritableFieldsSchema = z.object({
   officePoSupplierCode: z.string().trim().max(40).optional().nullable(),
   shopifyVendorName: z.string().trim().optional().nullable(),
   groupId: z.string().optional().nullable(),
+  /** Common supplier instruction shown in Inbox + PO order processing. */
+  instruction: z.string().trim().optional().nullable(),
+  /** @deprecated legacy field; use `instruction`. */
   notes: z.string().trim().optional().nullable(),
   orderChannelType: supplierOrderChannelTypeSchema(),
   orderChannelPayload: z.unknown(),

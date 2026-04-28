@@ -32,6 +32,7 @@ const ORDER_LINE_ITEM_SELECTION_SYNC = `
                 sku
                 image { url }
                 product {
+                  id
                   featuredImage { url }
                 }
                 inventoryItem {
@@ -58,6 +59,7 @@ const ORDER_LINE_ITEM_SELECTION_DETAIL = `
                 }
               }
               product {
+                id
                 featuredImage { url }
                 featuredMedia {
                   ... on MediaImage {
@@ -90,6 +92,7 @@ const ORDER_LINE_ITEM_SELECTION_DETAIL = `
                   }
                 }
                 product {
+                  id
                   featuredImage { url }
                   featuredMedia {
                     ... on MediaImage {

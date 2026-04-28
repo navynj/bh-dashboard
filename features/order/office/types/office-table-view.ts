@@ -20,6 +20,8 @@ export type OfficeTableViewShopifyRow = {
   lineItemCount: number;
   /** Linked POs (newest first) for table links / menu. */
   linkedPurchaseOrders: OfficeTableViewLinkedPo[];
+  /** Shopify `Order.note` (customer-visible); trimmed, null when empty. */
+  orderMemo: string | null;
 };
 
 /** Line item row for office table “preview” dialog (Shopify order tab). */

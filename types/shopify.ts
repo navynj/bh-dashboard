@@ -84,6 +84,8 @@ export type ShopifyOrderLineMediaConnection = {
 
 /** Product image fields queried on order line items (legacy + unified media). */
 export type ShopifyOrderLineProductImages = {
+  /** `gid://shopify/Product/...` when the selection includes `product { id }`. */
+  id?: string | null;
   featuredImage?: { url: string | null } | null;
   /** `Media` resolved as `MediaImage` in GraphQL; other media kinds omitted. */
   featuredMedia?: unknown;

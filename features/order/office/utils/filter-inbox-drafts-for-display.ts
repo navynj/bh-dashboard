@@ -15,6 +15,7 @@ export function filterInboxDraftsForDisplay(
   const poQtyByShopifyLineItemId = new Map<string, number>();
   for (const po of purchaseOrders ?? []) {
     if (po.id === 'new') continue;
+    if (po.archivedAt) continue;
     if (!po.lineItems?.length) continue;
     for (const li of po.lineItems) {
       const sid = li.shopifyOrderLineItemId?.trim();

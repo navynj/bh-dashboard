@@ -50,7 +50,8 @@ function nextDeliveryFromWeekdays(
   maxScanDays: number,
 ): string | null {
   const set = new Set(weekdaysSorted);
-  for (let i = 0; i <= maxScanDays; i++) {
+  // "After reference" means strictly after the reference day (exclude same day).
+  for (let i = 1; i <= maxScanDays; i++) {
     const cand = addUtcDays(ref, i);
     if (set.has(getIsoDayUtc(cand))) return formatYmdUtc(cand);
   }

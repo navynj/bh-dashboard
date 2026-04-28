@@ -23,6 +23,8 @@ export type PoLineItemView = {
   imageUrl?: string | null;
   isCustom: boolean;
   itemPrice: string | null;
+  /** Unit cost from source Shopify variant inventory when available. */
+  itemCost?: string | null;
   /** Local `ShopifyOrderLineItem.id` when line is tied to a synced Shopify line. */
   shopifyOrderLineItemId?: string | null;
   shopifyLineItemGid?: string | null;
@@ -67,6 +69,8 @@ export type PoPanelMeta = {
   orderedAt: string | null;
   dateCreated: string | null;
   expectedDate: string | null;
+  /** Internal PO note (`purchase_orders.comment`) shown only in office UI. */
+  comment: string | null;
   /**
    * Vancouver `YYYY-MM-DD` — earliest allowed expected delivery (latest Shopify order placement
    * day among linked orders). Null when no linked orders or placement dates unknown.
@@ -98,6 +102,8 @@ export type OfficePurchaseOrderBlock = {
   shopifyOrderCount: number;
   lineItems: PoLineItemView[];
   subtreeRowLabel?: string;
+  /** ISO — when set, PO is archived and ignored for open-delivery / inbox tab logic. */
+  archivedAt?: string | null;
   panelMeta?: PoPanelMeta;
   /** Resolved supplier channel (legacy fallback applied in mapper). */
   supplierOrderChannelType: SupplierOrderChannelType;

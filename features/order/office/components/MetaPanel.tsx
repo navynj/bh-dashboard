@@ -598,28 +598,32 @@ function WithoutPoMeta({
         >
           Save edits
         </Button>
-        <Separator className="my-0.5" />
-        {entry.isArchived ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            className="w-full justify-center text-[11px] rounded-[5px]"
-            onClick={() => onUnarchive?.(activeKey)}
-          >
-            Unarchive
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            className="w-full justify-center text-[11px] rounded-[5px] text-muted-foreground"
-            onClick={() => onArchive?.(activeKey)}
-          >
-            Archive
-          </Button>
-        )}
+        {(entry.isArchived ? onUnarchive : onArchive) ? (
+          <>
+            <Separator className="my-0.5" />
+            {entry.isArchived ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className="w-full justify-center text-[11px] rounded-[5px]"
+                onClick={() => onUnarchive?.(activeKey)}
+              >
+                Unarchive
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className="w-full justify-center text-[11px] rounded-[5px] text-muted-foreground"
+                onClick={() => onArchive?.(activeKey)}
+              >
+                Archive
+              </Button>
+            )}
+          </>
+        ) : null}
       </div>
     </form>
   );
@@ -760,6 +764,7 @@ function WithPoMeta({
   const poNumber = poPanelMeta?.poNumber ?? entry.referenceKey;
   const created = fmtDate(poPanelMeta?.dateCreated ?? entry.dateCreated);
   const expected = fmtDate(poPanelMeta?.expectedDate ?? entry.expectedDate);
+  const internalNote = poPanelMeta?.comment?.trim() ?? '';
   const statusLabel = poPanelMeta?.status ?? 'unfulfilled';
   const f = poPanelMeta?.fulfillDoneCount ?? entry.fulfillDoneCount;
   const p = poPanelMeta?.fulfillPendingCount ?? entry.fulfillPendingCount;
@@ -813,7 +818,7 @@ function WithPoMeta({
     const raw = poPanelMeta?.expectedDate ?? '';
     const expY = raw.length >= 10 ? raw.slice(0, 10) : '';
     setEditExpected(minY && (!expY || expY < minY) ? minY : expY);
-    setEditComment('');
+    setEditComment(poPanelMeta?.comment ?? '');
     setEditPoNumber(poPanelMeta?.poNumber ?? entry.referenceKey ?? '');
     setPoNumberError(null);
     setSaveFailed(false);
@@ -967,6 +972,18 @@ function WithPoMeta({
         )}
       </Section>
 
+      {editing ? (
+        <Section>
+          <MetaLabel>Notes (internal)</MetaLabel>
+          <Textarea
+            value={editComment}
+            onChange={(e) => setEditComment(e.target.value)}
+            placeholder="Optional"
+            className="min-h-11 h-11 resize-none text-[11px] px-1.5 py-[4px] rounded-[5px] md:text-[11px]"
+          />
+        </Section>
+      ) : null}
+
       <Section>
         <MetaLabel>Supplier</MetaLabel>
         <MetaValue>{entry.supplierCompany}</MetaValue>
@@ -1049,18 +1066,6 @@ function WithPoMeta({
           <StatCol value={t} label="total" color="text-muted-foreground" />
         </div>
       </Section>
-
-      {editing && (
-        <Section>
-          <MetaLabel>Notes</MetaLabel>
-          <Textarea
-            value={editComment}
-            onChange={(e) => setEditComment(e.target.value)}
-            placeholder="Optional"
-            className="min-h-11 h-11 resize-none text-[11px] px-1.5 py-[4px] rounded-[5px] md:text-[11px]"
-          />
-        </Section>
-      )}
 
       <div className="px-3 py-2.5 flex flex-col gap-1.5">
         {editing ? (
@@ -1227,26 +1232,30 @@ function WithPoMeta({
             >
               Delete PO
             </Button>
-            <Separator className="my-0.5" />
-            {entry.isArchived ? (
-              <Button
-                variant="ghost"
-                size="xs"
-                className="w-full justify-center text-[11px] rounded-[5px]"
-                onClick={() => onUnarchive?.(activeKey)}
-              >
-                Unarchive
-              </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                size="xs"
-                className="w-full justify-center text-[11px] rounded-[5px] text-muted-foreground"
-                onClick={() => onArchive?.(activeKey)}
-              >
-                Archive
-              </Button>
-            )}
+            {(entry.isArchived ? onUnarchive : onArchive) ? (
+              <>
+                <Separator className="my-0.5" />
+                {entry.isArchived ? (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="w-full justify-center text-[11px] rounded-[5px]"
+                    onClick={() => onUnarchive?.(activeKey)}
+                  >
+                    Unarchive
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="w-full justify-center text-[11px] rounded-[5px] text-muted-foreground"
+                    onClick={() => onArchive?.(activeKey)}
+                  >
+                    Archive
+                  </Button>
+                )}
+              </>
+            ) : null}
           </>
         )}
       </div>

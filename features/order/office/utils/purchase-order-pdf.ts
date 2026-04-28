@@ -151,8 +151,15 @@ function rule(doc: jsPDF, y: number, rgb: [number, number, number] = [200, 200, 
   doc.setDrawColor(0, 0, 0);
 }
 
-function footerShippingAddressLine(lines: string[]): string {
-  const merged = lines.map((s) => s.trim()).filter(Boolean).join(', ');
+/** Single-line ship-to for page footer: customer name (if any) + address, truncated. */
+function footerShipToOneLine(customerHeadline: string | null, lines: string[]): string {
+  const addr = lines.map((s) => s.trim()).filter(Boolean).join(', ');
+  const name = customerHeadline?.trim() ?? '';
+  let merged: string;
+  if (name && addr) merged = `${name}, ${addr}`;
+  else if (name) merged = name;
+  else if (addr) merged = addr;
+  else merged = '';
   if (!merged) return '—';
   return merged.length > 90 ? `${merged.slice(0, 87)}...` : merged;
 }
@@ -373,7 +380,10 @@ function buildDoc(input: PoPdfInput): jsPDF {
   // ── Repeating footer (all pages) ─────────────────────────────────────────
   const pageCount = doc.getNumberOfPages();
   const shippingDateLabel = ymd2display(input.expectedDate) ?? '—';
-  const shippingAddressLabel = footerShippingAddressLine(input.shippingAddressLines);
+  const shippingAddressLabel = footerShipToOneLine(
+    input.customerHeadline,
+    input.shippingAddressLines,
+  );
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     doc.setFontSize(8);

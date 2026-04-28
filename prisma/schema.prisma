@@ -627,6 +627,8 @@ model ShopifyOrderLineItem {
   title                  String?
   sku                    String?
   variantTitle           String?                 @map("variant_title")
+  /// Shopify `Product` GID when known (variant’s product or line-level product) — Admin product URLs.
+  productGid             String?                 @map("product_gid")
   variantGid             String?                 @map("variant_gid")
   /// Product/variant image URL from Shopify (line, variant, or product featured image).
   imageUrl               String?                 @map("image_url") @db.Text

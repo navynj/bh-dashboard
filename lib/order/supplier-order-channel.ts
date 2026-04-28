@@ -24,6 +24,8 @@ export type EmailOrderChannelPayload = {
   contacts: SupplierEmailContact[];
   /** Optional CC addresses for PO emails (merged with office-wide CC at send time). */
   ccEmails: string[];
+  /** Common supplier instruction shown in Inbox + PO order processing. */
+  instruction: string;
 };
 
 export type OrderLinkChannelPayload = {
@@ -120,6 +122,7 @@ const emailPayloadSchema = z
     contactName: z.string().optional().nullable(),
     ccEmails: z.array(z.string()).optional(),
     ccEmail: z.string().optional().nullable(),
+    instruction: z.string().trim().optional(),
   })
   .transform((raw): EmailOrderChannelPayload => {
     const sharedName = raw.contactName?.trim() || null;
@@ -133,6 +136,7 @@ const emailPayloadSchema = z
           })),
         ),
         ccEmails,
+        instruction: raw.instruction ?? '',
       };
     }
     const emails = normalizeSupplierContactEmails([
@@ -142,6 +146,7 @@ const emailPayloadSchema = z
     return {
       contacts: contactsFromLegacyEmailFields(emails, sharedName),
       ccEmails,
+      instruction: raw.instruction ?? '',
     };
   });
 
@@ -261,6 +266,7 @@ export function legacyFallbackOrderChannel(input: {
     if (parsed.success) {
       if (channelType === 'email') {
         const ep = parsed.data as EmailOrderChannelPayload;
+        const instruction = ep.instruction?.trim() || input.notes?.trim() || '';
         if (ep.contacts.length === 0) {
           const fromDb = contactsFromLegacyEmailFields(
             input.contactEmails,
@@ -269,10 +275,36 @@ export function legacyFallbackOrderChannel(input: {
           if (fromDb.length > 0) {
             return {
               type: 'email',
-              payload: { contacts: fromDb, ccEmails: ep.ccEmails },
+              payload: { contacts: fromDb, ccEmails: ep.ccEmails, instruction },
             };
           }
         }
+        return {
+          type: 'email',
+          payload: {
+            ...ep,
+            instruction,
+          },
+        };
+      }
+      if (channelType === 'order_link') {
+        const op = parsed.data as OrderLinkChannelPayload;
+        return {
+          type: 'order_link',
+          payload: {
+            ...op,
+            instruction: op.instruction?.trim() || input.notes?.trim() || '',
+          },
+        };
+      }
+      if (channelType === 'direct_instruction') {
+        const dp = parsed.data as DirectInstructionChannelPayload;
+        return {
+          type: 'direct_instruction',
+          payload: {
+            instruction: dp.instruction?.trim() || input.notes?.trim() || '',
+          },
+        };
       }
       return { type: channelType, payload: parsed.data };
     }
@@ -283,7 +315,14 @@ export function legacyFallbackOrderChannel(input: {
     input.contactName?.trim() ?? null,
   );
   if (fromDb.length > 0) {
-    return { type: 'email', payload: { contacts: fromDb, ccEmails: [] } };
+    return {
+      type: 'email',
+      payload: {
+        contacts: fromDb,
+        ccEmails: [],
+        instruction: input.notes?.trim() ?? '',
+      },
+    };
   }
   if (input.link?.trim()) {
     return {

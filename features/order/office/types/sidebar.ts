@@ -22,6 +22,8 @@ export type SupplierEntry = {
   supplierOrderChannelType: SupplierOrderChannelType;
   /** Supplier PO / order email recipients (each row has its own display name). */
   supplierPoContacts: SupplierEmailContact[];
+  /** Optional CC addresses merged into supplier outbound PO email sends. */
+  supplierPoCcEmails: string[];
   supplierOrderUrl: string | null;
   supplierOrderInstruction: string;
   supplierInvoiceConfirmSenderEmail: string | null;

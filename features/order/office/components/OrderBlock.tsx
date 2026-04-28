@@ -29,6 +29,7 @@ import { formatItemPrice } from '../mappers/map-purchase-order';
 import { formatVancouverOrderedDetail } from '../utils/vancouver-datetime';
 import { SeparatePoDialog } from './SeparatePoDialog';
 import type { ShopifyOrderEditOperation } from '@/lib/api/schemas';
+import { shopifyMyshopifyAdminOrderUrl } from '../utils/shopify-admin-order-url';
 
 type DraftLine = PrePoLineDraft & {
   localId: string;
@@ -46,7 +47,6 @@ type Props = {
   onSeparatePo?: (payload: SeparatePoPayload) => void;
   /** Suggested PO # for Separate PO (same as Meta auto rule for this order). */
   defaultSeparatePoNumber?: string;
-  onArchiveShopifyOrder?: (shopifyOrderDbId: string) => void;
   showArchived?: boolean;
   onUnarchiveShopifyOrder?: (shopifyOrderDbId: string) => void;
   /** When saving from a PO context, pass PO id so server can resync lines. */
@@ -60,6 +60,18 @@ function parseMoney(s: string | null | undefined): number {
   if (s == null || s === '') return 0;
   const n = parseFloat(String(s).replace(/[^0-9.-]/g, ''));
   return Number.isFinite(n) ? n : 0;
+}
+
+function formatMoney(amount: number, currency = 'CAD'): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
 }
 
 function newLocalId(): string {
@@ -92,7 +104,6 @@ export function OrderBlock({
   onToggleInclude,
   onSeparatePo,
   defaultSeparatePoNumber,
-  onArchiveShopifyOrder,
   showArchived,
   onUnarchiveShopifyOrder,
   purchaseOrderId,
@@ -116,14 +127,6 @@ export function OrderBlock({
   const [customPrice, setCustomPrice] = useState('');
   const [customQty, setCustomQty] = useState('1');
 
-  const [priceDialog, setPriceDialog] = useState<{
-    gid: string;
-    variantGid: string | null;
-    productGid: string | null;
-    newUnit: number;
-    resolve: (c: 'yes' | 'no' | 'skip') => void;
-  } | null>(null);
-
   useEffect(() => {
     if (!editing) {
       setDraftLines(draftFromOrder(order));
@@ -135,6 +138,9 @@ export function OrderBlock({
   const excluded = order.lineItems.filter((_, idx) => !getIncluded(idx));
   const displayName =
     order.customerDisplayName ?? order.orderNumber.replace(/^#/, 'Order ');
+  const shopifyAdminOrderUrl = shopifyMyshopifyAdminOrderUrl(
+    order.shopifyOrderGid,
+  );
 
   const beginEdit = useCallback(() => {
     const m = new Map<string, { quantity: number; itemPrice: string | null }>();
@@ -153,31 +159,8 @@ export function OrderBlock({
     setDraftLines(draftFromOrder(order));
   }, [order]);
 
-  const askCatalog = useCallback(
-    (gid: string, variantGid: string | null, productGid: string | null, newUnit: number) => {
-      return new Promise<'yes' | 'no' | 'skip'>((resolve) => {
-        if (!variantGid || !productGid) {
-          resolve('skip');
-          return;
-        }
-        setPriceDialog({
-          gid,
-          variantGid,
-          productGid,
-          newUnit,
-          resolve: (c) => {
-            setPriceDialog(null);
-            resolve(c);
-          },
-        });
-      });
-    },
-    [],
-  );
-
   const buildSavePayload = useCallback(async () => {
     const ops: ShopifyOrderEditOperation[] = [];
-    const variantCatalogUpdates: { productGid: string; variantGid: string; price: string }[] = [];
     const orig = originalByGid.current;
 
     for (const [gid, o] of orig) {
@@ -194,45 +177,12 @@ export function OrderBlock({
           restock: false,
         });
       }
-      const oldP = parseMoney(o.itemPrice);
-      const newP = parseMoney(row.itemPrice);
-      if (Math.abs(oldP - newP) > 0.0005 && row.shopifyLineItemGid) {
-        const choice = await askCatalog(
-          gid,
-          row.shopifyVariantGid ?? null,
-          row.shopifyProductGid ?? null,
-          newP,
-        );
-        ops.push({ type: 'setUnitPrice', shopifyLineItemGid: gid, unitPrice: newP });
-        if (choice === 'yes' && row.shopifyVariantGid && row.shopifyProductGid) {
-          variantCatalogUpdates.push({
-            productGid: row.shopifyProductGid,
-            variantGid: row.shopifyVariantGid,
-            price: newP.toFixed(2),
-          });
-        }
-      }
     }
 
     for (const row of draftLines) {
       if (row.removed || row.shopifyLineItemGid) continue;
       if (row.isNew && row.newKind === 'variant' && row.shopifyVariantGid) {
         const unit = parseMoney(row.itemPrice);
-        if (row.shopifyProductGid) {
-          const choice = await askCatalog(
-            row.localId,
-            row.shopifyVariantGid,
-            row.shopifyProductGid,
-            unit,
-          );
-          if (choice === 'yes') {
-            variantCatalogUpdates.push({
-              productGid: row.shopifyProductGid,
-              variantGid: row.shopifyVariantGid,
-              price: unit.toFixed(2),
-            });
-          }
-        }
         ops.push({
           type: 'addVariant',
           variantGid: row.shopifyVariantGid,
@@ -250,8 +200,8 @@ export function OrderBlock({
       }
     }
 
-    return { ops, variantCatalogUpdates };
-  }, [draftLines, askCatalog]);
+    return { ops };
+  }, [draftLines]);
 
   const saveEdit = useCallback(async () => {
     if (!order.shopifyOrderGid) {
@@ -260,7 +210,7 @@ export function OrderBlock({
     }
     setSaving(true);
     try {
-      const { ops, variantCatalogUpdates } = await buildSavePayload();
+      const { ops } = await buildSavePayload();
       if (ops.length === 0) {
         toast.message('No changes to save');
         setEditing(false);
@@ -274,8 +224,6 @@ export function OrderBlock({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           operations: ops,
-          variantCatalogUpdates:
-            variantCatalogUpdates.length > 0 ? variantCatalogUpdates : undefined,
           purchaseOrderId: purchaseOrderId ?? undefined,
           appendLinesFromShopifyOrderLocalId: hasAppend ? order.id : undefined,
         }),
@@ -375,6 +323,12 @@ export function OrderBlock({
   }, [customTitle, customPrice, customQty]);
 
   const visibleDrafts = useMemo(() => draftLines.filter((d) => !d.removed), [draftLines]);
+  const costSubtotal = useMemo(() => {
+    const source = editing ? visibleDrafts : order.lineItems;
+    return source.reduce((sum, line) => {
+      return sum + parseMoney(line.itemCost ?? null) * Math.max(0, line.quantity ?? 0);
+    }, 0);
+  }, [editing, visibleDrafts, order.lineItems]);
 
   const showLinePoNotes =
     !editing && Boolean(onLineItemNoteChange) && lineItemNotes != null;
@@ -384,9 +338,26 @@ export function OrderBlock({
       <div className="px-3.5 py-2 border-b bg-muted/40 flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5 text-[12px] font-medium">
-            <Badge variant="blue" className="rounded px-1.5 text-[10px]">
-              {order.orderNumber}
-            </Badge>
+            {shopifyAdminOrderUrl ? (
+              <a
+                href={shopifyAdminOrderUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex"
+                title="Open order in Shopify Admin"
+              >
+                <Badge
+                  variant="blue"
+                  className="rounded px-1.5 text-[10px] cursor-pointer hover:opacity-90"
+                >
+                  {order.orderNumber}
+                </Badge>
+              </a>
+            ) : (
+              <Badge variant="blue" className="rounded px-1.5 text-[10px]">
+                {order.orderNumber}
+              </Badge>
+            )}
             {displayName}
           </div>
           <div className="flex gap-2.5 flex-wrap">
@@ -502,11 +473,6 @@ export function OrderBlock({
             onSeparatePo(payload);
             setDialogOpen(false);
           }}
-          onArchive={
-            onArchiveShopifyOrder
-              ? () => onArchiveShopifyOrder(order.id)
-              : undefined
-          }
         />
       )}
 
@@ -599,18 +565,7 @@ export function OrderBlock({
                 </TableCell>
                 <TableCell className="px-3 py-[7px] text-[11px]">
                   {editing ? (
-                    <Input
-                      className="h-7 text-[11px]"
-                      value={row.itemPrice ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setDraftLines((prev) =>
-                          prev.map((d) =>
-                            d.localId === (row as DraftLine).localId ? { ...d, itemPrice: v || null } : d,
-                          ),
-                        );
-                      }}
-                    />
+                    <span>{formatItemPrice(row.itemPrice)}</span>
                   ) : (
                     formatItemPrice(row.itemPrice)
                   )}
@@ -708,31 +663,12 @@ export function OrderBlock({
           in PO
         </div>
       )}
-
-      <Dialog
-        open={priceDialog != null}
-        onOpenChange={(open) => {
-          if (!open) priceDialog?.resolve('no');
-        }}
-      >
-        <DialogContent className="max-w-md" showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle className="text-sm">Update catalog variant price?</DialogTitle>
-          </DialogHeader>
-          <p className="text-[13px] text-muted-foreground">
-            You changed a line price. Should we also update the variant&apos;s catalog price in
-            Shopify (affects future checkouts), or only this order?
-          </p>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => priceDialog?.resolve('no')}>
-              Order only
-            </Button>
-            <Button type="button" onClick={() => priceDialog?.resolve('yes')}>
-              Order + catalog
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <div className="px-3.5 py-[6px] border-t text-[11px] flex items-center justify-end gap-2">
+        <span className="text-muted-foreground">Subtotal (cost)</span>
+        <span className="font-medium tabular-nums">
+          {formatMoney(costSubtotal, order.currencyCode?.trim() || 'CAD')}
+        </span>
+      </div>
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-lg">

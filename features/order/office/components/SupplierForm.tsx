@@ -88,10 +88,9 @@ function initialOrderChannel(editing: SupplierRow | null) {
       email: { rows: [emptyEmailRow()], ccRows: [emptyCcRow()] },
       link: {
         orderUrl: '',
-        instruction: '',
         invoiceConfirmSenderEmail: '',
       },
-      direct: { instruction: '' },
+      instruction: '',
     };
   }
   const { type, payload } = legacyFallbackOrderChannel({
@@ -117,8 +116,8 @@ function initialOrderChannel(editing: SupplierRow | null) {
     return {
       orderChannelType: type,
       email: { rows, ccRows },
-      link: { orderUrl: '', instruction: '', invoiceConfirmSenderEmail: '' },
-      direct: { instruction: '' },
+      link: { orderUrl: '', invoiceConfirmSenderEmail: '' },
+      instruction: p.instruction ?? '',
     };
   }
   if (type === 'order_link') {
@@ -128,18 +127,17 @@ function initialOrderChannel(editing: SupplierRow | null) {
       email: { rows: [emptyEmailRow()], ccRows: [emptyCcRow()] },
       link: {
         orderUrl: p.orderUrl ?? '',
-        instruction: p.instruction ?? '',
         invoiceConfirmSenderEmail: p.invoiceConfirmSenderEmail ?? '',
       },
-      direct: { instruction: '' },
+      instruction: p.instruction ?? '',
     };
   }
   const p = payload as DirectInstructionChannelPayload;
   return {
     orderChannelType: type,
     email: { rows: [emptyEmailRow()], ccRows: [emptyCcRow()] },
-    link: { orderUrl: '', instruction: '', invoiceConfirmSenderEmail: '' },
-    direct: { instruction: p.instruction ?? '' },
+    link: { orderUrl: '', invoiceConfirmSenderEmail: '' },
+    instruction: p.instruction ?? '',
   };
 }
 
@@ -167,20 +165,17 @@ export function SupplierForm({
   const [groupId, setGroupId] = useState(
     editing?.groupId ?? defaultGroupId ?? '',
   );
-  const [notes, setNotes] = useState(editing?.notes ?? '');
-  const [error, setError] = useState<string | null>(null);
-
   const ic = useMemo(() => initialOrderChannel(editing), [editing]);
+  const [instruction, setInstruction] = useState(ic.instruction);
+  const [error, setError] = useState<string | null>(null);
   const [orderChannelType, setOrderChannelType] =
     useState<SupplierOrderChannelType>(ic.orderChannelType);
   const [emailRows, setEmailRows] = useState<EmailFormRow[]>(ic.email.rows);
   const [ccEmailRows, setCcEmailRows] = useState<CcFormRow[]>(ic.email.ccRows);
   const [linkOrderUrl, setLinkOrderUrl] = useState(ic.link.orderUrl);
-  const [linkInstruction, setLinkInstruction] = useState(ic.link.instruction);
   const [linkInvoiceEmail, setLinkInvoiceEmail] = useState(
     ic.link.invoiceConfirmSenderEmail,
   );
-  const [directInstruction, setDirectInstruction] = useState(ic.direct.instruction);
 
   const [vendorAliases, setVendorAliases] = useState<string[]>(
     editing?.vendorMappings.map((m) => m.vendorName) ?? [],
@@ -248,16 +243,17 @@ export function SupplierForm({
           })),
         ),
         ccEmails,
+        instruction: instruction.trim(),
       };
     }
     if (orderChannelType === 'order_link') {
       return {
         orderUrl: linkOrderUrl.trim() || null,
-        instruction: linkInstruction.trim(),
+        instruction: instruction.trim(),
         invoiceConfirmSenderEmail: linkInvoiceEmail.trim() || null,
       };
     }
-    return { instruction: directInstruction.trim() };
+    return { instruction: instruction.trim() };
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -278,7 +274,7 @@ export function SupplierForm({
         officePoSupplierCode: officePoSupplierCode.trim() || null,
         shopifyVendorName: shopifyVendorName.trim() || null,
         groupId: groupId || null,
-        notes: notes.trim() || null,
+        instruction: instruction.trim() || null,
         orderChannelType,
         orderChannelPayload: buildPayload(),
         vendorAliases,
@@ -614,17 +610,6 @@ export function SupplierForm({
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="sf-link-instr" className="text-xs">
-              Instructions
-            </Label>
-            <Textarea
-              id="sf-link-instr"
-              value={linkInstruction}
-              onChange={(e) => setLinkInstruction(e.target.value)}
-              className="min-h-16 resize-none text-sm px-2 py-1.5 md:text-sm"
-            />
-          </div>
-          <div className="grid gap-2">
             <Label htmlFor="sf-invoice-email" className="text-xs">
               Invoice confirm email
             </Label>
@@ -641,16 +626,8 @@ export function SupplierForm({
       )}
 
       {orderChannelType === 'direct_instruction' && (
-        <div className="grid gap-2">
-          <Label htmlFor="sf-direct-instr" className="text-xs">
-            Instructions
-          </Label>
-          <Textarea
-            id="sf-direct-instr"
-            value={directInstruction}
-            onChange={(e) => setDirectInstruction(e.target.value)}
-            className="min-h-20 resize-none text-sm px-2 py-1.5 md:text-sm"
-          />
+        <div className="text-[10px] text-muted-foreground">
+          Use instruction below for direct ordering guidance.
         </div>
       )}
 
@@ -660,14 +637,15 @@ export function SupplierForm({
       />
 
       <div className="grid gap-2">
-        <Label htmlFor="sf-notes" className="text-xs">
-          Notes (internal)
+        <Label htmlFor="sf-instruction" className="text-xs">
+          Instructions
         </Label>
         <Textarea
-          id="sf-notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          id="sf-instruction"
+          value={instruction}
+          onChange={(e) => setInstruction(e.target.value)}
           className="min-h-16 resize-none text-sm px-2 py-1.5 md:text-sm"
+          placeholder="Shown in Inbox and PO order processing for this supplier."
         />
       </div>
 

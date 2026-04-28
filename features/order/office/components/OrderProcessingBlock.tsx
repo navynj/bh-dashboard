@@ -33,6 +33,8 @@ type Props = {
   lineItemsLoading?: boolean;
   /** ISO timestamp when supplier reply was manually marked as received. */
   poEmailReplyReceivedAt?: string | null;
+  /** Internal PO note from purchase order comment. */
+  poInternalNote?: string | null;
   onReplyReceivedChange?: () => void;
 };
 
@@ -69,14 +71,17 @@ export function OrderProcessingBlock({
   onPoEmailDeliveryWaivedChange,
   lineItemsLoading = false,
   poEmailReplyReceivedAt = null,
+  poInternalNote = null,
   onReplyReceivedChange,
 }: Props) {
   const t = entry.supplierOrderChannelType;
   const contacts = entry.supplierPoContacts;
+  const ccEmails = entry.supplierPoCcEmails ?? [];
   const savedInstruction = entry.supplierOrderInstruction?.trim() ?? '';
   const [sendingEmail, setSendingEmail] = useState(false);
   const [waivingEmail, setWaivingEmail] = useState(false);
   const [togglingReply, setTogglingReply] = useState(false);
+  const internalNote = poInternalNote?.trim() ?? '';
 
   const deliveryByEmail = new Map(emailDeliveries.map((d) => [d.recipientEmail.toLowerCase(), d]));
 
@@ -334,6 +339,17 @@ export function OrderProcessingBlock({
         ) : null}
       </div>
 
+      {internalNote ? (
+        <div className="mb-2.5 rounded-md border bg-background px-3 py-2.5">
+          <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
+            Notes (internal)
+          </div>
+          <p className="text-[11px] text-foreground leading-relaxed whitespace-pre-wrap break-words">
+            {internalNote}
+          </p>
+        </div>
+      ) : null}
+
       {t === 'email' ? (
         <div className="flex flex-col gap-2.5">
           {savedInstruction ? (
@@ -348,9 +364,16 @@ export function OrderProcessingBlock({
                 <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
                   Per-email delivery
                 </span>
-                <span className="text-[10px] text-muted-foreground">
-                  {contacts.length} recipient{contacts.length === 1 ? '' : 's'}
-                </span>
+                <div className="text-right">
+                  <div className="text-[10px] text-muted-foreground">
+                    {contacts.length} recipient{contacts.length === 1 ? '' : 's'}
+                  </div>
+                  {ccEmails.length > 0 ? (
+                    <div className="text-[9px] text-muted-foreground">
+                      CC: {ccEmails.join(', ')}
+                    </div>
+                  ) : null}
+                </div>
               </div>
               {contacts.length === 0 ? (
                 <div className="px-3 py-3 text-[11px] text-muted-foreground">

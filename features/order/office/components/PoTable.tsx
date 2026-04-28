@@ -116,6 +116,18 @@ function parseMoney(s: string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function formatMoney(amount: number, currency = 'CAD'): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+}
+
 function poLocalKey(): string {
   return `p_${Math.random().toString(36).slice(2, 11)}`;
 }
@@ -605,6 +617,13 @@ export function PoTable({
   // Fulfill:  checkbox(5%) | shopify# | product | ref | price | qty | recv | status
 
   const tableRows = orderEditMode ? visibleEditLines : items;
+  const costSubtotal = useMemo(
+    () =>
+      tableRows.reduce((sum, item) => {
+        return sum + parseMoney(item.itemCost ?? null) * Math.max(0, item.quantity ?? 0);
+      }, 0),
+    [tableRows],
+  );
 
   const addSearchHitToPo = useCallback(
     (hit: OfficeProductSearchVariantHit) => {
@@ -1226,6 +1245,12 @@ export function PoTable({
           })}
         </TableBody>
       </Table>
+      <div className="px-3.5 py-[6px] border-t text-[11px] flex items-center justify-end gap-2">
+        <span className="text-muted-foreground">Subtotal (cost)</span>
+        <span className="font-medium tabular-nums">
+          {formatMoney(costSubtotal, purchaseOrder.currency)}
+        </span>
+      </div>
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-lg">

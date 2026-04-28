@@ -69,6 +69,7 @@ function buildChannelEntryFields(supplier: SupplierScalar | undefined): Pick<
   | 'supplierEmailMissing'
   | 'supplierOrderChannelType'
   | 'supplierPoContacts'
+  | 'supplierPoCcEmails'
   | 'supplierOrderUrl'
   | 'supplierOrderInstruction'
   | 'supplierInvoiceConfirmSenderEmail'
@@ -83,6 +84,7 @@ function buildChannelEntryFields(supplier: SupplierScalar | undefined): Pick<
       supplierEmailMissing: true,
       supplierOrderChannelType: 'direct_instruction',
       supplierPoContacts: [],
+      supplierPoCcEmails: [],
       supplierOrderUrl: null,
       supplierOrderInstruction: '',
       supplierInvoiceConfirmSenderEmail: null,
@@ -124,8 +126,9 @@ function buildChannelEntryFields(supplier: SupplierScalar | undefined): Pick<
       supplierEmailMissing: !hasEmail,
       supplierOrderChannelType: ch.type as SupplierOrderChannelType,
       supplierPoContacts: contacts,
+      supplierPoCcEmails: p.ccEmails ?? [],
       supplierOrderUrl: null,
-      supplierOrderInstruction: '',
+      supplierOrderInstruction: p.instruction ?? '',
       supplierInvoiceConfirmSenderEmail: null,
       hasEmail,
       hasChat: false,
@@ -147,6 +150,7 @@ function buildChannelEntryFields(supplier: SupplierScalar | undefined): Pick<
       supplierEmailMissing: false,
       supplierOrderChannelType: ch.type as SupplierOrderChannelType,
       supplierPoContacts: [],
+      supplierPoCcEmails: [],
       supplierOrderUrl: p.orderUrl?.trim() ?? null,
       supplierOrderInstruction: p.instruction ?? '',
       supplierInvoiceConfirmSenderEmail: p.invoiceConfirmSenderEmail ?? null,
@@ -168,6 +172,7 @@ function buildChannelEntryFields(supplier: SupplierScalar | undefined): Pick<
     supplierEmailMissing: false,
     supplierOrderChannelType: ch.type as SupplierOrderChannelType,
     supplierPoContacts: [],
+    supplierPoCcEmails: [],
     supplierOrderUrl: null,
     supplierOrderInstruction: instr,
     supplierInvoiceConfirmSenderEmail: null,
@@ -180,10 +185,12 @@ function buildChannelEntryFields(supplier: SupplierScalar | undefined): Pick<
 export type ShopifyOrderWithCustomer = Prisma.ShopifyOrderGetPayload<{
   include: {
     customer: true;
+    /** Implicit M2M — used when PO lines are not FK’d to Shopify lines (legacy / archived). */
+    purchaseOrders: { select: { archivedAt: true } };
     lineItems: {
       include: {
+        /** All PO lines (active + archived) — archived still “covers” line qty for inbox. */
         purchaseOrderLineItems: {
-          where: { purchaseOrder: { archivedAt: null } };
           select: { id: true; quantity: true };
         };
       };
@@ -459,6 +466,7 @@ function inboxLineBucketKey(
 
 const LEGACY_POOL_KEY_SEP = '\x1e';
 
+/** Sum of FK’d PO line qty on this Shopify line (includes archived POs). */
 function fkPoQtyOnShopifyLine(
   li: ShopifyOrderWithCustomer['lineItems'][number],
 ): number {
@@ -575,7 +583,8 @@ function buildLegacyExtraQtyByShopifyLineItemId(
   return extra;
 }
 
-function activePoQtyOnShopifyLine(
+/** Qty on PO lines FK’d to this Shopify line (active + archived) plus legacy orphan allocation. */
+function linkedPoQtyOnShopifyLine(
   li: ShopifyOrderWithCustomer['lineItems'][number],
   legacyExtraQtyByShopifyLineItemId: Map<string, number>,
 ): number {
@@ -587,14 +596,14 @@ function activePoQtyOnShopifyLine(
   return q;
 }
 
-/** Units of this Shopify line not yet on active (non-archived) POs. */
+/** Units of this Shopify line not yet on any PO (archived POs still consume capacity for inbox). */
 function shopifyLineRemainingQty(
   li: ShopifyOrderWithCustomer['lineItems'][number],
   legacyExtraQtyByShopifyLineItemId: Map<string, number>,
 ): number {
   return Math.max(
     0,
-    (li.quantity ?? 0) - activePoQtyOnShopifyLine(li, legacyExtraQtyByShopifyLineItemId),
+    (li.quantity ?? 0) - linkedPoQtyOnShopifyLine(li, legacyExtraQtyByShopifyLineItemId),
   );
 }
 
@@ -604,7 +613,13 @@ function distinctSupplierIdsForOrder(
   vendorLookup: Map<string, string>,
   legacyExtraQtyByShopifyLineItemId: Map<string, number>,
 ): string[] {
-  if (order.lineItems.length === 0) return [UNASSIGNED_SUPPLIER_ID];
+  if (order.lineItems.length === 0) {
+    const pos = order.purchaseOrders ?? [];
+    if (pos.length > 0 && pos.every((p) => p.archivedAt != null)) {
+      return [];
+    }
+    return [UNASSIGNED_SUPPLIER_ID];
+  }
   const set = new Set<string>();
   for (const li of order.lineItems) {
     if ((li.quantity ?? 0) <= 0) continue;
@@ -675,6 +690,7 @@ function shopifyOrderToDraft(
         return {
           shopifyLineItemId: li.id,
           shopifyLineItemGid: li.shopifyGid,
+          shopifyProductGid: li.productGid?.trim() || null,
           shopifyVariantGid: li.variantGid,
           sku: li.sku,
           imageUrl: li.imageUrl ?? null,
@@ -841,9 +857,8 @@ export function buildInboxData(
       const draftOrders = draftSupMap.get(supId) ?? [];
       const openDraftOrders = draftOrders.filter((o) => o.archivedAt == null);
       const hasPOs = pos.length > 0;
-      const hasDrafts = draftOrders.length > 0;
       const hasOpenDrafts = openDraftOrders.length > 0;
-      if (!hasPOs && !hasDrafts) continue;
+      if (!hasPOs && draftOrders.length === 0) continue;
 
       const supplier =
         supId !== UNASSIGNED_SUPPLIER_ID
@@ -859,7 +874,7 @@ export function buildInboxData(
           : (groupSlugById.get(supplier.groupId) ?? null);
       const entryKey: SupplierKey = `${custKey}::${supId}`;
 
-      const drafts = draftOrders.map((o) =>
+      const drafts = openDraftOrders.map((o) =>
         shopifyOrderToDraft(
           o,
           supId,
@@ -897,7 +912,7 @@ export function buildInboxData(
       const viewSlice: PostViewData = {
         type: 'post',
         purchaseOrders: poBlocks,
-        ...(hasDrafts ? { shopifyOrderDrafts: drafts } : {}),
+        ...(hasOpenDrafts ? { shopifyOrderDrafts: drafts } : {}),
       };
       const rowHasOpenPo = supplierRowHasOpenDeliveryPo(viewSlice);
       const rowHasFulfilledListPo = supplierRowHasFulfilledListPo(viewSlice);
@@ -907,7 +922,8 @@ export function buildInboxData(
 
       const allPosArchived = !hasPOs || pos.every((p) => p.archivedAt != null);
       const allDraftsArchived =
-        !hasDrafts || draftOrders.every((o) => o.archivedAt != null);
+        draftOrders.length === 0 ||
+        draftOrders.every((o) => o.archivedAt != null);
       const isArchived = allPosArchived && allDraftsArchived;
 
       const archivePurchaseOrderIds = hasPOs ? pos.map((p) => p.id) : [];
@@ -1084,7 +1100,7 @@ export function buildInboxData(
         viewDataMap[entryKey] = {
           type: 'post',
           purchaseOrders: blocks,
-          shopifyOrderDrafts: hasDrafts ? drafts : undefined,
+          shopifyOrderDrafts: hasOpenDrafts ? drafts : undefined,
           ...(isMulti && {
             subtreeParentLabel: `${supplierName} · ${blocks.length} POs`,
             multiPoSubtree: true,

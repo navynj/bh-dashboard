@@ -1145,66 +1145,6 @@ export function OrderManagementView({
     [patchedViewDataMap, states, router],
   );
 
-  const handleArchive = useCallback(
-    async (key: SupplierKey) => {
-      const e = states[key];
-      if (!e) return;
-
-      const snapshot = { ...e };
-      const shopifyIds = [...e.archiveShopifyOrderIds];
-
-      setOptimisticArchivedOrderIds((prev) => {
-        const next = new Set(prev);
-        for (const id of shopifyIds) next.add(id);
-        return next;
-      });
-      setOptimisticUnarchivedOrderIds((prev) => {
-        const next = new Set(prev);
-        for (const id of shopifyIds) next.delete(id);
-        return next;
-      });
-
-      setStates((prev) => ({
-        ...prev,
-        [key]: {
-          ...prev[key],
-          isArchived: true,
-          ...(shopifyIds.length > 0 ? { withoutPoDraftCount: 0 } : {}),
-        },
-      }));
-
-      try {
-        const res = await fetch('/api/archive', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            purchaseOrderIds:
-              e.archivePurchaseOrderIds.length > 0
-                ? e.archivePurchaseOrderIds
-                : undefined,
-            shopifyOrderIds:
-              e.archiveShopifyOrderIds.length > 0
-                ? e.archiveShopifyOrderIds
-                : undefined,
-            archive: true,
-          }),
-        });
-        if (!res.ok)
-          throw new Error(await res.text().catch(() => res.statusText));
-        router.refresh();
-      } catch (err) {
-        setStates((prev) => ({ ...prev, [key]: snapshot }));
-        setOptimisticArchivedOrderIds((prev) => {
-          const next = new Set(prev);
-          for (const id of shopifyIds) next.delete(id);
-          return next;
-        });
-        console.error('Archive error:', err);
-      }
-    },
-    [states, router],
-  );
-
   const handleUnarchive = useCallback(
     async (key: SupplierKey) => {
       const e = states[key];
@@ -1271,66 +1211,6 @@ export function OrderManagementView({
       }
     },
     [states, router, viewDataMap],
-  );
-
-  /** Archive only this Shopify order (e.g. from Separate PO dialog), not the whole supplier row. */
-  const handleArchiveShopifyOrder = useCallback(
-    async (shopifyOrderDbId: string) => {
-      const key = activeKey;
-      const entryBefore = states[key];
-
-      setOptimisticArchivedOrderIds((prev) =>
-        new Set(prev).add(shopifyOrderDbId),
-      );
-      setOptimisticUnarchivedOrderIds((prev) => {
-        const n = new Set(prev);
-        n.delete(shopifyOrderDbId);
-        return n;
-      });
-
-      if (entryBefore) {
-        setStates((prev) => {
-          const e = prev[key];
-          if (!e) return prev;
-          const nextDraft = Math.max(0, e.withoutPoDraftCount - 1);
-          const onlyDrafts = !e.poCreated;
-          const rowFullyArchived = onlyDrafts && nextDraft === 0;
-          return {
-            ...prev,
-            [key]: {
-              ...e,
-              withoutPoDraftCount: nextDraft,
-              ...(rowFullyArchived ? { isArchived: true } : {}),
-            },
-          };
-        });
-      }
-
-      try {
-        const res = await fetch('/api/archive', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            shopifyOrderIds: [shopifyOrderDbId],
-            archive: true,
-          }),
-        });
-        if (!res.ok)
-          throw new Error(await res.text().catch(() => res.statusText));
-        router.refresh();
-      } catch (err) {
-        setOptimisticArchivedOrderIds((prev) => {
-          const n = new Set(prev);
-          n.delete(shopifyOrderDbId);
-          return n;
-        });
-        if (entryBefore) {
-          setStates((prev) => ({ ...prev, [key]: { ...entryBefore } }));
-        }
-        console.error('Archive Shopify order error:', err);
-      }
-    },
-    [router, activeKey, states],
   );
 
   const handleUnarchiveShopifyOrder = useCallback(
@@ -2338,6 +2218,7 @@ export function OrderManagementView({
         includePoEmailTools={
           entry.poCreated && selectedPoBlockId !== '__drafts__'
         }
+        poInternalNote={selectedPoPanelMeta?.comment ?? null}
         poEmailSentAt={selectedPoPanelMeta?.emailSentAt ?? null}
         poEmailDeliveryOutstanding={
           activeStatusTab === 'po_created' &&
@@ -2373,7 +2254,6 @@ export function OrderManagementView({
                 onToggleInclude={handleToggleInclude}
                 onSeparatePo={handleSeparatePo}
                 showArchived={showArchived}
-                onArchiveShopifyOrder={handleArchiveShopifyOrder}
                 onUnarchiveShopifyOrder={handleUnarchiveShopifyOrder}
                 purchaseOrderId={
                   (
@@ -2407,7 +2287,6 @@ export function OrderManagementView({
               onToggleInclude={handleToggleInclude}
               onSeparatePo={handleSeparatePo}
               showArchived={showArchived}
-              onArchiveShopifyOrder={handleArchiveShopifyOrder}
               onUnarchiveShopifyOrder={handleUnarchiveShopifyOrder}
               draftLineNotes={draftLineNotes}
               onLineItemNoteChange={handleLineItemNoteChange}
@@ -2437,7 +2316,6 @@ export function OrderManagementView({
           onPoEmailDeliveryWaivedChange={handlePoEmailDeliveryWaivedChange}
           poPanelMeta={selectedPoPanelMeta}
           selectedPoBlockId={selectedPoBlockId}
-          onArchive={handleArchive}
           onUnarchive={handleUnarchive}
           draftPoNumber={effectivePoNumber}
           poNumberIsManual={poNumberIsManual}

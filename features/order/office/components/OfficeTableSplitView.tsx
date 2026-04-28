@@ -1,6 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { YmdDateInput } from '@/components/ui/ymd-date-input';
@@ -25,6 +34,7 @@ import type {
   OfficeTableViewShopifyRow,
 } from '../types/office-table-view';
 import { OfficeOrderLineItemsDialog } from './OfficeOrderLineItemsDialog';
+import { ShopifyOrderMemoPopover } from './ShopifyOrderMemoPopover';
 
 type TableTab = 'shopify' | 'po';
 
@@ -201,6 +211,7 @@ export function OfficeTableSplitView({
   supplierGroupFilterOptions?: OfficeTableFilterOption[];
   onOpenPoDetail: (purchaseOrderId: string) => void | Promise<void>;
 }) {
+  const router = useRouter();
   const [tab, setTab] = useState<TableTab>('shopify');
   const [shopifyRows, setShopifyRows] = useState(initialShopifyRows);
   const [poRows, setPoRows] = useState(initialPoRows);
@@ -216,7 +227,9 @@ export function OfficeTableSplitView({
   const [supplierGroupSlug, setSupplierGroupSlug] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [poDateField, setPoDateField] = useState<'created' | 'expected'>('created');
+  const [poDateField, setPoDateField] = useState<'created' | 'expected'>(
+    'created',
+  );
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(qInput), 400);
@@ -227,11 +240,11 @@ export function OfficeTableSplitView({
     () =>
       Boolean(
         debouncedQ.trim() ||
-          customerId ||
-          supplierId ||
-          supplierGroupSlug ||
-          dateFrom ||
-          dateTo,
+        customerId ||
+        supplierId ||
+        supplierGroupSlug ||
+        dateFrom ||
+        dateTo,
       ),
     [debouncedQ, customerId, supplierId, supplierGroupSlug, dateFrom, dateTo],
   );
@@ -252,6 +265,13 @@ export function OfficeTableSplitView({
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const [selectedShopifyOrderIds, setSelectedShopifyOrderIds] = useState(
+    () => new Set<string>(),
+  );
+  const [archivingShopifySelection, setArchivingShopifySelection] =
+    useState(false);
+  const shopifyHeaderCheckboxRef = useRef<HTMLInputElement>(null);
+
   const [lineDialogOpen, setLineDialogOpen] = useState(false);
   const [linePreview, setLinePreview] = useState<{
     kind: 'shopify' | 'po';
@@ -262,8 +282,12 @@ export function OfficeTableSplitView({
   const [lineLoading, setLineLoading] = useState(false);
   const [lineError, setLineError] = useState<string | null>(null);
   const [lineDialogCurrency, setLineDialogCurrency] = useState('USD');
-  const [shopifyDialogLines, setShopifyDialogLines] = useState<OfficeShopifyTableLineItem[]>([]);
-  const [poDialogLines, setPoDialogLines] = useState<OfficePoTableLineItem[]>([]);
+  const [shopifyDialogLines, setShopifyDialogLines] = useState<
+    OfficeShopifyTableLineItem[]
+  >([]);
+  const [poDialogLines, setPoDialogLines] = useState<OfficePoTableLineItem[]>(
+    [],
+  );
 
   const buildShopifyQueryString = useCallback(
     (offset: number) => {
@@ -426,7 +450,11 @@ export function OfficeTableSplitView({
           };
           if (ac.signal.aborted) return;
           if (!res.ok) {
-            setLineError(typeof data.error === 'string' ? data.error : 'Failed to load lines');
+            setLineError(
+              typeof data.error === 'string'
+                ? data.error
+                : 'Failed to load lines',
+            );
             return;
           }
           setShopifyDialogLines(Array.isArray(data.lines) ? data.lines : []);
@@ -447,7 +475,11 @@ export function OfficeTableSplitView({
           };
           if (ac.signal.aborted) return;
           if (!res.ok) {
-            setLineError(typeof data.error === 'string' ? data.error : 'Failed to load lines');
+            setLineError(
+              typeof data.error === 'string'
+                ? data.error
+                : 'Failed to load lines',
+            );
             return;
           }
           setPoDialogLines(Array.isArray(data.lines) ? data.lines : []);
@@ -601,6 +633,107 @@ export function OfficeTableSplitView({
     return poRows.slice(start, start + PAGE_SIZE);
   }, [poRows, poPage]);
 
+  useEffect(() => {
+    if (tab !== 'shopify') setSelectedShopifyOrderIds(new Set());
+  }, [tab]);
+
+  const pageSelectableShopifyIds = useMemo(
+    () => shopifySlice.filter((r) => !r.archived).map((r) => r.id),
+    [shopifySlice],
+  );
+
+  const allPageSelectableShopifySelected =
+    pageSelectableShopifyIds.length > 0 &&
+    pageSelectableShopifyIds.every((id) => selectedShopifyOrderIds.has(id));
+
+  useLayoutEffect(() => {
+    const el = shopifyHeaderCheckboxRef.current;
+    if (!el) return;
+    const somePartial =
+      !allPageSelectableShopifySelected &&
+      pageSelectableShopifyIds.some((id) => selectedShopifyOrderIds.has(id));
+    el.indeterminate = somePartial;
+  }, [
+    allPageSelectableShopifySelected,
+    pageSelectableShopifyIds,
+    selectedShopifyOrderIds,
+  ]);
+
+  const toggleShopifySelectPage = useCallback(() => {
+    setSelectedShopifyOrderIds((prev) => {
+      const next = new Set(prev);
+      const pageIds = pageSelectableShopifyIds;
+      if (pageIds.length > 0 && pageIds.every((id) => next.has(id))) {
+        for (const id of pageIds) next.delete(id);
+      } else {
+        for (const id of pageIds) next.add(id);
+      }
+      return next;
+    });
+  }, [pageSelectableShopifyIds]);
+
+  const toggleShopifySelectRow = useCallback(
+    (id: string, archived: boolean) => {
+      if (archived) return;
+      setSelectedShopifyOrderIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const selectedArchivableShopifyIds = useMemo(() => {
+    return [...selectedShopifyOrderIds].filter((id) => {
+      const row = shopifyRows.find((r) => r.id === id);
+      if (!row) return true;
+      return !row.archived;
+    });
+  }, [selectedShopifyOrderIds, shopifyRows]);
+
+  const handleArchiveSelectedShopifyOrders = useCallback(async () => {
+    const ids = selectedArchivableShopifyIds;
+    if (ids.length === 0) {
+      toast.error('Select at least one order that is not already archived.');
+      return;
+    }
+    const idSet = new Set(ids);
+    const rowsSnapshot = shopifyRows.map((r) => ({ ...r }));
+    const selectionSnapshot = new Set(selectedShopifyOrderIds);
+
+    setShopifyRows((prev) =>
+      prev.map((r) => (idSet.has(r.id) ? { ...r, archived: true } : r)),
+    );
+    setSelectedShopifyOrderIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
+
+    setArchivingShopifySelection(true);
+    try {
+      const res = await fetch('/api/archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shopifyOrderIds: ids, archive: true }),
+      });
+      if (!res.ok)
+        throw new Error(await res.text().catch(() => res.statusText));
+      toast.success(
+        ids.length === 1 ? 'Order archived.' : `${ids.length} orders archived.`,
+      );
+      router.refresh();
+    } catch (e) {
+      setShopifyRows(rowsSnapshot);
+      setSelectedShopifyOrderIds(selectionSnapshot);
+      toast.error(e instanceof Error ? e.message : 'Archive failed.');
+    } finally {
+      setArchivingShopifySelection(false);
+    }
+  }, [router, selectedArchivableShopifyIds, shopifyRows, selectedShopifyOrderIds]);
+
   const shopifyGap =
     tab === 'shopify' &&
     shopifySlice.length < PAGE_SIZE &&
@@ -622,6 +755,7 @@ export function OfficeTableSplitView({
     setDateFrom('');
     setDateTo('');
     setPoDateField('created');
+    setSelectedShopifyOrderIds(new Set());
   }, []);
 
   const selectCls =
@@ -684,7 +818,10 @@ export function OfficeTableSplitView({
       <div className="shrink-0 space-y-2 border-b bg-background px-3 py-2">
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex min-w-[12rem] max-w-[20rem] flex-1 flex-col gap-1">
-            <label htmlFor="office-table-q" className="text-[11px] font-medium text-muted-foreground">
+            <label
+              htmlFor="office-table-q"
+              className="text-[11px] font-medium text-muted-foreground"
+            >
               Search
             </label>
             <Input
@@ -696,7 +833,10 @@ export function OfficeTableSplitView({
             />
           </div>
           <div className="flex min-w-[9rem] max-w-[14rem] flex-col gap-1">
-            <label htmlFor="office-table-customer" className="text-[11px] font-medium text-muted-foreground">
+            <label
+              htmlFor="office-table-customer"
+              className="text-[11px] font-medium text-muted-foreground"
+            >
               Customer
             </label>
             <select
@@ -714,7 +854,10 @@ export function OfficeTableSplitView({
             </select>
           </div>
           <div className="flex min-w-[9rem] max-w-[14rem] flex-col gap-1">
-            <label htmlFor="office-table-supplier" className="text-[11px] font-medium text-muted-foreground">
+            <label
+              htmlFor="office-table-supplier"
+              className="text-[11px] font-medium text-muted-foreground"
+            >
               Supplier
             </label>
             <select
@@ -755,7 +898,9 @@ export function OfficeTableSplitView({
             </div>
           ) : null}
           <div className="flex flex-col gap-1">
-            <span className="text-[11px] font-medium text-muted-foreground">From</span>
+            <span className="text-[11px] font-medium text-muted-foreground">
+              From
+            </span>
             <YmdDateInput
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
@@ -763,7 +908,9 @@ export function OfficeTableSplitView({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-[11px] font-medium text-muted-foreground">To</span>
+            <span className="text-[11px] font-medium text-muted-foreground">
+              To
+            </span>
             <YmdDateInput
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
@@ -816,8 +963,38 @@ export function OfficeTableSplitView({
         ) : null}
       </div>
 
+      {tab === 'shopify' ? (
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-muted/15 px-3 py-2">
+          <span className="text-[11px] text-muted-foreground">
+            {selectedArchivableShopifyIds.length > 0
+              ? `${selectedArchivableShopifyIds.length} selected`
+              : 'Select orders to archive'}
+          </span>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-8 text-xs"
+            disabled={
+              archivingShopifySelection ||
+              selectedArchivableShopifyIds.length === 0
+            }
+            onClick={() => void handleArchiveSelectedShopifyOrders()}
+          >
+            {archivingShopifySelection
+              ? 'Archiving…'
+              : `Archive selected${
+                  selectedArchivableShopifyIds.length > 0
+                    ? ` (${selectedArchivableShopifyIds.length})`
+                    : ''
+                }`}
+          </Button>
+        </div>
+      ) : null}
+
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto">
-        {((tab === 'shopify' && shopifyLoading) || (tab === 'po' && poLoading)) ? (
+        {(tab === 'shopify' && shopifyLoading) ||
+        (tab === 'po' && poLoading) ? (
           <div
             className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center bg-background/50"
             aria-busy
@@ -829,9 +1006,11 @@ export function OfficeTableSplitView({
         {tab === 'shopify' ? (
           <table className="w-full border-collapse table-fixed">
             <colgroup>
-              <col className="w-[11%]" />
-              <col className="w-[20%]" />
+              <col className="w-[2.25rem]" />
+              <col className="w-[9%]" />
               <col className="w-[17%]" />
+              <col className="w-[2.75rem]" />
+              <col className="w-[15%]" />
               <col className="w-[9%]" />
               <col className="w-[9%]" />
               <col className="w-[8%]" />
@@ -839,8 +1018,21 @@ export function OfficeTableSplitView({
             </colgroup>
             <thead className="sticky top-0 z-[1]">
               <tr>
+                <th className={`${th} w-9 text-center`}>
+                  <span className="sr-only">Select</span>
+                  <input
+                    ref={shopifyHeaderCheckboxRef}
+                    type="checkbox"
+                    className="size-3.5 rounded border border-input align-middle"
+                    checked={allPageSelectableShopifySelected}
+                    onChange={toggleShopifySelectPage}
+                    disabled={pageSelectableShopifyIds.length === 0}
+                    aria-label="Select all orders on this page"
+                  />
+                </th>
                 <th className={th}>Order</th>
                 <th className={th}>Customer</th>
+                <th className={`${th} text-center`}>Memo</th>
                 <th className={th}>Created</th>
                 <th className={th}>Fulfill</th>
                 <th className={th}>Pay</th>
@@ -855,7 +1047,9 @@ export function OfficeTableSplitView({
                   role="button"
                   tabIndex={0}
                   className={cn(
-                    r.archived ? 'bg-muted/40 text-muted-foreground' : undefined,
+                    r.archived
+                      ? 'bg-muted/40 text-muted-foreground'
+                      : undefined,
                     r.shopifyAdminOrderUrl
                       ? 'cursor-pointer hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none'
                       : undefined,
@@ -880,8 +1074,23 @@ export function OfficeTableSplitView({
                     }
                   }}
                 >
+                  <td
+                    className={`${td} w-9 text-left align-middle`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      className="size-3.5 rounded border border-input"
+                      checked={selectedShopifyOrderIds.has(r.id)}
+                      disabled={r.archived}
+                      onChange={() => toggleShopifySelectRow(r.id, r.archived)}
+                      aria-label={`Select order ${r.orderLabel}`}
+                    />
+                  </td>
                   <td className={td}>
-                    <span className="font-mono tabular-nums">{r.orderLabel}</span>
+                    <span className="font-mono tabular-nums">
+                      {r.orderLabel}
+                    </span>
                     {r.archived ? (
                       <span className="ml-1 text-[10px] uppercase text-muted-foreground">
                         archived
@@ -889,6 +1098,21 @@ export function OfficeTableSplitView({
                     ) : null}
                   </td>
                   <td className={`${td} break-words`}>{r.customerLabel}</td>
+                  <td
+                    className={`${td} text-center align-middle`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {r.orderMemo ? (
+                      <div className="flex justify-center">
+                        <ShopifyOrderMemoPopover
+                          memo={r.orderMemo}
+                          stopRowClick
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
                   <td className={`${td} whitespace-nowrap`}>
                     {formatDateTime(r.shopifyCreatedAt)}
                   </td>
@@ -910,7 +1134,9 @@ export function OfficeTableSplitView({
                         {r.lineItemCount}
                       </Button>
                     ) : (
-                      <span className="tabular-nums text-muted-foreground">0</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        0
+                      </span>
                     )}
                   </td>
                   <td className={td} onClick={(e) => e.stopPropagation()}>
@@ -924,7 +1150,7 @@ export function OfficeTableSplitView({
               {shopifyGap ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={9}
                     className="py-12 text-center align-middle text-muted-foreground"
                   >
                     <Spinner className="mx-auto size-6" />
@@ -962,7 +1188,9 @@ export function OfficeTableSplitView({
                   role="button"
                   tabIndex={0}
                   className={cn(
-                    r.archived ? 'bg-muted/40 text-muted-foreground' : undefined,
+                    r.archived
+                      ? 'bg-muted/40 text-muted-foreground'
+                      : undefined,
                     'cursor-pointer hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none',
                   )}
                   onClick={() => void onOpenPoDetail(r.id)}
@@ -1001,10 +1229,14 @@ export function OfficeTableSplitView({
                         {r.lineItemCount}
                       </Button>
                     ) : (
-                      <span className="tabular-nums text-muted-foreground">0</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        0
+                      </span>
                     )}
                   </td>
-                  <td className={`${td} tabular-nums`}>{r.shopifyOrderCount}</td>
+                  <td className={`${td} tabular-nums`}>
+                    {r.shopifyOrderCount}
+                  </td>
                 </tr>
               ))}
               {poGap ? (

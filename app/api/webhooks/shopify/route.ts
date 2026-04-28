@@ -146,6 +146,10 @@ function restOrderToNode(o: any): ShopifyOrderNode {
                   id: `gid://shopify/ProductVariant/${li.variant_id}`,
                   title: li.variant_title ?? null,
                   sku: li.sku ?? null,
+                  product:
+                    li.product_id != null
+                      ? { id: `gid://shopify/Product/${li.product_id}` }
+                      : null,
                   inventoryItem: null,
                 }
               : null,

@@ -102,7 +102,7 @@ async function OfficeInboxContent() {
         suppliers: { orderBy: { company: 'asc' } },
       },
     }),
-    // Inbox Shopify orders: per **line** open qty vs active (non-archived) PO lines — not order↔PO.
+    // Inbox Shopify orders: per-line open qty vs PO lines (FK’d); legacy orphan lines filled in buildInboxData.
     (async () => {
       const idRows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT o.id
@@ -124,7 +124,6 @@ async function OfficeInboxContent() {
                     FROM "order".purchase_order_line_items poli
                     INNER JOIN "order".purchase_orders po ON po.id = poli.purchase_order_id
                     WHERE poli.shopify_order_line_item_id = li.id
-                      AND po.archived_at IS NULL
                   ),
                   0
                 ) < li.quantity
@@ -133,21 +132,23 @@ async function OfficeInboxContent() {
       `);
       const ids = idRows.map((r) => r.id);
       if (ids.length === 0) return [];
-      return prisma.shopifyOrder.findMany({
+      const rows = await prisma.shopifyOrder.findMany({
         where: { id: { in: ids } },
         orderBy: { shopifyCreatedAt: 'desc' },
         include: {
           customer: true,
+          /** Detect order↔PO link with no FK’d lines (legacy / archived PO only). */
+          purchaseOrders: { select: { archivedAt: true } },
           lineItems: {
             include: {
               purchaseOrderLineItems: {
-                where: { purchaseOrder: { archivedAt: null } },
                 select: { id: true, quantity: true },
               },
             },
           },
         },
       });
+      return rows;
     })(),
     prisma.shopifyVendorMapping.findMany({
       select: { vendorName: true, supplierId: true },

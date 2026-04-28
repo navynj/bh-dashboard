@@ -24,7 +24,10 @@ export function isOfficePoDeliveryDone(
 export function supplierRowHasOpenDeliveryPo(vd: ViewData | undefined): boolean {
   if (!vd || vd.type !== 'post') return false;
   return vd.purchaseOrders.some(
-    (p) => p.id !== 'new' && !isOfficePoDeliveryDone(p),
+    (p) =>
+      p.id !== 'new' &&
+      !p.archivedAt &&
+      !isOfficePoDeliveryDone(p),
   );
 }
 
@@ -36,6 +39,7 @@ export function supplierRowHasFulfilledListPo(
   return vd.purchaseOrders.some(
     (p) =>
       p.id !== 'new' &&
+      !p.archivedAt &&
       isOfficePoDeliveryDone(p) &&
       p.status !== 'completed',
   );
@@ -50,6 +54,7 @@ export function expectedDateKeysForPoTab(
   const keys: string[] = [];
   for (const po of vd.purchaseOrders) {
     if (po.id === 'new') continue;
+    if (po.archivedAt) continue;
     if (tab === 'po_created' && isOfficePoDeliveryDone(po)) continue;
     if (
       tab === 'fulfilled' &&

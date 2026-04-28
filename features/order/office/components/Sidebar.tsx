@@ -205,10 +205,11 @@ export function Sidebar({
 
     const vd = viewDataMap[firstSup.key];
     if (vd) {
-      const draftCount =
+      const draftsForNav =
         vd.type === 'pre'
-          ? vd.shopifyOrderDrafts.length
-          : (vd.shopifyOrderDrafts?.length ?? 0);
+          ? vd.shopifyOrderDrafts
+          : (vd.shopifyOrderDrafts ?? []);
+      const draftCount = draftsForNav.filter((d) => !d.archivedAt).length;
 
       if (draftCount > 0) {
         onSelectPo(firstSup.key, '__drafts__');
@@ -633,10 +634,12 @@ function TwoColumnView({
         activeVd.type === 'pre'
           ? activeVd.shopifyOrderDrafts
           : (activeVd.shopifyOrderDrafts ?? []);
-      return drafts.map((d) => ({
-        orderNumber: d.orderNumber,
-        orderedAt: d.orderedAt,
-      }));
+      return drafts
+        .filter((d) => !d.archivedAt)
+        .map((d) => ({
+          orderNumber: d.orderNumber,
+          orderedAt: d.orderedAt,
+        }));
     })();
 
   return (

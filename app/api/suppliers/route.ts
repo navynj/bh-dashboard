@@ -66,9 +66,17 @@ export async function POST(request: NextRequest) {
 
     const groupId = await resolveSupplierGroupId(prisma, data.groupId);
 
+    const instruction = (data.instruction ?? data.notes ?? '')?.trim() ?? '';
+    const payloadWithInstruction =
+      data.orderChannelPayload && typeof data.orderChannelPayload === 'object'
+        ? {
+            ...(data.orderChannelPayload as Record<string, unknown>),
+            instruction,
+          }
+        : { instruction };
     const channel = assertSupplierOrderChannel(
       data.orderChannelType,
-      data.orderChannelPayload,
+      payloadWithInstruction,
     );
     if (!channel.ok) {
       return NextResponse.json(
@@ -97,7 +105,7 @@ export async function POST(request: NextRequest) {
         officePoSupplierCode: data.officePoSupplierCode?.trim() || null,
         shopifyVendorName: data.shopifyVendorName ?? null,
         groupId,
-        notes: data.notes ?? null,
+        notes: null,
         orderChannelType: data.orderChannelType,
         orderChannelPayload: channel.payload as unknown as Prisma.InputJsonValue,
         contactName: legacy.contactName,
