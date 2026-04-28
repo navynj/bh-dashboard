@@ -471,7 +471,7 @@ export async function applyOrderEditAndCommit(
     );
   }
 
-  let calculatedOrderId = calculated.id;
+  const calculatedOrderId = calculated.id;
   const currencyCode = calculated.originalOrder.currencyCode;
   const origEdges = calculated.originalOrder.lineItems.edges;
   const zipMap = lineItemMapFromBegin(origEdges, calculated.lineItems.edges);
@@ -653,8 +653,15 @@ export async function applyOrderEditAndCommit(
       lastLineEdges = data.orderEditAddVariant.calculatedOrder.lineItems.edges;
     }
 
-    if (op.unitPriceOverride != null && data?.orderEditAddVariant?.calculatedLineItem) {
-      const cli = data.orderEditAddVariant.calculatedLineItem;
+    const edgesAfterAdd = data?.orderEditAddVariant?.calculatedOrder?.lineItems?.edges;
+    const cliFromMutation = data?.orderEditAddVariant?.calculatedLineItem ?? null;
+    const cliFallback =
+      edgesAfterAdd && edgesAfterAdd.length > 0
+        ? edgesAfterAdd[edgesAfterAdd.length - 1]?.node ?? null
+        : null;
+    const cli = cliFromMutation ?? cliFallback;
+
+    if (op.unitPriceOverride != null && cli) {
       const currentUnit = parseUnit(cli);
       const target = op.unitPriceOverride;
       const delta = target - currentUnit;

@@ -3,6 +3,7 @@
  */
 
 import { createAdminApiClient } from '@shopify/admin-api-client';
+import { shopifyMoneyAmountToDecimalString } from '@/lib/shopify/graphql-money';
 import { getShopifyAdminEnv } from '@/lib/shopify/env';
 import type { ShopifyAdminCredentials } from '@/types/shopify';
 
@@ -26,6 +27,11 @@ const PRODUCTS_SEARCH = `query OfficeProductsSearch($first: Int!, $query: String
               image {
                 url
               }
+              inventoryItem {
+                unitCost {
+                  amount
+                }
+              }
             }
           }
         }
@@ -41,6 +47,8 @@ export type OfficeProductSearchVariantHit = {
   variantTitle: string | null;
   sku: string | null;
   price: string | null;
+  /** Variant inventory unit cost (Shopify), when present. */
+  unitCost: string | null;
   /** Variant image, else product featured image. */
   imageUrl: string | null;
 };
@@ -59,8 +67,11 @@ export type OfficeProductSearchData = {
               id: string;
               title: string | null;
               sku: string | null;
-              price: string | null;
+              price?: unknown;
               image?: { url: string | null } | null;
+              inventoryItem?: {
+                unitCost?: { amount: string } | null;
+              } | null;
             };
           }>;
         };
@@ -108,7 +119,10 @@ export async function searchProductsForOffice(
         variantId: v.id,
         variantTitle: v.title,
         sku: v.sku,
-        price: v.price ?? null,
+        price: shopifyMoneyAmountToDecimalString(v.price),
+        unitCost: v.inventoryItem?.unitCost?.amount?.trim()
+          ? v.inventoryItem.unitCost.amount
+          : null,
         imageUrl,
       });
     }

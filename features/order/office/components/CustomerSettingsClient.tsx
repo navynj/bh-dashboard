@@ -71,6 +71,8 @@ export type CustomerRow = {
   displayNameOverride: string | null;
   email: string | null;
   company: string | null;
+  /** Short code for default PO numbers (e.g. MA in 6107 MA - …). */
+  officePoAccountCode: string | null;
   shippingAddress: Address | null;
   billingAddress: Address | null;
   billingSameAsShipping: boolean;
@@ -163,6 +165,7 @@ export function CustomerSettingsClient({ customers }: Props) {
   const [editing, setEditing] = useState<CustomerRow | null>(null);
   const [value, setValue] = useState('');
   const [companyValue, setCompanyValue] = useState('');
+  const [poAccountCode, setPoAccountCode] = useState('');
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [shippingAddr, setShippingAddr] = useState<Address>(EMPTY_ADDRESS);
@@ -174,6 +177,7 @@ export function CustomerSettingsClient({ customers }: Props) {
     setEditing(c);
     setValue(c.displayNameOverride ?? '');
     setCompanyValue(c.company ?? '');
+    setPoAccountCode(c.officePoAccountCode?.trim() ?? '');
     setShippingAddr((c.shippingAddress as Address) ?? { ...EMPTY_ADDRESS });
     setShippingAddrEditOpen(false);
     setBillingAddr((c.billingAddress as Address) ?? { ...EMPTY_ADDRESS });
@@ -188,6 +192,7 @@ export function CustomerSettingsClient({ customers }: Props) {
           (c.email ?? '').toLowerCase().includes(q) ||
           (c.displayNameOverride ?? '').toLowerCase().includes(q) ||
           (c.company ?? '').toLowerCase().includes(q) ||
+          (c.officePoAccountCode ?? '').toLowerCase().includes(q) ||
           (c.displayName ?? '').toLowerCase().includes(q)
         );
       })
@@ -200,6 +205,9 @@ export function CustomerSettingsClient({ customers }: Props) {
       const payload: Record<string, unknown> = { displayNameOverride: value };
       if (companyValue !== (editing.company ?? '')) {
         payload.company = companyValue;
+      }
+      if (poAccountCode.trim() !== (editing.officePoAccountCode?.trim() ?? '')) {
+        payload.officePoAccountCode = poAccountCode.trim();
       }
       const hasShipping = shippingAddr.address1.trim().length > 0;
       payload.shippingAddress = hasShipping ? shippingAddr : null;
@@ -266,7 +274,7 @@ export function CustomerSettingsClient({ customers }: Props) {
             <table className="w-full caption-bottom text-sm">
               <thead className="[&_tr]:border-b">
                 <tr className="border-b transition-colors hover:bg-muted/50">
-                  {['Display Name', 'Email', 'Company', 'Orders', ''].map(
+                  {['Display Name', 'Email', 'Company', 'PO code', 'Orders', ''].map(
                     (h, i) => (
                       <th
                         key={`${h}-${i}`}
@@ -301,6 +309,9 @@ export function CustomerSettingsClient({ customers }: Props) {
                       </td>
                       <td className="p-3 align-middle text-xs text-muted-foreground">
                         {c.company ?? '—'}
+                      </td>
+                      <td className="p-3 align-middle text-xs font-mono text-muted-foreground">
+                        {c.officePoAccountCode?.trim() || '—'}
                       </td>
                       <td className="p-3 align-middle text-right tabular-nums text-xs">
                         {c._count.orders}
@@ -364,6 +375,21 @@ export function CustomerSettingsClient({ customers }: Props) {
                 />
                 <p className="text-[10px] text-muted-foreground">
                   Synced with Shopify
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">PO account code</label>
+                <Input
+                  value={poAccountCode}
+                  onChange={(e) => setPoAccountCode(e.target.value)}
+                  className="h-8 text-sm font-mono"
+                  placeholder="e.g. MA"
+                  maxLength={40}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Short token in suggested PO numbers (e.g. 6107 MA - Millda). Hub only,
+                  not sent to Shopify.
                 </p>
               </div>
 

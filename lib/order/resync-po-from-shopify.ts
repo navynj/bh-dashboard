@@ -6,6 +6,11 @@
 
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/core/prisma';
+import {
+  detachPoLinesForFulfilledFinanciallyCanceledShopifyOrder,
+  shouldDetachPoLinesAfterFulfilledOrderFinanciallyCanceled,
+} from '@/lib/order/detach-po-lines-for-fulfilled-financially-canceled-shopify-order';
+import { deletePurchaseOrderLineItemIfNoFinalizedFulfillments } from '@/lib/order/purchase-order-line-item-delete-if-safe';
 import { recomputePurchaseOrderStatusById } from '@/lib/order/purchase-order-status';
 import { loadVariantOfficeNotesMap } from '@/lib/order/shopify-variant-office-note';
 
@@ -21,27 +26,39 @@ function toDecimal(n: Prisma.Decimal | number | null | undefined): Prisma.Decima
   return new Prisma.Decimal(n);
 }
 
-async function deletePoliIfNoFinalizedFulfillments(purchaseOrderLineItemId: string): Promise<boolean> {
-  const finalized = await prisma.fulfillmentLineItem.count({
-    where: {
-      purchaseOrderLineItemId,
-      finalizedAt: { not: null },
-    },
-  });
-  if (finalized > 0) return false;
-  await prisma.fulfillmentLineItem.deleteMany({
-    where: { purchaseOrderLineItemId },
-  });
-  await prisma.purchaseOrderLineItem.delete({
-    where: { id: purchaseOrderLineItemId },
-  });
-  return true;
-}
-
 export async function resyncPurchaseOrderLineItemsFromShopify(
   options: ResyncPurchaseOrderFromShopifyOptions,
 ): Promise<void> {
   const { purchaseOrderId, appendFromShopifyOrderId } = options;
+
+  const poInitial = await prisma.purchaseOrder.findUnique({
+    where: { id: purchaseOrderId },
+    include: {
+      supplier: { select: { shopifyVendorName: true } },
+      lineItems: { orderBy: { sequence: 'asc' } },
+      shopifyOrders: {
+        select: {
+          id: true,
+          displayFulfillmentStatus: true,
+          displayFinancialStatus: true,
+        },
+      },
+    },
+  });
+  if (!poInitial) return;
+
+  const touchedByDetach = new Set<string>();
+  for (const o of poInitial.shopifyOrders) {
+    const ids = await detachPoLinesForFulfilledFinanciallyCanceledShopifyOrder(
+      o.id,
+      o.displayFulfillmentStatus,
+      o.displayFinancialStatus,
+    );
+    for (const id of ids) touchedByDetach.add(id);
+  }
+  for (const id of touchedByDetach) {
+    await recomputePurchaseOrderStatusById(id);
+  }
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: purchaseOrderId },
@@ -56,13 +73,22 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
   const linkedOrderIds = new Set(po.shopifyOrders.map((o) => o.id));
   const vendorNorm = po.supplier.shopifyVendorName?.trim().toLowerCase() ?? null;
 
+  const linkedSoliIds = po.lineItems
+    .map((l) => l.shopifyOrderLineItemId)
+    .filter((id): id is string => Boolean(id));
+  const soliRows =
+    linkedSoliIds.length > 0
+      ? await prisma.shopifyOrderLineItem.findMany({
+          where: { id: { in: linkedSoliIds } },
+        })
+      : [];
+  const soliById = new Map(soliRows.map((s) => [s.id, s]));
+
   for (const poli of po.lineItems) {
     if (!poli.shopifyOrderLineItemId) continue;
-    const soli = await prisma.shopifyOrderLineItem.findUnique({
-      where: { id: poli.shopifyOrderLineItemId },
-    });
+    const soli = soliById.get(poli.shopifyOrderLineItemId) ?? null;
     if (!soli) {
-      await deletePoliIfNoFinalizedFulfillments(poli.id);
+      await deletePurchaseOrderLineItemIfNoFinalizedFulfillments(poli.id);
       continue;
     }
     if (!linkedOrderIds.has(soli.orderId)) {
@@ -114,6 +140,16 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
     include: { lineItems: { orderBy: { createdAt: 'asc' } } },
   });
   if (!orderWithLines) {
+    await recomputePurchaseOrderStatusById(purchaseOrderId);
+    return;
+  }
+
+  if (
+    shouldDetachPoLinesAfterFulfilledOrderFinanciallyCanceled({
+      displayFulfillmentStatus: orderWithLines.displayFulfillmentStatus,
+      displayFinancialStatus: orderWithLines.displayFinancialStatus,
+    })
+  ) {
     await recomputePurchaseOrderStatusById(purchaseOrderId);
     return;
   }

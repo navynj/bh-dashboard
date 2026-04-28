@@ -15,6 +15,8 @@ export type OfficeTableListQuery = {
   q?: string;
   customerId?: string;
   supplierId?: string;
+  /** `SupplierGroup.slug` — narrows to suppliers in that group. */
+  supplierGroupSlug?: string;
   dateFrom?: string;
   dateTo?: string;
   /** PO list only: which date column `dateFrom`/`dateTo` apply to. */
@@ -22,6 +24,8 @@ export type OfficeTableListQuery = {
 };
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
+/** Safe URL param; DB `SupplierGroup.slug` is unique. */
+const GROUP_SLUG = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
 
 function parseYmdStartUtc(ymd: string): Date | null {
   if (!YMD.test(ymd)) return null;
@@ -104,6 +108,38 @@ async function buildShopifyWhere(
     and.push({ OR: supplierOr });
   }
 
+  if (query.supplierGroupSlug) {
+    const suppliers = await prisma.supplier.findMany({
+      where: { group: { slug: query.supplierGroupSlug } },
+      select: {
+        id: true,
+        vendorMappings: { select: { vendorName: true } },
+      },
+    });
+    const ids = suppliers.map((s) => s.id);
+    const vendorNames = suppliers
+      .flatMap((s) => s.vendorMappings.map((m) => m.vendorName))
+      .filter((v): v is string => Boolean(v?.trim()));
+    if (ids.length === 0 && vendorNames.length === 0) {
+      and.push({ id: { in: [] } });
+    } else {
+      const groupOr: Prisma.ShopifyOrderWhereInput[] = [];
+      if (ids.length > 0) {
+        groupOr.push({
+          purchaseOrders: { some: { supplierId: { in: ids } } },
+        });
+      }
+      if (vendorNames.length > 0) {
+        groupOr.push({
+          lineItems: { some: { vendor: { in: vendorNames } } },
+        });
+      }
+      if (groupOr.length > 0) {
+        and.push({ OR: groupOr });
+      }
+    }
+  }
+
   const from = query.dateFrom ? parseYmdStartUtc(query.dateFrom) : null;
   const to = query.dateTo ? parseYmdEndUtc(query.dateTo) : null;
   if (from || to) {
@@ -159,6 +195,12 @@ function buildPoWhere(query: OfficeTableListQuery): Prisma.PurchaseOrderWhereInp
     and.push({ supplierId: query.supplierId });
   }
 
+  if (query.supplierGroupSlug) {
+    and.push({
+      supplier: { group: { slug: query.supplierGroupSlug } },
+    });
+  }
+
   const from = query.dateFrom ? parseYmdStartUtc(query.dateFrom) : null;
   const to = query.dateTo ? parseYmdEndUtc(query.dateTo) : null;
   if (from || to) {
@@ -185,6 +227,9 @@ export function parseOfficeTableListQuery(
   const q = sp.get('q') ?? undefined;
   const customerId = sp.get('customerId')?.trim() || undefined;
   const supplierId = sp.get('supplierId')?.trim() || undefined;
+  const rawGroupSlug = sp.get('supplierGroupSlug')?.trim() ?? '';
+  const supplierGroupSlug =
+    rawGroupSlug && GROUP_SLUG.test(rawGroupSlug) ? rawGroupSlug : undefined;
   const dateFrom = sp.get('dateFrom')?.trim() || undefined;
   const dateTo = sp.get('dateTo')?.trim() || undefined;
   const pdf = sp.get('poDateField');
@@ -196,6 +241,7 @@ export function parseOfficeTableListQuery(
     q: q || undefined,
     customerId: customerId || undefined,
     supplierId: supplierId || undefined,
+    supplierGroupSlug,
     dateFrom: dateFrom && YMD.test(dateFrom) ? dateFrom : undefined,
     dateTo: dateTo && YMD.test(dateTo) ? dateTo : undefined,
     ...(kind === 'po' ? { poDateField } : {}),

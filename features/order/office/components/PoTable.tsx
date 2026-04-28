@@ -26,6 +26,7 @@ import {
 import { formatItemPrice } from '../mappers/map-purchase-order';
 import type { ShopifyOrderEditOperation } from '@/lib/api/schemas';
 import type { OfficeProductSearchVariantHit } from '@/lib/shopify/searchProducts';
+import { ShopifyLineProductCell } from './ShopifyLineProductCell';
 import { LineItemThumb } from './LineItemThumb';
 import {
   Dialog,
@@ -36,6 +37,7 @@ import {
 } from '@/components/ui/dialog';
 
 type Props = {
+  shopifyAdminStoreHandle?: string | null;
   purchaseOrder: OfficePurchaseOrderBlock;
   lineItemsLoading?: boolean;
   onRetryLineItems?: () => void;
@@ -130,7 +132,12 @@ function nextFulfillmentStatus(
   return 'UNFULFILLED';
 }
 
-export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: Props) {
+export function PoTable({
+  shopifyAdminStoreHandle,
+  purchaseOrder,
+  lineItemsLoading,
+  onRetryLineItems,
+}: Props) {
   const router = useRouter();
   const [optimisticLineItems, setOptimisticLineItems] = useState<
     PoLineItemView[] | null
@@ -385,9 +392,15 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
         return groups.get(id)!;
       };
 
+      const soleLinkedOrderId =
+        linkedOrders.length === 1 ? linkedOrders[0].id : null;
+
       for (const [gid, o] of origByGid) {
         const row = editLines.find((d) => d.shopifyLineItemGid === gid && !d._removed);
-        const orderLocalId = items.find((i) => i.shopifyLineItemGid === gid)?.shopifyOrderId;
+        const orderLocalId =
+          row?.shopifyOrderId ??
+          items.find((i) => i.shopifyLineItemGid === gid)?.shopifyOrderId ??
+          soleLinkedOrderId;
         if (!orderLocalId) continue;
         if (!row) {
           ensure(orderLocalId).push({
@@ -482,17 +495,29 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
         }
       }
 
-      let i = 0;
+      let appendAfterSync: string | undefined;
       for (const [localOrderId, ops] of entries) {
-        i += 1;
-        const isLast = i === entries.length;
-        const addsHere = ops.some((o) => o.type === 'addVariant' || o.type === 'addCustomItem');
+        const addsHere = ops.some(
+          (o) => o.type === 'addVariant' || o.type === 'addCustomItem',
+        );
+        if (hadAdds && addsHere && newLineTargetOrderId === localOrderId) {
+          appendAfterSync = localOrderId;
+          break;
+        }
+      }
+
+      if (entries.length === 1) {
+        const [localOrderId, ops] = entries[0];
+        const addsHere = ops.some(
+          (o) => o.type === 'addVariant' || o.type === 'addCustomItem',
+        );
         const res = await fetch(`/api/order-office/shopify-orders/${localOrderId}/apply-edit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             operations: ops,
-            variantCatalogUpdates: isLast && variantCatalogUpdates.length ? variantCatalogUpdates : undefined,
+            variantCatalogUpdates:
+              variantCatalogUpdates.length > 0 ? variantCatalogUpdates : undefined,
             purchaseOrderId: purchaseOrder.id,
             appendLinesFromShopifyOrderLocalId:
               hadAdds && addsHere && newLineTargetOrderId === localOrderId
@@ -503,6 +528,56 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
           setOrderEditError(typeof body?.error === 'string' ? body.error : 'Save failed');
+          return;
+        }
+      } else {
+        const responses = await Promise.all(
+          entries.map(([localOrderId, ops]) =>
+            fetch(`/api/order-office/shopify-orders/${localOrderId}/apply-edit`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                operations: ops,
+                purchaseOrderId: purchaseOrder.id,
+                deferPurchaseOrderResync: true,
+              }),
+            }),
+          ),
+        );
+        for (const res of responses) {
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            setOrderEditError(typeof body?.error === 'string' ? body.error : 'Save failed');
+            return;
+          }
+        }
+        if (variantCatalogUpdates.length > 0) {
+          const vres = await fetch('/api/order-office/shopify/variant-catalog-updates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ updates: variantCatalogUpdates }),
+          });
+          const vbody = await vres.json().catch(() => ({}));
+          if (!vres.ok) {
+            setOrderEditError(
+              typeof vbody?.error === 'string' ? vbody.error : 'Catalog price update failed',
+            );
+            return;
+          }
+        }
+        const rres = await fetch(
+          `/api/order-office/purchase-orders/${purchaseOrder.id}/resync-from-shopify`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              appendFromShopifyOrderLocalId: appendAfterSync,
+            }),
+          },
+        );
+        const rbody = await rres.json().catch(() => ({}));
+        if (!rres.ok) {
+          setOrderEditError(typeof rbody?.error === 'string' ? rbody.error : 'PO resync failed');
           return;
         }
       }
@@ -519,6 +594,7 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
     origByGid,
     editLines,
     items,
+    linkedOrders,
     purchaseOrder.id,
     newLineTargetOrderId,
     router,
@@ -830,10 +906,25 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
       >
         <colgroup>
           <col style={{ width: '8%' }} />
-          <col style={{ width: fulfillMode ? '24%' : orderEditMode ? '22%' : '26%' }} />
+          <col
+            style={{
+              width:
+                fulfillMode && orderEditMode
+                  ? '20%'
+                  : fulfillMode
+                    ? '22%'
+                    : orderEditMode
+                      ? '24%'
+                      : '26%',
+            }}
+          />
           <col style={{ width: '9%' }} />
           <col style={{ width: '8%' }} />
-          <col style={{ width: '8%' }} />
+          <col
+            style={{
+              width: fulfillMode || orderEditMode ? '10%' : '8%',
+            }}
+          />
           <col style={{ width: fulfillMode ? '9%' : '8%' }} />
           <col style={{ width: fulfillMode ? '14%' : orderEditMode ? '13%' : '16%' }} />
           <col style={{ width: fulfillMode ? '12%' : orderEditMode ? '11%' : '13%' }} />
@@ -910,22 +1001,19 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
 
                 {/* Product */}
                 <TableCell className="px-3 py-[7px]">
-                  <div className="flex gap-2 min-w-0">
-                    <LineItemThumb imageUrl={item.imageUrl} label={formatProductLabel(item)} />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[11px] leading-tight">
-                        {formatProductLabel(item)}
-                        {item.isCustom && (
-                          <span className="text-[9px] text-muted-foreground ml-1">
-                            (custom)
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[9px] font-mono text-muted-foreground">
-                        {item.sku ?? '—'}
-                      </div>
-                    </div>
-                  </div>
+                  <ShopifyLineProductCell
+                    shopifyAdminStoreHandle={shopifyAdminStoreHandle}
+                    shopifyProductGid={item.shopifyProductGid}
+                    shopifyVariantGid={item.shopifyVariantGid}
+                    imageUrl={item.imageUrl}
+                    label={formatProductLabel(item)}
+                    sku={item.sku}
+                    afterTitle={
+                      item.isCustom ? (
+                        <span className="text-[9px] text-muted-foreground ml-1">(custom)</span>
+                      ) : null
+                    }
+                  />
                 </TableCell>
 
                 {/* Ref */}
@@ -956,7 +1044,7 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
                 <TableCell className="px-3 py-[7px] text-[11px]">
                   {editable ? (
                     <Input
-                      className="h-7 text-[11px]"
+                      className="h-7 min-w-14 w-full max-w-[5.5rem] text-[11px] tabular-nums"
                       type="number"
                       min={0}
                       value={item.quantity}
@@ -994,7 +1082,7 @@ export function PoTable({ purchaseOrder, lineItemsLoading, onRetryLineItems }: P
                         setRecv(item.id, isNaN(v) ? 0 : v);
                       }}
                       onFocus={(e) => e.target.select()}
-                      className="w-12 h-auto min-h-0 text-[11px] px-1 py-[2px] text-center md:text-[11px] disabled:opacity-30"
+                      className="min-w-14 w-full max-w-[5.5rem] h-auto min-h-0 text-[11px] px-2 py-[2px] text-center tabular-nums md:text-[11px] disabled:opacity-30"
                     />
                   ) : (
                     <span className={recvCellTone(item.fulfillmentStatus)}>

@@ -20,11 +20,21 @@ import { useRouter } from 'next/navigation';
 import { formatOfficeDateChip } from '../utils/format-date-label';
 import {
   formatVancouverYmdChip,
+  toVancouverYmd,
   toVancouverYmdFromIso,
 } from '../utils/vancouver-datetime';
+import { computeDefaultExpectedYmd } from '@/lib/order/supplier-delivery-default-date';
+import {
+  formatOfficeDefaultPoNumber,
+  officeInboxCustomerPoSegment,
+  officeInboxSupplierPoSegment,
+} from '../utils/format-office-default-po-number';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { OfficeTableSplitView } from '../components/OfficeTableSplitView';
+import {
+  OfficeTableSplitView,
+  type OfficeTableFilterOption,
+} from '../components/OfficeTableSplitView';
 import { findSupplierKeyForPurchaseOrderId } from '../utils/find-supplier-key-for-po';
 import type {
   OfficeTableViewPoRow,
@@ -45,7 +55,7 @@ import type {
   ShopifyOrderDraft,
 } from '../types';
 import type { CreatePoPayload } from '../components/MetaPanel';
-import type { SeparatePoPayload } from '../components/PrePoView';
+import type { SeparatePoPayload } from '../types';
 import {
   buildExpectedDateBuckets,
   expectedDateKeyFromPo,
@@ -65,6 +75,9 @@ import {
   patchSupplierEntryAfterPoDelete,
 } from '../utils/merge-optimistic-po-create';
 import { mergeViewDataWithOptimisticEmailSent } from '../utils/merge-view-data-optimistic-email-sent';
+import { mergeViewDataWithOptimisticEmailWaived } from '../utils/merge-view-data-optimistic-email-waived';
+import { filterInboxDraftsForDisplay } from '../utils/filter-inbox-drafts-for-display';
+import { buildPoPdfInput, openPoPdfPrint } from '../utils/purchase-order-pdf';
 
 /** PO Created tab: max expected-date chips in the bar; older dates go to “More”. */
 const MAX_EXPECTED_DATE_CHIPS = 10;
@@ -86,9 +99,7 @@ function shopifyDraftOrderedDaysForKey(
   const vd = viewDataMap[supplierKey];
   if (!vd) return new Set();
   const drafts =
-    vd.type === 'pre'
-      ? vd.shopifyOrderDrafts
-      : (vd.shopifyOrderDrafts ?? []);
+    vd.type === 'pre' ? vd.shopifyOrderDrafts : (vd.shopifyOrderDrafts ?? []);
   const days = new Set<string>();
   for (const d of drafts) {
     if (d.archivedAt) continue;
@@ -121,9 +132,7 @@ function mergeViewDataWithOptimisticDraftArchive(
   for (const key of Object.keys(viewDataMap)) {
     const vd = viewDataMap[key];
     const drafts =
-      vd.type === 'pre'
-        ? vd.shopifyOrderDrafts
-        : (vd.shopifyOrderDrafts ?? []);
+      vd.type === 'pre' ? vd.shopifyOrderDrafts : (vd.shopifyOrderDrafts ?? []);
     if (!drafts.length) continue;
     const next = drafts.map(patchDraft);
     if (!next.some((d, i) => d !== drafts[i])) continue;
@@ -160,6 +169,8 @@ function mergeViewDataWithLazyLineItems(
 }
 
 export type OrderManagementViewProps = {
+  /** Parsed from `SHOPIFY_SHOP_DOMAIN` for Admin product links in Inbox / PO tables. */
+  shopifyAdminStoreHandle?: string | null;
   initialStates: Record<SupplierKey, SupplierEntry>;
   viewDataMap: Record<SupplierKey, ViewData>;
   customerGroups: SidebarCustomerGroup[];
@@ -174,6 +185,7 @@ export type OrderManagementViewProps = {
 };
 
 export function OrderManagementView({
+  shopifyAdminStoreHandle,
   initialStates,
   viewDataMap,
   customerGroups,
@@ -189,7 +201,9 @@ export function OrderManagementView({
   void _statusTabCounts;
   const [mainPanel, setMainPanel] = useState<'grouped' | 'table'>('grouped');
   /** Table view: drill-in to same center/meta UI as Grouped view for one PO. */
-  const [tablePoDetailPoId, setTablePoDetailPoId] = useState<string | null>(null);
+  const [tablePoDetailPoId, setTablePoDetailPoId] = useState<string | null>(
+    null,
+  );
   const [states, setStates] =
     useState<Record<SupplierKey, SupplierEntry>>(initialStates);
 
@@ -217,13 +231,21 @@ export function OrderManagementView({
   const [showArchived, setShowArchived] = useState(false);
 
   /** PO Created tab: group sidebar by delivery expected date (default) or PO creation date. */
-  const [poCreatedDateMode, setPoCreatedDateMode] = useState<'delivery_expected' | 'po_created'>('delivery_expected');
+  const [poCreatedDateMode, setPoCreatedDateMode] = useState<
+    'delivery_expected' | 'po_created'
+  >('delivery_expected');
   /** Active supplier group filter by `supplier_groups.slug` (null = all). Reset on tab change. */
-  const [activeSupplierGroupSlug, setActiveSupplierGroupSlug] = useState<string | null>(null);
+  const [activeSupplierGroupSlug, setActiveSupplierGroupSlug] = useState<
+    string | null
+  >(null);
 
   // ── Draft inclusion state (lifted from OrderBlock checkboxes) ──
   const [draftInclusions, setDraftInclusions] = useState<
     Record<string, boolean[]>
+  >({});
+  /** Per Shopify order draft, per line: PO/PDF line note (starts from Item settings default). */
+  const [draftLineNotes, setDraftLineNotes] = useState<
+    Record<string, string[]>
   >({});
   const [draftPoNumber, setDraftPoNumber] = useState('');
   const [poNumberIsManual, setPoNumberIsManual] = useState(false);
@@ -260,11 +282,19 @@ export function OrderManagementView({
 
   const [optimisticEmailSentAtByPoId, setOptimisticEmailSentAtByPoId] =
     useState<Record<string, string>>({});
+  const [optimisticEmailWaivedAtByPoId, setOptimisticEmailWaivedAtByPoId] =
+    useState<Record<string, string>>({});
+  const [optimisticEmailWaivedClearPoIds, setOptimisticEmailWaivedClearPoIds] =
+    useState<Record<string, true>>({});
 
-  const [optimisticDeletedPurchaseOrderIds, setOptimisticDeletedPurchaseOrderIds] =
-    useState(() => new Set<string>());
+  const [
+    optimisticDeletedPurchaseOrderIds,
+    setOptimisticDeletedPurchaseOrderIds,
+  ] = useState(() => new Set<string>());
 
-  const [lazyPoLineItems, setLazyPoLineItems] = useState<Record<string, PoLineItemView[]>>({});
+  const [lazyPoLineItems, setLazyPoLineItems] = useState<
+    Record<string, PoLineItemView[]>
+  >({});
   const fetchedPoIdsRef = useRef(new Set<string>());
   const [lineItemRetryCount, setLineItemRetryCount] = useState(0);
 
@@ -273,6 +303,8 @@ export function OrderManagementView({
     setOptimisticUnarchivedOrderIds(new Set());
     setOptimisticPoPatchesByKey({});
     setOptimisticEmailSentAtByPoId({});
+    setOptimisticEmailWaivedAtByPoId({});
+    setOptimisticEmailWaivedClearPoIds({});
     setOptimisticDeletedPurchaseOrderIds(new Set());
     setLazyPoLineItems({});
     fetchedPoIdsRef.current.clear();
@@ -331,13 +363,23 @@ export function OrderManagementView({
       afterDeletes,
       optimisticEmailSentAtByPoId,
     );
-    return mergeViewDataWithLazyLineItems(afterEmailSent, lazyPoLineItems);
+    const waivedClearSet = new Set(
+      Object.keys(optimisticEmailWaivedClearPoIds),
+    );
+    const afterEmailWaived = mergeViewDataWithOptimisticEmailWaived(
+      afterEmailSent,
+      optimisticEmailWaivedAtByPoId,
+      waivedClearSet,
+    );
+    return mergeViewDataWithLazyLineItems(afterEmailWaived, lazyPoLineItems);
   }, [
     viewDataAfterDraftArchive,
     optimisticPoPatchSets,
     supplierCompanyByKey,
     optimisticDeletedPurchaseOrderIds,
     optimisticEmailSentAtByPoId,
+    optimisticEmailWaivedAtByPoId,
+    optimisticEmailWaivedClearPoIds,
     lazyPoLineItems,
   ]);
 
@@ -377,13 +419,23 @@ export function OrderManagementView({
   );
 
   useEffect(() => {
-    if (!selectedPoBlockId || selectedPoBlockId === '__drafts__' || selectedPoBlockId === 'new') return;
+    if (
+      !selectedPoBlockId ||
+      selectedPoBlockId === '__drafts__' ||
+      selectedPoBlockId === 'new'
+    )
+      return;
     if (fetchedPoIdsRef.current.has(selectedPoBlockId)) return;
 
     const vd = patchedViewDataMapRef.current[activeKey];
     if (!vd || vd.type !== 'post') return;
     const block = vd.purchaseOrders.find((p) => p.id === selectedPoBlockId);
-    if (!block || block.lineItems.length > 0 || !block.panelMeta?.fulfillTotalCount) return;
+    if (
+      !block ||
+      block.lineItems.length > 0 ||
+      !block.panelMeta?.fulfillTotalCount
+    )
+      return;
 
     fetchedPoIdsRef.current.add(selectedPoBlockId);
     const poIdToFetch = selectedPoBlockId;
@@ -392,7 +444,10 @@ export function OrderManagementView({
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((data: { officeBlock?: OfficePurchaseOrderBlock }) => {
         if (data.officeBlock?.lineItems) {
-          setLazyPoLineItems((prev) => ({ ...prev, [poIdToFetch]: data.officeBlock!.lineItems }));
+          setLazyPoLineItems((prev) => ({
+            ...prev,
+            [poIdToFetch]: data.officeBlock!.lineItems,
+          }));
         }
       })
       .catch(() => {
@@ -416,14 +471,111 @@ export function OrderManagementView({
       ...prev,
       [poId]: new Date().toISOString(),
     }));
+    setOptimisticEmailWaivedAtByPoId((prev) => {
+      const next = { ...prev };
+      delete next[poId];
+      return next;
+    });
+    setOptimisticEmailWaivedClearPoIds((prev) => {
+      const next = { ...prev };
+      delete next[poId];
+      return next;
+    });
   }, []);
+
+  const handlePoEmailDeliveryWaivedChange = useCallback(
+    async (poId: string, waived: boolean) => {
+      try {
+        const res = await fetch(`/api/purchase-orders/${poId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ emailDeliveryWaived: waived }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          toast.error(
+            typeof body?.error === 'string' ? body.error : 'Could not update',
+          );
+          return;
+        }
+        if (waived) {
+          setOptimisticEmailWaivedClearPoIds((prev) => {
+            const next = { ...prev };
+            delete next[poId];
+            return next;
+          });
+          setOptimisticEmailWaivedAtByPoId((prev) => ({
+            ...prev,
+            [poId]: new Date().toISOString(),
+          }));
+          toast.success('Reminder dismissed — not sending email for this PO.');
+        } else {
+          setOptimisticEmailWaivedAtByPoId((prev) => {
+            const next = { ...prev };
+            delete next[poId];
+            return next;
+          });
+          setOptimisticEmailWaivedClearPoIds((prev) => ({
+            ...prev,
+            [poId]: true,
+          }));
+          toast.success('Send reminder restored for this PO.');
+        }
+        router.refresh();
+      } catch {
+        toast.error('Network error');
+      }
+    },
+    [router],
+  );
+
+  /** After PO create: quick Print without leaving Inbox (send email stays in Meta / order panel). */
+  const showPoCreatedFollowUpToast = useCallback(
+    (
+      block: OfficePurchaseOrderBlock,
+      rowEntry: SupplierEntry,
+      supplierKey: SupplierKey,
+    ) => {
+      const custKey = supplierKey.split('::')[0] ?? '';
+      const group = customerGroups.find((c) => c.id === custKey);
+      const printHeadline =
+        group?.company?.trim() || group?.name?.trim() || null;
+
+      const doPrint = () => {
+        const input = buildPoPdfInput({
+          block,
+          supplierCompany: rowEntry.supplierCompany,
+          customerHeadline: printHeadline,
+          fallbackBillingAddress: group?.defaultBillingAddress ?? null,
+          fallbackShippingAddress: group?.defaultShippingAddress ?? null,
+        });
+        if (input) openPoPdfPrint(input);
+      };
+
+      const doViewPo = () => {
+        setMainPanel('grouped');
+        pendingNewPoForPoCreatedTabRef.current = {
+          supplierKey,
+          poId: block.id,
+        };
+        setActiveStatusTab('po_created');
+        setActiveKey(supplierKey);
+        setSelectedPoBlockId(block.id);
+      };
+
+      toast.success(`PO #${block.poNumber} created`, {
+        cancel: { label: 'View PO', onClick: doViewPo },
+        action: { label: 'Print PO', onClick: doPrint },
+      });
+    },
+    [customerGroups],
+  );
 
   const tableCustomerFilterOptions = useMemo(
     () =>
       customerGroups
         .filter(
-          (g) =>
-            g.id !== '__unknown_customer__' && !g.id.startsWith('email::'),
+          (g) => g.id !== '__unknown_customer__' && !g.id.startsWith('email::'),
         )
         .map((g) => ({ id: g.id, label: g.name }))
         .sort((a, b) => a.label.localeCompare(b.label)),
@@ -445,6 +597,14 @@ export function OrderManagementView({
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [customerGroups]);
 
+  const tableSupplierGroupFilterOptions = useMemo<OfficeTableFilterOption[]>(
+    () =>
+      supplierGroupFilterOptions
+        .map((g) => ({ id: g.slug, label: g.name }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [supplierGroupFilterOptions],
+  );
+
   const computedCounts = useMemo(() => {
     const counts = {
       without_po: 0,
@@ -461,11 +621,7 @@ export function OrderManagementView({
       if (e.withoutPoDraftCount > 0) counts.without_po++;
       const vd = patchedViewDataMap[key];
       if (e.poCreated && supplierRowHasOpenDeliveryPo(vd)) counts.po_created++;
-      if (
-        e.poCreated &&
-        supplierRowHasFulfilledListPo(vd) &&
-        !e.allCompleted
-      ) {
+      if (e.poCreated && supplierRowHasFulfilledListPo(vd) && !e.allCompleted) {
         counts.fulfilled++;
       }
       if (e.allCompleted) counts.completed++;
@@ -484,20 +640,28 @@ export function OrderManagementView({
   const currentDrafts = useMemo(() => {
     const raw = patchedViewDataMap[activeKey];
     if (!raw) return [];
+    const entryLocal = states[activeKey] ?? null;
     const list =
-      raw.type === 'pre'
+      entryLocal?.poCreated && raw.type === 'pre'
         ? raw.shopifyOrderDrafts
-        : (raw.shopifyOrderDrafts ?? []);
-    if (showArchived) return list;
-    return list.filter((d) => !d.archivedAt);
-  }, [patchedViewDataMap, activeKey, showArchived]);
+        : raw.type === 'pre'
+          ? raw.shopifyOrderDrafts
+          : (raw.shopifyOrderDrafts ?? []);
+    const open = showArchived ? list : list.filter((d) => !d.archivedAt);
+    if (activeStatusTab !== 'without_po') return open;
+    const pos = raw.type === 'post' ? raw.purchaseOrders : undefined;
+    return filterInboxDraftsForDisplay(open, pos);
+  }, [patchedViewDataMap, activeKey, showArchived, activeStatusTab, states]);
 
   useEffect(() => {
     const inc: Record<string, boolean[]> = {};
+    const notes: Record<string, string[]> = {};
     for (const d of currentDrafts) {
       inc[d.id] = d.lineItems.map((li) => li.includeInPo);
+      notes[d.id] = d.lineItems.map((li) => li.defaultPoLineNote?.trim() ?? '');
     }
     setDraftInclusions(inc);
+    setDraftLineNotes(notes);
     setPoNumberIsManual(false);
     setDraftPoNumber('');
   }, [activeKey, currentDrafts]);
@@ -505,32 +669,31 @@ export function OrderManagementView({
   const autoPoNumber = useMemo(() => {
     const included = currentDrafts.filter((d) => {
       const inc = draftInclusions[d.id];
-      return inc
-        ? inc.some(Boolean)
-        : d.lineItems.some((li) => li.includeInPo);
+      return inc ? inc.some(Boolean) : d.lineItems.some((li) => li.includeInPo);
     });
     if (included.length === 0) return '';
 
     // Pick the order with the most included line items
     const topOrder = [...included].sort((a, b) => {
-      const aCount = (draftInclusions[a.id] ?? a.lineItems.map((li) => li.includeInPo))
-        .filter(Boolean).length;
-      const bCount = (draftInclusions[b.id] ?? b.lineItems.map((li) => li.includeInPo))
-        .filter(Boolean).length;
+      const aCount = (
+        draftInclusions[a.id] ?? a.lineItems.map((li) => li.includeInPo)
+      ).filter(Boolean).length;
+      const bCount = (
+        draftInclusions[b.id] ?? b.lineItems.map((li) => li.includeInPo)
+      ).filter(Boolean).length;
       return bCount - aCount;
     })[0];
 
-    const orderNum = topOrder.orderNumber.replace(/^#/, '');
-
-    // Customer alias: same fallback as sidebar name display
     const custKey = activeKey.split('::')[0] ?? '';
     const custGroup = customerGroups.find((g) => g.id === custKey);
-    const custLabel = custGroup?.name ?? '';
-
     const entry = states[activeKey];
-    const supplierName = entry?.supplierCompany ?? '';
+    if (!custGroup || !entry) return '';
 
-    return `${orderNum} ${custLabel} - ${supplierName}`;
+    return formatOfficeDefaultPoNumber({
+      shopifyOrderNumber: topOrder.orderNumber,
+      customerSegment: officeInboxCustomerPoSegment(custGroup),
+      supplierSegment: officeInboxSupplierPoSegment(entry),
+    });
   }, [currentDrafts, draftInclusions, activeKey, customerGroups, states]);
 
   const effectivePoNumber =
@@ -541,6 +704,31 @@ export function OrderManagementView({
       setDraftInclusions((prev) => {
         const arr = [...(prev[orderId] ?? [])];
         arr[itemIdx] = !arr[itemIdx];
+        return { ...prev, [orderId]: arr };
+      });
+    },
+    [],
+  );
+
+  /** Inbox: every line on every visible draft order → include / exclude for PO create. */
+  const handleSetAllLineIncludes = useCallback(
+    (include: boolean) => {
+      setDraftInclusions((prev) => {
+        const next = { ...prev };
+        for (const d of currentDrafts) {
+          next[d.id] = d.lineItems.map(() => include);
+        }
+        return next;
+      });
+    },
+    [currentDrafts],
+  );
+
+  const handleLineItemNoteChange = useCallback(
+    (orderId: string, itemIdx: number, value: string) => {
+      setDraftLineNotes((prev) => {
+        const arr = [...(prev[orderId] ?? [])];
+        arr[itemIdx] = value;
         return { ...prev, [orderId]: arr };
       });
     },
@@ -562,8 +750,7 @@ export function OrderManagementView({
       key: SupplierKey,
       payload?: CreatePoPayload,
     ): Promise<
-      | { ok: true }
-      | { ok: false; reason: 'duplicate_po_number' | 'unknown' }
+      { ok: true } | { ok: false; reason: 'duplicate_po_number' | 'unknown' }
     > => {
       const entry = states[key];
       if (!entry) return { ok: false, reason: 'unknown' };
@@ -573,12 +760,25 @@ export function OrderManagementView({
         parts.length >= 2 && parts[1] !== 'without-po' ? parts[1] : null;
 
       const raw = patchedViewDataMap[key];
+      const entryLocal = states[key] ?? null;
       const drafts =
-        raw?.type === 'pre'
+        entryLocal?.poCreated && raw?.type === 'pre'
           ? raw.shopifyOrderDrafts
-          : (raw?.shopifyOrderDrafts ?? []);
+          : raw?.type === 'pre'
+            ? raw.shopifyOrderDrafts
+            : (raw?.shopifyOrderDrafts ?? []);
+      const openDrafts = showArchived
+        ? drafts
+        : drafts.filter((d) => !d.archivedAt);
+      const filteredDrafts =
+        activeStatusTab === 'without_po'
+          ? filterInboxDraftsForDisplay(
+              openDrafts,
+              raw?.type === 'post' ? raw.purchaseOrders : undefined,
+            )
+          : openDrafts;
 
-      const includedDrafts = drafts.filter((d) => {
+      const includedDrafts = filteredDrafts.filter((d) => {
         const inc = draftInclusions[d.id];
         return inc
           ? inc.some(Boolean)
@@ -591,20 +791,25 @@ export function OrderManagementView({
 
       const lineItems = includedDrafts.flatMap((d) => {
         const inc = draftInclusions[d.id];
-        return d.lineItems
-          .filter((_, idx) => (inc ? inc[idx] : true))
-          .map((li) => ({
-            sku: li.sku,
-            productTitle: li.productTitle,
-            quantity: li.quantity,
-            itemPrice: li.itemPrice ? parseFloat(li.itemPrice) : null,
-            supplierRef: supplierRefFromSku(li.sku),
-            isCustom: !li.shopifyVariantGid,
-            shopifyLineItemId: li.shopifyLineItemId ?? null,
-            shopifyLineItemGid: li.shopifyLineItemGid ?? null,
-            shopifyVariantGid: li.shopifyVariantGid ?? null,
-            shopifyProductGid: li.shopifyProductGid ?? null,
-          }));
+        const noteArr = draftLineNotes[d.id];
+        return d.lineItems.flatMap((li, idx) => {
+          if (inc && !inc[idx]) return [];
+          return [
+            {
+              sku: li.sku,
+              productTitle: li.productTitle,
+              quantity: li.quantity,
+              itemPrice: li.itemPrice ? parseFloat(li.itemPrice) : null,
+              supplierRef: supplierRefFromSku(li.sku),
+              isCustom: !li.shopifyVariantGid,
+              shopifyLineItemId: li.shopifyLineItemId ?? null,
+              shopifyLineItemGid: li.shopifyLineItemGid ?? null,
+              shopifyVariantGid: li.shopifyVariantGid ?? null,
+              shopifyProductGid: li.shopifyProductGid ?? null,
+              note: (noteArr?.[idx] ?? '').trim(),
+            },
+          ];
+        });
       });
 
       try {
@@ -653,16 +858,8 @@ export function OrderManagementView({
                 }),
               };
             });
-            toast.success(`PO #${officeBlock.poNumber} created`, {
-              action: {
-                label: 'View PO',
-                onClick: () => {
-                  setActiveStatusTab('po_created');
-                  setActiveKey(key);
-                  setSelectedPoBlockId(officeBlock.id);
-                },
-              },
-            });
+            setSelectedPoBlockId(officeBlock.id);
+            showPoCreatedFollowUpToast(officeBlock, entry, key);
           }
           router.refresh();
           return { ok: true };
@@ -672,6 +869,7 @@ export function OrderManagementView({
         if (res.status === 409 && body?.code === 'PO_NUMBER_TAKEN') {
           return { ok: false, reason: 'duplicate_po_number' };
         }
+        if (body?.error) toast.error(String(body.error));
         return { ok: false, reason: 'unknown' };
       } catch (err) {
         console.error('Create PO error:', err);
@@ -682,9 +880,13 @@ export function OrderManagementView({
       states,
       patchedViewDataMap,
       draftInclusions,
+      draftLineNotes,
       effectivePoNumber,
       router,
       customerGroups,
+      activeStatusTab,
+      showArchived,
+      showPoCreatedFollowUpToast,
     ],
   );
 
@@ -698,21 +900,38 @@ export function OrderManagementView({
         parts.length >= 2 && parts[1] !== 'without-po' ? parts[1] : null;
 
       const raw = patchedViewDataMap[activeKey];
+      const entryLocalSp = states[activeKey] ?? null;
       const drafts =
-        raw?.type === 'pre'
+        entryLocalSp?.poCreated && raw?.type === 'pre'
           ? raw.shopifyOrderDrafts
-          : (raw?.shopifyOrderDrafts ?? []);
+          : raw?.type === 'pre'
+            ? raw.shopifyOrderDrafts
+            : (raw?.shopifyOrderDrafts ?? []);
+      const openDraftsSp = showArchived
+        ? drafts
+        : drafts.filter((d) => !d.archivedAt);
+      const draftPool =
+        activeStatusTab === 'without_po'
+          ? filterInboxDraftsForDisplay(
+              openDraftsSp,
+              raw?.type === 'post' ? raw.purchaseOrders : undefined,
+            )
+          : openDraftsSp;
       const targetNorm = payload.shopifyOrderNumber.replace(/^#/, '').trim();
-      const matchedDraft = drafts.find(
+      const matchedDraft = draftPool.find(
         (d) => d.orderNumber.replace(/^#/, '').trim() === targetNorm,
       );
+
+      const poNumberForCreate = payload.poNumber.trim()
+        ? payload.poNumber.trim()
+        : 'AUTO';
 
       try {
         const res = await fetch('/api/purchase-orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            poNumber: 'AUTO',
+            poNumber: poNumberForCreate,
             supplierId,
             currency: 'CAD',
             expectedDate: payload.expectedDate,
@@ -728,8 +947,11 @@ export function OrderManagementView({
               shopifyLineItemGid: li.shopifyLineItemGid ?? null,
               shopifyVariantGid: li.shopifyVariantGid ?? null,
               shopifyProductGid: li.shopifyProductGid ?? null,
+              note: li.note != null ? String(li.note).trim() : '',
             })),
             shopifyOrderRefs: [{ orderNumber: payload.shopifyOrderNumber }],
+            shippingAddress: payload.shippingAddress ?? undefined,
+            billingSameAsShipping: true,
           }),
         });
 
@@ -762,17 +984,33 @@ export function OrderManagementView({
               };
             });
             setSelectedPoBlockId(officeBlock.id);
+            showPoCreatedFollowUpToast(officeBlock, entry, activeKey);
           }
           router.refresh();
           return;
         }
         const body = await res.json().catch(() => null);
         console.error('Separate PO failed:', body?.error ?? res.statusText);
+        if (res.status === 409 && body?.code === 'PO_NUMBER_TAKEN') {
+          toast.error(
+            'This PO number is already in use. Change the PO number in the dialog and try again.',
+          );
+        } else if (body?.error) {
+          toast.error(String(body.error));
+        }
       } catch (err) {
         console.error('Separate PO error:', err);
       }
     },
-    [states, activeKey, router, patchedViewDataMap],
+    [
+      states,
+      activeKey,
+      router,
+      patchedViewDataMap,
+      activeStatusTab,
+      showArchived,
+      showPoCreatedFollowUpToast,
+    ],
   );
 
   const handleEditPo = useCallback(
@@ -784,8 +1022,7 @@ export function OrderManagementView({
         poNumber?: string;
       },
     ): Promise<
-      | { ok: true }
-      | { ok: false; reason: 'duplicate_po_number' | 'unknown' }
+      { ok: true } | { ok: false; reason: 'duplicate_po_number' | 'unknown' }
     > => {
       try {
         const res = await fetch(`/api/purchase-orders/${poId}`, {
@@ -802,6 +1039,7 @@ export function OrderManagementView({
         if (res.status === 409 && body?.code === 'PO_NUMBER_TAKEN') {
           return { ok: false, reason: 'duplicate_po_number' };
         }
+        if (body?.error) toast.error(String(body.error));
         return { ok: false, reason: 'unknown' };
       } catch (err) {
         console.error('Edit PO error:', err);
@@ -951,7 +1189,8 @@ export function OrderManagementView({
             archive: true,
           }),
         });
-        if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+        if (!res.ok)
+          throw new Error(await res.text().catch(() => res.statusText));
         router.refresh();
       } catch (err) {
         setStates((prev) => ({ ...prev, [key]: snapshot }));
@@ -1018,7 +1257,8 @@ export function OrderManagementView({
             archive: false,
           }),
         });
-        if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+        if (!res.ok)
+          throw new Error(await res.text().catch(() => res.statusText));
         router.refresh();
       } catch (err) {
         setStates((prev) => ({ ...prev, [key]: snapshot }));
@@ -1039,7 +1279,9 @@ export function OrderManagementView({
       const key = activeKey;
       const entryBefore = states[key];
 
-      setOptimisticArchivedOrderIds((prev) => new Set(prev).add(shopifyOrderDbId));
+      setOptimisticArchivedOrderIds((prev) =>
+        new Set(prev).add(shopifyOrderDbId),
+      );
       setOptimisticUnarchivedOrderIds((prev) => {
         const n = new Set(prev);
         n.delete(shopifyOrderDbId);
@@ -1073,7 +1315,8 @@ export function OrderManagementView({
             archive: true,
           }),
         });
-        if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+        if (!res.ok)
+          throw new Error(await res.text().catch(() => res.statusText));
         router.refresh();
       } catch (err) {
         setOptimisticArchivedOrderIds((prev) => {
@@ -1095,7 +1338,9 @@ export function OrderManagementView({
       const key = activeKey;
       const entryBefore = states[key];
 
-      setOptimisticUnarchivedOrderIds((prev) => new Set(prev).add(shopifyOrderDbId));
+      setOptimisticUnarchivedOrderIds((prev) =>
+        new Set(prev).add(shopifyOrderDbId),
+      );
       setOptimisticArchivedOrderIds((prev) => {
         const n = new Set(prev);
         n.delete(shopifyOrderDbId);
@@ -1126,7 +1371,8 @@ export function OrderManagementView({
             archive: false,
           }),
         });
-        if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+        if (!res.ok)
+          throw new Error(await res.text().catch(() => res.statusText));
         router.refresh();
       } catch (err) {
         setOptimisticUnarchivedOrderIds((prev) => {
@@ -1163,7 +1409,10 @@ export function OrderManagementView({
     }
 
     // PO Created tab in "PO Created" date mode — chip dates from poCreatedAt
-    if (activeStatusTab === 'po_created' && poCreatedDateMode === 'po_created') {
+    if (
+      activeStatusTab === 'po_created' &&
+      poCreatedDateMode === 'po_created'
+    ) {
       const dateSet = new Set<string>();
       for (const [key, entry] of Object.entries(states)) {
         if (entry.isArchived) continue;
@@ -1176,11 +1425,18 @@ export function OrderManagementView({
           if (d) dateSet.add(d);
         }
       }
-      const allPresets: Period[] = [...dateSet].sort().reverse().map((d) => {
-        let displayLabel: string;
-        try { displayLabel = formatOfficeDateChip(d); } catch { displayLabel = d; }
-        return { id: `po_created_${d}`, label: displayLabel, from: d, to: d };
-      });
+      const allPresets: Period[] = [...dateSet]
+        .sort()
+        .reverse()
+        .map((d) => {
+          let displayLabel: string;
+          try {
+            displayLabel = formatOfficeDateChip(d);
+          } catch {
+            displayLabel = d;
+          }
+          return { id: `po_created_${d}`, label: displayLabel, from: d, to: d };
+        });
       return {
         tabPeriods: allPresets.slice(0, MAX_EXPECTED_DATE_CHIPS),
         moreExpectedPeriods: allPresets.slice(MAX_EXPECTED_DATE_CHIPS),
@@ -1275,7 +1531,14 @@ export function OrderManagementView({
       moreExpectedPeriods: [] as Period[],
       dateLabel: 'Period',
     };
-  }, [activeStatusTab, showArchived, states, periods, patchedViewDataMap, poCreatedDateMode]);
+  }, [
+    activeStatusTab,
+    showArchived,
+    states,
+    periods,
+    patchedViewDataMap,
+    poCreatedDateMode,
+  ]);
 
   const matchesStatusTab = useCallback(
     (e: SupplierEntry, vd: ViewData | undefined, tab: StatusTab): boolean => {
@@ -1289,9 +1552,7 @@ export function OrderManagementView({
           return e.poCreated && supplierRowHasOpenDeliveryPo(vd);
         case 'fulfilled':
           return (
-            e.poCreated &&
-            supplierRowHasFulfilledListPo(vd) &&
-            !e.allCompleted
+            e.poCreated && supplierRowHasFulfilledListPo(vd) && !e.allCompleted
           );
         case 'completed':
           return e.allCompleted;
@@ -1346,6 +1607,7 @@ export function OrderManagementView({
           : undefined;
       if (!entry || !po) return;
       const tab = pickStatusTabForEmailAlertPo({ entry, vd, po });
+      setMainPanel('grouped');
       pendingPoNavigationRef.current = {
         supplierKey: it.supplierKey,
         poId: it.purchaseOrderId,
@@ -1358,7 +1620,11 @@ export function OrderManagementView({
   );
 
   const matchesPeriod = useCallback(
-    (supplierKey: SupplierKey, e: SupplierEntry, period: PeriodKey): boolean => {
+    (
+      supplierKey: SupplierKey,
+      e: SupplierEntry,
+      period: PeriodKey,
+    ): boolean => {
       if (period === 'all') return true;
 
       if (showArchived && e.isArchived) {
@@ -1418,14 +1684,19 @@ export function OrderManagementView({
       if (period === 'custom') {
         if (!customFrom && !customTo) return true;
         // PO Created tab in po_created date mode — range by poCreatedAt
-        if (activeStatusTab === 'po_created' && poCreatedDateMode === 'po_created') {
+        if (
+          activeStatusTab === 'po_created' &&
+          poCreatedDateMode === 'po_created'
+        ) {
           const vd = patchedViewDataMap[supplierKey];
           if (vd?.type !== 'post') return false;
           return vd.purchaseOrders.some((po) => {
             if (po.id === 'new' || isOfficePoDeliveryDone(po)) return false;
             const d = po.poCreatedAt?.slice(0, 10);
             if (!d) return false;
-            return (!customFrom || d >= customFrom) && (!customTo || d <= customTo);
+            return (
+              (!customFrom || d >= customFrom) && (!customTo || d <= customTo)
+            );
           });
         }
         if (
@@ -1575,17 +1846,7 @@ export function OrderManagementView({
    * Keeps one effect so a follow-up “repair” effect does not clear `selectedPoBlockId`.
    */
   useEffect(() => {
-    if (mainPanel === 'table') return;
-
-    const tabChanged =
-      prevStatusTabRef.current != null &&
-      prevStatusTabRef.current !== activeStatusTab;
-    prevStatusTabRef.current = activeStatusTab;
-
-    if (tabChanged && activeStatusTab !== 'po_created') {
-      pendingNewPoForPoCreatedTabRef.current = null;
-    }
-
+    /** Alert strip: apply PO focus even when Table view is open (handler switches to Grouped). */
     const pending = pendingPoNavigationRef.current;
     if (pending) {
       pendingPoNavigationRef.current = null;
@@ -1595,8 +1856,26 @@ export function OrderManagementView({
       if (visible) {
         setActiveKey(pending.supplierKey);
         setSelectedPoBlockId(pending.poId);
+        /**
+         * Alert handler already updated `activeStatusTab` before this effect runs.
+         * If we return early without syncing `prevStatusTabRef`, the next effect pass
+         * still sees an old ref → `tabChanged` stays true → `setSelectedPoBlockId(null)`
+         * runs and clears the PO we just focused.
+         */
+        prevStatusTabRef.current = activeStatusTab;
         return;
       }
+    }
+
+    if (mainPanel === 'table') return;
+
+    const tabChanged =
+      prevStatusTabRef.current != null &&
+      prevStatusTabRef.current !== activeStatusTab;
+    prevStatusTabRef.current = activeStatusTab;
+
+    if (tabChanged && activeStatusTab !== 'po_created') {
+      pendingNewPoForPoCreatedTabRef.current = null;
     }
 
     const postCreatePick = pendingNewPoForPoCreatedTabRef.current;
@@ -1644,7 +1923,9 @@ export function OrderManagementView({
           const candidates = currentVd.purchaseOrders.filter(
             (p) => p.id !== 'new' && (!filter || filter(p)),
           );
-          const next = candidates[0] ?? currentVd.purchaseOrders.find((p) => p.id !== 'new');
+          const next =
+            candidates[0] ??
+            currentVd.purchaseOrders.find((p) => p.id !== 'new');
           if (next) {
             setSelectedPoBlockId(next.id);
             return;
@@ -1674,7 +1955,9 @@ export function OrderManagementView({
         : activePeriod.startsWith('po_created_')
           ? activePeriod.replace('po_created_', '')
           : null,
-      bucketStyle: showArchived ? ('ordered' as const) : ('delivery_expected' as const),
+      bucketStyle: showArchived
+        ? ('ordered' as const)
+        : ('delivery_expected' as const),
       includePo: expectedDateBucketPoFilter,
       bucketByField: usePoCreatedBuckets ? ('po_created' as const) : undefined,
     };
@@ -1705,7 +1988,8 @@ export function OrderManagementView({
       const candidates = raw.purchaseOrders.filter(
         (p) => p.id !== 'new' && (!filter || filter(p)),
       );
-      const pick = candidates[0] ?? raw.purchaseOrders.find((p) => p.id !== 'new');
+      const pick =
+        candidates[0] ?? raw.purchaseOrders.find((p) => p.id !== 'new');
       if (pick) setSelectedPoBlockId(pick.id);
     }
   }, [
@@ -1886,7 +2170,17 @@ export function OrderManagementView({
       draftCount > 0 &&
       (activeStatusTab === 'without_po' || activeStatusTab === 'inbox')
     ) {
-      setSelectedPoBlockId('__drafts__');
+      // Default to drafts for inbox work, but keep a real PO selected when it still
+      // exists (e.g. right after create — print in meta, then pick next inbox lines).
+      setSelectedPoBlockId((prev) => {
+        if (prev && prev !== '__drafts__' && prev !== 'new') {
+          const purchaseOrders = raw.type === 'post' ? raw.purchaseOrders : [];
+          if (purchaseOrders.some((p) => p.id === prev && p.id !== 'new')) {
+            return prev;
+          }
+        }
+        return '__drafts__';
+      });
       return;
     }
 
@@ -1926,7 +2220,14 @@ export function OrderManagementView({
       if (stillValid) return prev;
       return vd.purchaseOrders[0].id;
     });
-  }, [activeKey, activeStatusTab, entry?.poCreated, patchedViewDataMap, entry, mainPanel]);
+  }, [
+    activeKey,
+    activeStatusTab,
+    entry?.poCreated,
+    patchedViewDataMap,
+    entry,
+    mainPanel,
+  ]);
 
   let selectedPoPanelMeta: PoPanelMeta | undefined;
   if (viewData.type === 'post' && selectedPoBlockId) {
@@ -1945,9 +2246,43 @@ export function OrderManagementView({
     };
   }, [activeKey, customerGroups]);
 
+  /** Latest Vancouver order-day among drafts included for “Create PO” (min allowed expected date). */
+  const minExpectedYmdFromIncludedDrafts = useMemo(() => {
+    const includedDrafts = currentDrafts.filter((d) => {
+      const inc = draftInclusions[d.id];
+      return inc ? inc.some(Boolean) : d.lineItems.some((li) => li.includeInPo);
+    });
+    const ymds = includedDrafts
+      .map((d) => (d.orderedAt ? toVancouverYmdFromIso(d.orderedAt) : null))
+      .filter((y): y is string => Boolean(y));
+    if (ymds.length === 0) return null;
+    return ymds.sort((a, b) => a.localeCompare(b)).at(-1)!;
+  }, [currentDrafts, draftInclusions]);
+
+  const defaultExpectedYmd = useMemo(() => {
+    const creationYmd = toVancouverYmd(new Date());
+    if (!entry) return creationYmd;
+    const ref = entry.latestOrderedAt ?? creationYmd;
+    let y = computeDefaultExpectedYmd({
+      schedule: entry.deliverySchedule,
+      referenceYmd: ref,
+      creationYmd,
+    });
+    if (
+      minExpectedYmdFromIncludedDrafts &&
+      y < minExpectedYmdFromIncludedDrafts
+    ) {
+      y = minExpectedYmdFromIncludedDrafts;
+    }
+    return y;
+  }, [entry, minExpectedYmdFromIncludedDrafts]);
+
   const selectedPoPrintBlock =
-    viewData.type === 'post' && selectedPoBlockId && selectedPoBlockId !== '__drafts__'
-      ? (viewData.purchaseOrders.find((b) => b.id === selectedPoBlockId) ?? null)
+    viewData.type === 'post' &&
+    selectedPoBlockId &&
+    selectedPoBlockId !== '__drafts__'
+      ? (viewData.purchaseOrders.find((b) => b.id === selectedPoBlockId) ??
+        null)
       : null;
 
   const poEmailDeliveryAlertItems = useMemo(
@@ -1965,6 +2300,21 @@ export function OrderManagementView({
     const g = customerGroups.find((c) => c.id === custKey);
     return g?.company?.trim() || g?.name?.trim() || null;
   }, [activeKey, customerGroups]);
+
+  const defaultSeparatePoNumberForOrder = useCallback(
+    (order: ShopifyOrderDraft) => {
+      const custKey = activeKey.split('::')[0] ?? '';
+      const g = customerGroups.find((c) => c.id === custKey);
+      const row = states[activeKey];
+      if (!g || !row) return '';
+      return formatOfficeDefaultPoNumber({
+        shopifyOrderNumber: order.orderNumber,
+        customerSegment: officeInboxCustomerPoSegment(g),
+        supplierSegment: officeInboxSupplierPoSegment(row),
+      });
+    },
+    [activeKey, customerGroups, states],
+  );
 
   const lineItemsLoading =
     !!selectedPoBlockId &&
@@ -1990,7 +2340,8 @@ export function OrderManagementView({
         }
         poEmailSentAt={selectedPoPanelMeta?.emailSentAt ?? null}
         poEmailDeliveryOutstanding={
-          selectedPoPrintBlock?.emailDeliveryOutstanding ?? false
+          activeStatusTab === 'po_created' &&
+          (selectedPoPrintBlock?.emailDeliveryOutstanding ?? false)
         }
         selectedPoBlockId={selectedPoBlockId}
         emailDeliveries={selectedPoPanelMeta?.emailDeliveries ?? []}
@@ -2001,43 +2352,72 @@ export function OrderManagementView({
           selectedPoPanelMeta?.emailReplyReceivedAt ?? null
         }
         onReplyReceivedChange={handleReplyReceivedChange}
+        poEmailDeliveryWaivedAt={
+          selectedPoPanelMeta?.emailDeliveryWaivedAt ?? null
+        }
+        onPoEmailDeliveryWaivedChange={handlePoEmailDeliveryWaivedChange}
       />
 
       <div className="flex min-h-0 flex-1 bg-muted/30">
         <div className="min-w-0 flex-1 overflow-y-auto p-3.5">
-          {selectedPoBlockId === '__drafts__' &&
-          viewData.type === 'post' &&
-          viewData.shopifyOrderDrafts?.length ? (
-            <PrePoView
-              viewData={{
-                type: 'pre',
-                shopifyOrderDrafts: viewData.shopifyOrderDrafts,
-              }}
-              inclusions={draftInclusions}
-              onToggleInclude={handleToggleInclude}
-              onSeparatePo={handleSeparatePo}
-              showArchived={showArchived}
-              onArchiveShopifyOrder={handleArchiveShopifyOrder}
-              onUnarchiveShopifyOrder={handleUnarchiveShopifyOrder}
-              purchaseOrderId={
-                (
-                  viewData.purchaseOrders.find((p) => p.id !== 'new') ??
-                  viewData.purchaseOrders[0]
-                )?.id ?? null
-              }
-            />
+          {selectedPoBlockId === '__drafts__' && viewData.type === 'post' ? (
+            currentDrafts.length > 0 ? (
+              <PrePoView
+                shopifyAdminStoreHandle={shopifyAdminStoreHandle}
+                viewData={{
+                  type: 'pre',
+                  shopifyOrderDrafts: currentDrafts,
+                }}
+                defaultExpectedYmd={defaultExpectedYmd}
+                inclusions={draftInclusions}
+                onToggleInclude={handleToggleInclude}
+                onSeparatePo={handleSeparatePo}
+                showArchived={showArchived}
+                onArchiveShopifyOrder={handleArchiveShopifyOrder}
+                onUnarchiveShopifyOrder={handleUnarchiveShopifyOrder}
+                purchaseOrderId={
+                  (
+                    viewData.purchaseOrders.find((p) => p.id !== 'new') ??
+                    viewData.purchaseOrders[0]
+                  )?.id ?? null
+                }
+                draftLineNotes={draftLineNotes}
+                onLineItemNoteChange={handleLineItemNoteChange}
+                defaultSeparatePoNumberForOrder={
+                  defaultSeparatePoNumberForOrder
+                }
+                onIncludeAllOrderLines={() => handleSetAllLineIncludes(true)}
+                onExcludeAllOrderLines={() => handleSetAllLineIncludes(false)}
+              />
+            ) : (
+              <div className="px-3 py-6 text-[11px] text-muted-foreground">
+                No remaining Shopify lines for this supplier (all are already on
+                a PO).
+              </div>
+            )
           ) : viewData.type === 'pre' ? (
             <PrePoView
-              viewData={viewData}
+              shopifyAdminStoreHandle={shopifyAdminStoreHandle}
+              viewData={{
+                type: 'pre',
+                shopifyOrderDrafts: currentDrafts,
+              }}
+              defaultExpectedYmd={defaultExpectedYmd}
               inclusions={draftInclusions}
               onToggleInclude={handleToggleInclude}
               onSeparatePo={handleSeparatePo}
               showArchived={showArchived}
               onArchiveShopifyOrder={handleArchiveShopifyOrder}
               onUnarchiveShopifyOrder={handleUnarchiveShopifyOrder}
+              draftLineNotes={draftLineNotes}
+              onLineItemNoteChange={handleLineItemNoteChange}
+              defaultSeparatePoNumberForOrder={defaultSeparatePoNumberForOrder}
+              onIncludeAllOrderLines={() => handleSetAllLineIncludes(true)}
+              onExcludeAllOrderLines={() => handleSetAllLineIncludes(false)}
             />
           ) : (
             <PostPoView
+              shopifyAdminStoreHandle={shopifyAdminStoreHandle}
               viewData={viewData}
               selectedPoBlockId={selectedPoBlockId}
               lineItemsLoading={lineItemsLoading}
@@ -2048,10 +2428,13 @@ export function OrderManagementView({
         <MetaPanel
           entry={entry}
           activeKey={activeKey}
+          defaultExpectedYmd={defaultExpectedYmd}
+          minExpectedYmdForDrafts={minExpectedYmdFromIncludedDrafts}
           onCreatePo={handleCreatePo}
           onEditPo={handleEditPo}
           onDeletePo={handleDeletePo}
           onPoEmailSent={handleOptimisticPoEmailSent}
+          onPoEmailDeliveryWaivedChange={handlePoEmailDeliveryWaivedChange}
           poPanelMeta={selectedPoPanelMeta}
           selectedPoBlockId={selectedPoBlockId}
           onArchive={handleArchive}
@@ -2062,9 +2445,7 @@ export function OrderManagementView({
           onPoNumberReset={handlePoNumberReset}
           customerDefaultShipping={customerAddressDefaults.shipping}
           customerDefaultBilling={customerAddressDefaults.billing}
-          customerBillingSameAsShipping={
-            customerAddressDefaults.billingSame
-          }
+          customerBillingSameAsShipping={customerAddressDefaults.billingSame}
           poPrintBlock={selectedPoPrintBlock}
           poPrintHeadline={poPrintHeadline}
           lineItemsLoading={lineItemsLoading}
@@ -2079,7 +2460,8 @@ export function OrderManagementView({
 
   const navBtn =
     'w-full rounded-md px-2.5 py-2 text-left text-sm font-medium transition-colors';
-  const navBtnActive = 'bg-background text-foreground shadow-sm ring-1 ring-border';
+  const navBtnActive =
+    'bg-background text-foreground shadow-sm ring-1 ring-border';
   const navBtnIdle =
     'text-muted-foreground hover:bg-muted/60 hover:text-foreground';
 
@@ -2091,14 +2473,20 @@ export function OrderManagementView({
       >
         <button
           type="button"
-          className={cn(navBtn, mainPanel === 'grouped' ? navBtnActive : navBtnIdle)}
+          className={cn(
+            navBtn,
+            mainPanel === 'grouped' ? navBtnActive : navBtnIdle,
+          )}
           onClick={() => setMainPanel('grouped')}
         >
           Grouped view
         </button>
         <button
           type="button"
-          className={cn(navBtn, mainPanel === 'table' ? navBtnActive : navBtnIdle)}
+          className={cn(
+            navBtn,
+            mainPanel === 'table' ? navBtnActive : navBtnIdle,
+          )}
           onClick={() => setMainPanel('table')}
         >
           Table view
@@ -2113,6 +2501,7 @@ export function OrderManagementView({
             handleOptimisticPoEmailSent(poId);
             router.refresh();
           }}
+          onEmailDeliveryWaivedChange={handlePoEmailDeliveryWaivedChange}
         />
 
         {mainPanel === 'table' ? (
@@ -2142,6 +2531,7 @@ export function OrderManagementView({
                 poTotal={tableViewPoTotal}
                 customerFilterOptions={tableCustomerFilterOptions}
                 supplierFilterOptions={tableSupplierFilterOptions}
+                supplierGroupFilterOptions={tableSupplierGroupFilterOptions}
                 onOpenPoDetail={openPoFromTable}
               />
             )}
@@ -2181,7 +2571,10 @@ export function OrderManagementView({
               dateModeOptions={
                 activeStatusTab === 'po_created' && !showArchived
                   ? [
-                      { value: 'delivery_expected', label: 'Delivery Expected' },
+                      {
+                        value: 'delivery_expected',
+                        label: 'Delivery Expected',
+                      },
                       { value: 'po_created', label: 'PO Created' },
                     ]
                   : undefined
@@ -2204,7 +2597,9 @@ export function OrderManagementView({
                 layout={useInboxCustomerLayout ? 'customer' : 'expected_date'}
                 customerGroups={filteredGroups}
                 expectedDateBuckets={
-                  useInboxCustomerLayout ? undefined : (pagedExpectedBuckets ?? [])
+                  useInboxCustomerLayout
+                    ? undefined
+                    : (pagedExpectedBuckets ?? [])
                 }
                 expectedDatePage={expectedDateSidebarPage}
                 expectedDatePageCount={expectedDateSidebarPageCount}

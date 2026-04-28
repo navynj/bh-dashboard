@@ -9,6 +9,7 @@ import {
   assertSupplierOrderChannel,
   supplierOrderChannelTypeSchema,
 } from '@/lib/order/supplier-order-channel';
+import { parseSupplierDeliverySchedule } from '@/lib/order/supplier-delivery-schedule';
 
 const yearMonthSchema = z
   .string()
@@ -365,6 +366,8 @@ const supplierWritableFieldsSchema = z.object({
     .string()
     .min(1, 'Company name is required')
     .transform((s) => s.trim()),
+  /** Short code for default PO numbers; empty clears. Falls back to `company` when unset. */
+  officePoSupplierCode: z.string().trim().max(40).optional().nullable(),
   shopifyVendorName: z.string().trim().optional().nullable(),
   groupId: z.string().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
@@ -372,6 +375,8 @@ const supplierWritableFieldsSchema = z.object({
   orderChannelPayload: z.unknown(),
   /** Vendor name aliases for ShopifyVendorMapping (handles vendor renames). */
   vendorAliases: z.array(z.string().trim().min(1)).optional(),
+  /** Parsed server-side with `parseSupplierDeliverySchedule`; null clears. */
+  deliverySchedule: z.unknown().optional().nullable(),
 });
 
 export const supplierCreateSchema = supplierWritableFieldsSchema.superRefine(
@@ -388,6 +393,16 @@ export const supplierCreateSchema = supplierWritableFieldsSchema.superRefine(
           path: ['orderChannelPayload', ...issue.path],
         });
       }
+    }
+    if (
+      data.deliverySchedule != null &&
+      !parseSupplierDeliverySchedule(data.deliverySchedule)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Invalid deliverySchedule JSON',
+        path: ['deliverySchedule'],
+      });
     }
   },
 );
@@ -420,6 +435,35 @@ export const supplierUpdateSchema = supplierWritableFieldsSchema
           });
         }
       }
+    }
+    if (
+      data.deliverySchedule !== undefined &&
+      data.deliverySchedule !== null &&
+      !parseSupplierDeliverySchedule(data.deliverySchedule)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Invalid deliverySchedule JSON',
+        path: ['deliverySchedule'],
+      });
+    }
+  });
+
+/** PATCH /api/supplier-groups/[id]/delivery-schedule — bulk update all suppliers in group */
+export const supplierGroupBulkDeliveryScheduleSchema = z
+  .object({
+    deliverySchedule: z.unknown().nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      data.deliverySchedule != null &&
+      !parseSupplierDeliverySchedule(data.deliverySchedule)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Invalid deliverySchedule JSON',
+        path: ['deliverySchedule'],
+      });
     }
   });
 
@@ -467,6 +511,24 @@ export const shopifyOrderApplyEditBodySchema = z.object({
     .optional(),
   purchaseOrderId: z.string().min(1).optional(),
   appendLinesFromShopifyOrderLocalId: z.string().min(1).optional(),
+  /** When true, skips PO line resync so callers can batch parallel order edits then resync once. */
+  deferPurchaseOrderResync: z.boolean().optional(),
+});
+
+export const shopifyVariantCatalogUpdatesBodySchema = z.object({
+  updates: z
+    .array(
+      z.object({
+        productGid: z.string().min(1),
+        variantGid: z.string().min(1),
+        price: z.string().min(1),
+      }),
+    )
+    .min(1),
+});
+
+export const purchaseOrderResyncFromShopifyBodySchema = z.object({
+  appendFromShopifyOrderLocalId: z.string().min(1).optional(),
 });
 
 export type ShopifyOrderApplyEditBody = z.infer<typeof shopifyOrderApplyEditBodySchema>;
@@ -501,6 +563,8 @@ const purchaseOrderLineItemSchema = z.object({
   shopifyLineItemGid: z.string().trim().optional().nullable(),
   shopifyVariantGid: z.string().trim().optional().nullable(),
   shopifyProductGid: z.string().trim().optional().nullable(),
+  /** When set, stored on the PO line (overrides catalog default at create time). */
+  note: z.string().max(4000).optional().nullable(),
 });
 
 const shopifyOrderRefSchema = z.object({
@@ -531,6 +595,8 @@ export const purchaseOrderUpdateSchema = z.object({
   shippingAddress: addressSchema.optional().nullable(),
   billingAddress: addressSchema.optional().nullable(),
   billingSameAsShipping: z.boolean().optional(),
+  /** When true, sets `emailDeliveryWaivedAt` to now; when false, clears it. */
+  emailDeliveryWaived: z.boolean().optional(),
 });
 
 export type PurchaseOrderCreateBody = z.infer<typeof purchaseOrderCreateSchema>;

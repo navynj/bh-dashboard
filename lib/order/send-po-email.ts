@@ -8,6 +8,10 @@ import {
   resolvePoEmailFromAddress,
   resolvePoEmailPublicContactAddress,
 } from './po-email-settings';
+import {
+  looseContactEmailsFromRaw,
+  normalizeSupplierContactEmails,
+} from './supplier-order-channel';
 
 function createTransport() {
   return nodemailer.createTransport({
@@ -40,6 +44,36 @@ function plainToHtml(plain: string): string {
     .join('\n');
 }
 
+/** Office copy: BCC so supplier To-recipients do not share one visible Cc thread. */
+function officeBccHeader(
+  officeCcRaw: string | null | undefined,
+  toEmailsLower: ReadonlySet<string>,
+): string | undefined {
+  const officePieces = officeCcRaw?.trim()
+    ? looseContactEmailsFromRaw(officeCcRaw)
+    : [];
+  const normalized = normalizeSupplierContactEmails(officePieces).filter(
+    (e) => !toEmailsLower.has(e.toLowerCase()),
+  );
+  if (normalized.length === 0) return undefined;
+  return normalized.join(', ');
+}
+
+/** Supplier-configured Cc only; excludes To and other dedicated To-recipients. */
+function supplierCcHeader(
+  supplierCcEmails: string[],
+  toEmailsLower: ReadonlySet<string>,
+  dedicatedToRecipientsLower: ReadonlySet<string>,
+): string | undefined {
+  const normalized = normalizeSupplierContactEmails(supplierCcEmails).filter(
+    (e) =>
+      !toEmailsLower.has(e.toLowerCase()) &&
+      !dedicatedToRecipientsLower.has(e.toLowerCase()),
+  );
+  if (normalized.length === 0) return undefined;
+  return normalized.join(', ');
+}
+
 export async function sendPoEmail(args: {
   to: { email: string; name: string | null }[];
   supplierName: string;
@@ -48,8 +82,39 @@ export async function sendPoEmail(args: {
   trackingToken?: string;
   /** Pre-built PDF buffer — pass to avoid rebuilding for each recipient. */
   pdfBuffer?: Buffer;
+  supplierCcEmails?: string[];
+  /**
+   * Emails that each get their own separate To-send in this PO batch (other primary contacts).
+   * They are omitted from Cc so mail clients do not thread one conversation across recipients.
+   */
+  dedicatedToRecipientsLower?: ReadonlySet<string>;
 }): Promise<void> {
   const { to, supplierName, pdfInput, outbound, trackingToken } = args;
+
+  if (to.length === 0) return;
+
+  if (to.length > 1) {
+    if (trackingToken) {
+      throw new Error(
+        'sendPoEmail: use one To recipient when trackingToken is set, or call once per recipient.',
+      );
+    }
+    const dedicated =
+      args.dedicatedToRecipientsLower ??
+      new Set(to.map((c) => c.email.toLowerCase()));
+    for (const c of to) {
+      await sendPoEmail({
+        supplierName: args.supplierName,
+        pdfInput: args.pdfInput,
+        outbound: args.outbound,
+        pdfBuffer: args.pdfBuffer,
+        supplierCcEmails: args.supplierCcEmails,
+        to: [c],
+        dedicatedToRecipientsLower: dedicated,
+      });
+    }
+    return;
+  }
 
   const pdfBuffer = args.pdfBuffer ?? buildPoPdfBuffer(pdfInput);
   const plainBody = buildPoEmailPlainBody({ outbound, supplierName, poNumber: pdfInput.poNumber });
@@ -73,12 +138,17 @@ export async function sendPoEmail(args: {
   ].join('\n');
 
   const transporter = createTransport();
-  const cc = outbound.ccEmail?.trim();
+  const toLower = new Set(to.map((c) => c.email.toLowerCase()));
+  const dedicatedLower =
+    args.dedicatedToRecipientsLower ?? toLower;
+  const bcc = officeBccHeader(outbound.ccEmail, toLower);
+  const cc = supplierCcHeader(args.supplierCcEmails ?? [], toLower, dedicatedLower);
   await transporter.sendMail({
     from: `${outbound.senderName} <${fromAddr}>`,
     ...(replyTo ? { replyTo } : {}),
     to: to.map((c) => (c.name ? `${c.name} <${c.email}>` : c.email)),
     ...(cc ? { cc } : {}),
+    ...(bcc ? { bcc } : {}),
     subject,
     text: plainBody,
     html: htmlBody,

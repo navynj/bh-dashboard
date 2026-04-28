@@ -105,6 +105,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       data.displayNameOverride = body.displayNameOverride.trim() || null;
     }
 
+    if (typeof body.officePoAccountCode === 'string') {
+      data.officePoAccountCode = body.officePoAccountCode.trim() || null;
+    }
+
     const companyChanged = typeof body.company === 'string';
     if (companyChanged) {
       data.company = body.company.trim() || null;
@@ -130,6 +134,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         displayNameOverride: true,
         email: true,
         company: true,
+        officePoAccountCode: true,
         shippingAddress: true,
         billingAddress: true,
         billingSameAsShipping: true,

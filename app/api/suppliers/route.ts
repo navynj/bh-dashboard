@@ -8,7 +8,8 @@ import {
   assertSupplierOrderChannel,
   legacyColumnsFromOrderChannel,
 } from '@/lib/order/supplier-order-channel';
-import type { Prisma } from '@prisma/client';
+import { parseSupplierDeliverySchedule } from '@/lib/order/supplier-delivery-schedule';
+import { Prisma } from '@prisma/client';
 
 export async function GET() {
   try {
@@ -25,6 +26,7 @@ export async function GET() {
       select: {
         id: true,
         company: true,
+        officePoSupplierCode: true,
         shopifyVendorName: true,
         contactName: true,
         contactEmails: true,
@@ -37,6 +39,7 @@ export async function GET() {
         link: true,
         notes: true,
         createdAt: true,
+        deliverySchedule: true,
         _count: { select: { purchaseOrders: true } },
       },
     });
@@ -78,9 +81,20 @@ export async function POST(request: NextRequest) {
       channel.payload,
     );
 
+    const deliveryScheduleCreate:
+      | Prisma.NullableJsonNullValueInput
+      | Prisma.InputJsonValue
+      | undefined =
+      data.deliverySchedule === undefined
+        ? undefined
+        : data.deliverySchedule === null
+          ? Prisma.JsonNull
+          : (parseSupplierDeliverySchedule(data.deliverySchedule) as Prisma.InputJsonValue);
+
     const supplier = await prisma.supplier.create({
       data: {
         company: data.company,
+        officePoSupplierCode: data.officePoSupplierCode?.trim() || null,
         shopifyVendorName: data.shopifyVendorName ?? null,
         groupId,
         notes: data.notes ?? null,
@@ -91,6 +105,9 @@ export async function POST(request: NextRequest) {
         link: legacy.link,
         contactPhone: null,
         preferredCommMode: null,
+        ...(deliveryScheduleCreate !== undefined && {
+          deliverySchedule: deliveryScheduleCreate,
+        }),
       },
     });
 

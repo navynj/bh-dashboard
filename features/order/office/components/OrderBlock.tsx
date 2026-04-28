@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -21,29 +22,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils/cn';
-import type { PrePoLineDraft, ShopifyOrderDraft } from '../types';
+import type { PrePoLineDraft, SeparatePoPayload, ShopifyOrderDraft } from '../types';
+import { ShopifyLineProductCell } from './ShopifyLineProductCell';
+import { LineItemThumb } from './LineItemThumb';
 import { formatItemPrice } from '../mappers/map-purchase-order';
 import { formatVancouverOrderedDetail } from '../utils/vancouver-datetime';
 import { SeparatePoDialog } from './SeparatePoDialog';
-import { LineItemThumb } from './LineItemThumb';
 import type { ShopifyOrderEditOperation } from '@/lib/api/schemas';
-
-type SeparatePoPayload = {
-  expectedDate: string | null;
-  comment: string | null;
-  shopifyOrderNumber: string;
-  lineItems: {
-    sku: string | null;
-    productTitle: string;
-    quantity: number;
-    itemPrice: number | null;
-    isCustom?: boolean;
-    shopifyLineItemId?: string | null;
-    shopifyLineItemGid?: string | null;
-    shopifyVariantGid?: string | null;
-    shopifyProductGid?: string | null;
-  }[];
-};
 
 type DraftLine = PrePoLineDraft & {
   localId: string;
@@ -53,15 +38,22 @@ type DraftLine = PrePoLineDraft & {
 };
 
 type Props = {
+  shopifyAdminStoreHandle?: string | null;
   order: ShopifyOrderDraft;
+  defaultExpectedYmd: string;
   inclusions?: boolean[];
   onToggleInclude?: (orderId: string, itemIdx: number) => void;
   onSeparatePo?: (payload: SeparatePoPayload) => void;
+  /** Suggested PO # for Separate PO (same as Meta auto rule for this order). */
+  defaultSeparatePoNumber?: string;
   onArchiveShopifyOrder?: (shopifyOrderDbId: string) => void;
   showArchived?: boolean;
   onUnarchiveShopifyOrder?: (shopifyOrderDbId: string) => void;
   /** When saving from a PO context, pass PO id so server can resync lines. */
   purchaseOrderId?: string | null;
+  /** Inbox: per-line PO note text (default + edits); parallel to `order.lineItems`. */
+  lineItemNotes?: string[];
+  onLineItemNoteChange?: (itemIdx: number, value: string) => void;
 };
 
 function parseMoney(s: string | null | undefined): number {
@@ -88,18 +80,24 @@ type SearchHit = {
   variantTitle: string | null;
   sku: string | null;
   price: string | null;
+  unitCost?: string | null;
   imageUrl?: string | null;
 };
 
 export function OrderBlock({
+  shopifyAdminStoreHandle,
   order,
+  defaultExpectedYmd,
   inclusions,
   onToggleInclude,
   onSeparatePo,
+  defaultSeparatePoNumber,
   onArchiveShopifyOrder,
   showArchived,
   onUnarchiveShopifyOrder,
   purchaseOrderId,
+  lineItemNotes,
+  onLineItemNoteChange,
 }: Props) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -339,6 +337,7 @@ export function OrderBlock({
         imageUrl: hit.imageUrl ?? null,
         productTitle: `${hit.productTitle}${hit.variantTitle ? ` — ${hit.variantTitle}` : ''}`,
         itemPrice: price,
+        itemCost: hit.unitCost ?? null,
         quantity: 1,
         includeInPo: true,
       },
@@ -377,6 +376,9 @@ export function OrderBlock({
 
   const visibleDrafts = useMemo(() => draftLines.filter((d) => !d.removed), [draftLines]);
 
+  const showLinePoNotes =
+    !editing && Boolean(onLineItemNoteChange) && lineItemNotes != null;
+
   return (
     <div className="bg-background border border-border rounded-[10px] overflow-hidden mb-2">
       <div className="px-3.5 py-2 border-b bg-muted/40 flex items-start justify-between gap-3">
@@ -399,25 +401,6 @@ export function OrderBlock({
             <span className="text-[10px] text-muted-foreground">
               {order.shippingAddressLine ?? '—'}
             </span>
-            {order.note && (
-              <span
-                className={cn(
-                  'text-[10px]',
-                  order.noteIsWarning
-                    ? 'text-[#A32D2D]'
-                    : 'text-muted-foreground',
-                )}
-              >
-                Note:{' '}
-                <span
-                  className={cn(
-                    order.noteIsWarning ? 'text-[#A32D2D]' : 'text-foreground',
-                  )}
-                >
-                  {order.note}
-                </span>
-              </span>
-            )}
           </div>
         </div>
         <div className="flex flex-shrink-0 gap-1 mt-0.5">
@@ -475,11 +458,46 @@ export function OrderBlock({
         </div>
       </div>
 
+      {order.note && (
+        <div
+          className={cn(
+            'px-3.5 py-2.5 border-b',
+            order.noteIsWarning
+              ? 'bg-red-50 border-red-200 dark:bg-red-950/35 dark:border-red-900'
+              : 'bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-900',
+          )}
+        >
+          <div
+            className={cn(
+              'text-[10px] font-semibold uppercase tracking-wide',
+              order.noteIsWarning
+                ? 'text-red-900 dark:text-red-200'
+                : 'text-amber-950 dark:text-amber-100',
+            )}
+          >
+            Customer note
+          </div>
+          <p
+            className={cn(
+              'text-[12px] leading-snug mt-1 whitespace-pre-wrap break-words',
+              order.noteIsWarning
+                ? 'text-red-950 dark:text-red-50'
+                : 'text-amber-950 dark:text-amber-50',
+            )}
+          >
+            {order.note}
+          </p>
+        </div>
+      )}
+
       {onSeparatePo && (
         <SeparatePoDialog
           order={order}
+          defaultPoNumber={defaultSeparatePoNumber ?? ''}
+          defaultExpectedYmd={defaultExpectedYmd}
           open={dialogOpen}
           onOpenChange={setDialogOpen}
+          lineItemNotes={lineItemNotes}
           onCreatePo={(payload) => {
             onSeparatePo(payload);
             setDialogOpen(false);
@@ -517,11 +535,12 @@ export function OrderBlock({
         style={{ tableLayout: 'fixed' }}
       >
         <colgroup>
-          <col style={{ width: editing ? '32%' : '36%' }} />
+          <col style={{ width: editing ? '26%' : showLinePoNotes ? '28%' : '36%' }} />
           <col style={{ width: '11%' }} />
           <col style={{ width: '10%' }} />
-          <col style={{ width: '10%' }} />
-          <col style={{ width: '10%' }} />
+          <col style={{ width: editing ? '9%' : '10%' }} />
+          <col style={{ width: editing ? '13%' : '10%' }} />
+          {showLinePoNotes ? <col style={{ width: '18%' }} /> : null}
           <col style={{ width: editing ? '12%' : '8%' }} />
           {!editing && <col style={{ width: '5%' }} />}
         </colgroup>
@@ -534,6 +553,7 @@ export function OrderBlock({
                 ['Price', 'left'],
                 ['Cost', 'left'],
                 ['Qty', 'left'],
+                ...(showLinePoNotes ? [['PO line note', 'left'] as const] : []),
                 ...(editing ? [['', 'right'] as const] : [['Include', 'right'] as const]),
               ] as const
             ).map(([h, align]) => (
@@ -565,15 +585,14 @@ export function OrderBlock({
                 )}
               >
                 <TableCell className="px-3 py-[7px]">
-                  <div className="flex gap-2 min-w-0">
-                    <LineItemThumb imageUrl={row.imageUrl} label={row.productTitle} />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[11px] leading-tight">{row.productTitle}</div>
-                      <div className="text-[9px] text-muted-foreground font-mono">
-                        {row.sku ?? '—'}
-                      </div>
-                    </div>
-                  </div>
+                  <ShopifyLineProductCell
+                    shopifyAdminStoreHandle={shopifyAdminStoreHandle}
+                    shopifyProductGid={(row as PrePoLineDraft).shopifyProductGid}
+                    shopifyVariantGid={(row as PrePoLineDraft).shopifyVariantGid}
+                    imageUrl={row.imageUrl}
+                    label={row.productTitle}
+                    sku={row.sku}
+                  />
                 </TableCell>
                 <TableCell className="px-3 py-[7px] text-[9px] font-mono text-muted-foreground">
                   {row.sku ?? '—'}
@@ -607,7 +626,7 @@ export function OrderBlock({
                 >
                   {editing ? (
                     <Input
-                      className="h-7 text-[11px]"
+                      className="h-7 min-w-14 w-full max-w-[5.5rem] text-[11px] tabular-nums"
                       type="number"
                       min={0}
                       value={row.quantity}
@@ -626,6 +645,24 @@ export function OrderBlock({
                     row.quantity
                   )}
                 </TableCell>
+                {showLinePoNotes ? (
+                  <TableCell className="px-3 py-[7px] align-top">
+                    {(row as PrePoLineDraft).defaultPoLineNote?.trim() ? (
+                      <div className="text-[9px] text-muted-foreground mb-1 line-clamp-2 whitespace-pre-wrap">
+                        Default: {(row as PrePoLineDraft).defaultPoLineNote!.trim()}
+                      </div>
+                    ) : null}
+                    <Textarea
+                      className="min-h-[3.25rem] max-h-28 resize-y text-[10px] leading-snug py-1 md:text-[10px]"
+                      value={lineItemNotes![idx] ?? ''}
+                      onChange={(e) => onLineItemNoteChange?.(idx, e.target.value)}
+                      placeholder="PO / PDF line note (override)"
+                      maxLength={4000}
+                      rows={2}
+                      disabled={!included}
+                    />
+                  </TableCell>
+                ) : null}
                 {editing ? (
                   <TableCell className="px-3 py-[7px] text-right">
                     <Button

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { YmdDateInput } from '@/components/ui/ymd-date-input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -185,6 +186,7 @@ export function OfficeTableSplitView({
   poTotal,
   customerFilterOptions,
   supplierFilterOptions,
+  supplierGroupFilterOptions = [],
   onOpenPoDetail,
 }: {
   initialShopifyRows: OfficeTableViewShopifyRow[];
@@ -193,6 +195,8 @@ export function OfficeTableSplitView({
   poTotal: number;
   customerFilterOptions: OfficeTableFilterOption[];
   supplierFilterOptions: OfficeTableFilterOption[];
+  /** `id` = `SupplierGroup.slug` */
+  supplierGroupFilterOptions?: OfficeTableFilterOption[];
   onOpenPoDetail: (purchaseOrderId: string) => void | Promise<void>;
 }) {
   const [tab, setTab] = useState<TableTab>('shopify');
@@ -207,6 +211,7 @@ export function OfficeTableSplitView({
   const [debouncedQ, setDebouncedQ] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [supplierId, setSupplierId] = useState('');
+  const [supplierGroupSlug, setSupplierGroupSlug] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [poDateField, setPoDateField] = useState<'created' | 'expected'>('created');
@@ -222,10 +227,11 @@ export function OfficeTableSplitView({
         debouncedQ.trim() ||
           customerId ||
           supplierId ||
+          supplierGroupSlug ||
           dateFrom ||
           dateTo,
       ),
-    [debouncedQ, customerId, supplierId, dateFrom, dateTo],
+    [debouncedQ, customerId, supplierId, supplierGroupSlug, dateFrom, dateTo],
   );
 
   const [shopifyDisplayTotal, setShopifyDisplayTotal] = useState(shopifyTotal);
@@ -267,11 +273,12 @@ export function OfficeTableSplitView({
       if (q) p.set('q', q);
       if (customerId) p.set('customerId', customerId);
       if (supplierId) p.set('supplierId', supplierId);
+      if (supplierGroupSlug) p.set('supplierGroupSlug', supplierGroupSlug);
       if (dateFrom) p.set('dateFrom', dateFrom);
       if (dateTo) p.set('dateTo', dateTo);
       return p.toString();
     },
-    [debouncedQ, customerId, supplierId, dateFrom, dateTo],
+    [debouncedQ, customerId, supplierId, supplierGroupSlug, dateFrom, dateTo],
   );
 
   const buildPoQueryString = useCallback(
@@ -285,11 +292,20 @@ export function OfficeTableSplitView({
       if (q) p.set('q', q);
       if (customerId) p.set('customerId', customerId);
       if (supplierId) p.set('supplierId', supplierId);
+      if (supplierGroupSlug) p.set('supplierGroupSlug', supplierGroupSlug);
       if (dateFrom) p.set('dateFrom', dateFrom);
       if (dateTo) p.set('dateTo', dateTo);
       return p.toString();
     },
-    [debouncedQ, customerId, supplierId, dateFrom, dateTo, poDateField],
+    [
+      debouncedQ,
+      customerId,
+      supplierId,
+      supplierGroupSlug,
+      dateFrom,
+      dateTo,
+      poDateField,
+    ],
   );
 
   useEffect(() => {
@@ -600,6 +616,7 @@ export function OfficeTableSplitView({
     setDebouncedQ('');
     setCustomerId('');
     setSupplierId('');
+    setSupplierGroupSlug('');
     setDateFrom('');
     setDateTo('');
     setPoDateField('created');
@@ -712,22 +729,43 @@ export function OfficeTableSplitView({
               ))}
             </select>
           </div>
+          {supplierGroupFilterOptions.length > 0 ? (
+            <div className="flex min-w-[9rem] max-w-[14rem] flex-col gap-1">
+              <label
+                htmlFor="office-table-supplier-group"
+                className="text-[11px] font-medium text-muted-foreground"
+              >
+                Supplier group
+              </label>
+              <select
+                id="office-table-supplier-group"
+                className={selectCls}
+                value={supplierGroupSlug}
+                onChange={(e) => setSupplierGroupSlug(e.target.value)}
+              >
+                <option value="">All</option>
+                {supplierGroupFilterOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <div className="flex flex-col gap-1">
             <span className="text-[11px] font-medium text-muted-foreground">From</span>
-            <Input
-              type="date"
+            <YmdDateInput
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="h-9 w-[10.5rem] text-sm tabular-nums"
+              className="h-9 min-w-[12rem] text-sm tabular-nums"
             />
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[11px] font-medium text-muted-foreground">To</span>
-            <Input
-              type="date"
+            <YmdDateInput
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="h-9 w-[10.5rem] text-sm tabular-nums"
+              className="h-9 min-w-[12rem] text-sm tabular-nums"
             />
           </div>
           <Button
@@ -739,6 +777,7 @@ export function OfficeTableSplitView({
               !qInput.trim() &&
               !customerId &&
               !supplierId &&
+              !supplierGroupSlug &&
               !dateFrom &&
               !dateTo &&
               (tab !== 'po' || poDateField === 'created')

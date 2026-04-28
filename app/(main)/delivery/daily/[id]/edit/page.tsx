@@ -19,6 +19,7 @@ import { markHubLocalMutationCommitted } from '@/lib/delivery/hub-local-mutation
 import { Droppable } from '@/components/ui/drag-and-drop';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { Spinner } from '@/components/ui/spinner';
 
 type TaskForm = { id?: string; title: string };
 type StopForm = {
@@ -32,7 +33,11 @@ type StopForm = {
   arrivedAt: string | null;
   tasks: TaskForm[];
 };
-type DeliveryLocationOption = { id: string; name: string; address: string | null };
+type DeliveryLocationOption = {
+  id: string;
+  name: string;
+  address: string | null;
+};
 
 type SortableStopCardProps = {
   stop: StopForm;
@@ -168,7 +173,12 @@ function SortableStopCard({
                 <Input
                   ref={(el) => {
                     if (j === stop.tasks.length - 1) {
-                      (lastTaskInputRefs.current as Record<number, HTMLInputElement | null>)[i] = el;
+                      (
+                        lastTaskInputRefs.current as Record<
+                          number,
+                          HTMLInputElement | null
+                        >
+                      )[i] = el;
                     }
                   }}
                   className="flex-1 h-8"
@@ -382,9 +392,7 @@ export default function EditDailySchedulePage() {
   }, [id, stops, router]);
 
   if (loading) {
-    return (
-      <div className="py-8 text-muted-foreground">Loading…</div>
-    );
+    return <div className="py-8 text-muted-foreground">Loading…</div>;
   }
 
   return (
@@ -430,7 +438,11 @@ export default function EditDailySchedulePage() {
 
       <div className="flex gap-2">
         <Button onClick={handleSubmit} disabled={submitting}>
-          {submitting ? 'Saving…' : 'Save changes'}
+          {submitting ? (
+            <Spinner className="h-4 w-4 mr-1 text-white" />
+          ) : (
+            'Save changes'
+          )}
         </Button>
         <Button variant="outline" asChild>
           <Link href={`/delivery/daily/${id}`}>Cancel</Link>

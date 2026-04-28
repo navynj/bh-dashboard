@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Pencil, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { YmdDateInput } from '@/components/ui/ymd-date-input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
@@ -28,12 +29,17 @@ import type {
   PoAddress,
   OfficePurchaseOrderBlock,
 } from '../types';
-import { buildPoPdfInput, openPoPdfPrint } from '../utils/purchase-order-pdf';
+import {
+  buildPoPdfInput,
+  downloadPoPdf,
+  openPoPdfPrint,
+} from '../utils/purchase-order-pdf';
 import {
   MetaPoNumberInput,
   type MetaPoNumberFieldError,
 } from './MetaPoNumberInput';
 import { postSendPurchaseOrderEmail } from '../utils/post-send-po-email';
+import { Spinner } from '@/components/ui/spinner';
 
 const CA_PROVINCES = [
   { code: 'AB', name: 'Alberta' },
@@ -51,7 +57,14 @@ const CA_PROVINCES = [
   { code: 'YT', name: 'Yukon' },
 ] as const;
 
-const EMPTY_ADDR: PoAddress = { address1: '', address2: '', city: '', province: '', postalCode: '', country: 'CA' };
+const EMPTY_ADDR: PoAddress = {
+  address1: '',
+  address2: '',
+  city: '',
+  province: '',
+  postalCode: '',
+  country: 'CA',
+};
 
 export type CreatePoPayload = {
   expectedDate: string | null;
@@ -77,11 +90,26 @@ export type EditPoResult =
 type Props = {
   entry: SupplierEntry;
   activeKey: SupplierKey;
-  onCreatePo: (key: SupplierKey, payload?: CreatePoPayload) => Promise<EditPoResult>;
+  /** Default `expectedDate` when creating a PO from inbox drafts (Vancouver YMD). */
+  defaultExpectedYmd: string;
+  /**
+   * Min allowed expected date for draft “Create PO” (latest order day among included drafts).
+   * Passed to date input `min`; null = no constraint.
+   */
+  minExpectedYmdForDrafts?: string | null;
+  onCreatePo: (
+    key: SupplierKey,
+    payload?: CreatePoPayload,
+  ) => Promise<EditPoResult>;
   onEditPo: (poId: string, fields: EditPoFields) => Promise<EditPoResult>;
   onDeletePo: (poId: string) => void;
   /** After successful PO outbound email — parent patches view data optimistically. */
   onPoEmailSent?: (poId: string) => void;
+  /** Persist “do not send” / undo waive (PUT purchase order). */
+  onPoEmailDeliveryWaivedChange?: (
+    poId: string,
+    waived: boolean,
+  ) => void | Promise<void>;
   poPanelMeta?: PoPanelMeta;
   selectedPoBlockId?: string | null;
   onArchive?: (key: SupplierKey) => void;
@@ -104,10 +132,13 @@ type Props = {
 export function MetaPanel({
   entry,
   activeKey,
+  defaultExpectedYmd,
+  minExpectedYmdForDrafts,
   onCreatePo,
   onEditPo,
   onDeletePo,
   onPoEmailSent,
+  onPoEmailDeliveryWaivedChange,
   poPanelMeta,
   selectedPoBlockId,
   onArchive,
@@ -129,6 +160,8 @@ export function MetaPanel({
         <WithoutPoMeta
           entry={entry}
           activeKey={activeKey}
+          defaultExpectedYmd={defaultExpectedYmd}
+          minExpectedYmd={minExpectedYmdForDrafts ?? null}
           onCreatePo={onCreatePo}
           onArchive={onArchive}
           onUnarchive={onUnarchive}
@@ -148,6 +181,7 @@ export function MetaPanel({
           onEditPo={onEditPo}
           onDeletePo={onDeletePo}
           onPoEmailSent={onPoEmailSent}
+          onPoEmailDeliveryWaivedChange={onPoEmailDeliveryWaivedChange}
           activeKey={activeKey}
           onArchive={onArchive}
           onUnarchive={onUnarchive}
@@ -240,7 +274,13 @@ function isAddrEmpty(a: PoAddress | null | undefined): boolean {
 
 function formatAddrOneLine(a: PoAddress | null | undefined): string {
   if (!a || !a.address1.trim()) return '—';
-  const parts = [a.address1, a.address2, a.city, a.province, a.postalCode].filter(Boolean);
+  const parts = [
+    a.address1,
+    a.address2,
+    a.city,
+    a.province,
+    a.postalCode,
+  ].filter(Boolean);
   return parts.join(', ');
 }
 
@@ -253,16 +293,36 @@ function CompactAddressInput({
   address: PoAddress;
   onChange: (a: PoAddress) => void;
 }) {
-  const set = (field: keyof PoAddress, val: string) => onChange({ ...address, [field]: val });
-  const cls = 'h-auto min-h-0 text-[11px] px-1.5 py-[3px] rounded-[5px] md:text-[11px]';
+  const set = (field: keyof PoAddress, val: string) =>
+    onChange({ ...address, [field]: val });
+  const cls =
+    'h-auto min-h-0 text-[11px] px-1.5 py-[3px] rounded-[5px] md:text-[11px]';
 
   return (
     <div className="flex flex-col gap-1">
       {label ? <MetaLabel>{label}</MetaLabel> : null}
-      <Input value={address.address1} onChange={(e) => set('address1', e.target.value)} className={cls} placeholder="Address 1" />
-      <Input value={address.address2 ?? ''} onChange={(e) => set('address2', e.target.value)} className={cls} placeholder="Address 2" />
-      <Input value={address.city} onChange={(e) => set('city', e.target.value)} className={cls} placeholder="City" />
-      <Select value={address.province} onValueChange={(v) => set('province', v)}>
+      <Input
+        value={address.address1}
+        onChange={(e) => set('address1', e.target.value)}
+        className={cls}
+        placeholder="Address 1"
+      />
+      <Input
+        value={address.address2 ?? ''}
+        onChange={(e) => set('address2', e.target.value)}
+        className={cls}
+        placeholder="Address 2"
+      />
+      <Input
+        value={address.city}
+        onChange={(e) => set('city', e.target.value)}
+        className={cls}
+        placeholder="City"
+      />
+      <Select
+        value={address.province}
+        onValueChange={(v) => set('province', v)}
+      >
         <SelectTrigger className="h-auto min-h-0 text-[11px] px-1.5 py-[3px] rounded-[5px]">
           <SelectValue placeholder="Province" />
         </SelectTrigger>
@@ -274,7 +334,12 @@ function CompactAddressInput({
           ))}
         </SelectContent>
       </Select>
-      <Input value={address.postalCode} onChange={(e) => set('postalCode', e.target.value)} className={cls} placeholder="Postal code" />
+      <Input
+        value={address.postalCode}
+        onChange={(e) => set('postalCode', e.target.value)}
+        className={cls}
+        placeholder="Postal code"
+      />
     </div>
   );
 }
@@ -284,6 +349,8 @@ function CompactAddressInput({
 function WithoutPoMeta({
   entry,
   activeKey,
+  defaultExpectedYmd,
+  minExpectedYmd,
   onCreatePo,
   onArchive,
   onUnarchive,
@@ -297,7 +364,12 @@ function WithoutPoMeta({
 }: {
   entry: SupplierEntry;
   activeKey: SupplierKey;
-  onCreatePo: (key: SupplierKey, payload?: CreatePoPayload) => Promise<EditPoResult>;
+  defaultExpectedYmd: string;
+  minExpectedYmd: string | null;
+  onCreatePo: (
+    key: SupplierKey,
+    payload?: CreatePoPayload,
+  ) => Promise<EditPoResult>;
   onArchive?: (key: SupplierKey) => void;
   onUnarchive?: (key: SupplierKey) => void;
   draftPoNumber?: string;
@@ -308,14 +380,19 @@ function WithoutPoMeta({
   customerDefaultBilling?: PoAddress | null;
   customerBillingSameAsShipping?: boolean;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
   const [createPoNumberError, setCreatePoNumberError] =
     useState<MetaPoNumberFieldError>(null);
   const [creating, setCreating] = useState(false);
   const [shipAddrEditOpen, setShipAddrEditOpen] = useState(false);
-  const [shipAddr, setShipAddr] = useState<PoAddress>(customerDefaultShipping ?? { ...EMPTY_ADDR });
-  const [billAddr, setBillAddr] = useState<PoAddress>(customerDefaultBilling ?? { ...EMPTY_ADDR });
-  const [billSame, setBillSame] = useState(customerBillingSameAsShipping ?? true);
+  const [shipAddr, setShipAddr] = useState<PoAddress>(
+    customerDefaultShipping ?? { ...EMPTY_ADDR },
+  );
+  const [billAddr, setBillAddr] = useState<PoAddress>(
+    customerDefaultBilling ?? { ...EMPTY_ADDR },
+  );
+  const [billSame, setBillSame] = useState(
+    customerBillingSameAsShipping ?? true,
+  );
 
   useEffect(() => {
     setCreatePoNumberError(null);
@@ -323,14 +400,21 @@ function WithoutPoMeta({
     setShipAddr(customerDefaultShipping ?? { ...EMPTY_ADDR });
     setBillAddr(customerDefaultBilling ?? { ...EMPTY_ADDR });
     setBillSame(customerBillingSameAsShipping ?? true);
-  }, [activeKey, customerDefaultShipping, customerDefaultBilling, customerBillingSameAsShipping]);
+  }, [
+    activeKey,
+    customerDefaultShipping,
+    customerDefaultBilling,
+    customerBillingSameAsShipping,
+  ]);
 
   const handleCreate = async () => {
     if (poNumberIsManual && !(draftPoNumber ?? '').trim()) {
       setCreatePoNumberError('required');
       return;
     }
-    const form = document.getElementById(`meta-form-${activeKey}`) as HTMLFormElement | null;
+    const form = document.getElementById(
+      `meta-form-${activeKey}`,
+    ) as HTMLFormElement | null;
     const fd = form ? new FormData(form) : null;
     setCreating(true);
     setCreatePoNumberError(null);
@@ -339,7 +423,11 @@ function WithoutPoMeta({
         expectedDate: (fd?.get('expectedDate') as string) || null,
         comment: (fd?.get('comment') as string) || null,
         shippingAddress: isAddrEmpty(shipAddr) ? null : shipAddr,
-        billingAddress: billSame ? null : (isAddrEmpty(billAddr) ? null : billAddr),
+        billingAddress: billSame
+          ? null
+          : isAddrEmpty(billAddr)
+            ? null
+            : billAddr,
         billingSameAsShipping: billSame,
       });
       if (result.ok) {
@@ -355,7 +443,11 @@ function WithoutPoMeta({
   };
 
   return (
-    <form id={`meta-form-${activeKey}`} onSubmit={(e) => e.preventDefault()}>
+    <form
+      key={activeKey}
+      id={`meta-form-${activeKey}`}
+      onSubmit={(e) => e.preventDefault()}
+    >
       <Section>
         <MetaLabel>Status</MetaLabel>
         <Badge variant="gray" className="rounded px-1.5 text-[10px]">
@@ -404,10 +496,10 @@ function WithoutPoMeta({
       <Section>
         <div className="flex flex-col gap-2.5">
           <FieldInput label="Expected date">
-            <Input
-              type="date"
+            <YmdDateInput
               name="expectedDate"
-              defaultValue={today}
+              defaultValue={defaultExpectedYmd}
+              min={minExpectedYmd ?? undefined}
               className="h-auto min-h-0 text-[11px] px-1.5 py-[4px] rounded-[5px] md:text-[11px]"
             />
           </FieldInput>
@@ -435,7 +527,11 @@ function WithoutPoMeta({
                 <X className="h-3 w-3" />
               </button>
             </div>
-            <CompactAddressInput label="" address={shipAddr} onChange={setShipAddr} />
+            <CompactAddressInput
+              label=""
+              address={shipAddr}
+              onChange={setShipAddr}
+            />
           </div>
         ) : (
           <>
@@ -464,12 +560,19 @@ function WithoutPoMeta({
             onChange={(e) => setBillSame(e.target.checked)}
             className="h-3 w-3 rounded border-gray-300"
           />
-          <label htmlFor={`bill-same-${activeKey}`} className="text-[9px] text-muted-foreground uppercase tracking-wide font-medium">
+          <label
+            htmlFor={`bill-same-${activeKey}`}
+            className="text-[9px] text-muted-foreground uppercase tracking-wide font-medium"
+          >
             Billing same as shipping
           </label>
         </div>
         {!billSame && (
-          <CompactAddressInput label="Bill to" address={billAddr} onChange={setBillAddr} />
+          <CompactAddressInput
+            label="Bill to"
+            address={billAddr}
+            onChange={setBillAddr}
+          />
         )}
       </Section>
 
@@ -481,7 +584,11 @@ function WithoutPoMeta({
           disabled={creating}
           onClick={() => void handleCreate()}
         >
-          {creating ? 'Creating…' : 'Create PO now'}
+          {creating ? (
+            <Spinner className="h-4 w-4 mr-1 text-white" />
+          ) : (
+            'Create PO now'
+          )}
         </Button>
         <Button
           type="button"
@@ -532,6 +639,7 @@ function WithPoMeta({
   onEditPo,
   onDeletePo,
   onPoEmailSent,
+  onPoEmailDeliveryWaivedChange,
   activeKey,
   onArchive,
   onUnarchive,
@@ -547,6 +655,10 @@ function WithPoMeta({
   onEditPo: (poId: string, fields: EditPoFields) => Promise<EditPoResult>;
   onDeletePo: (poId: string) => void;
   onPoEmailSent?: (poId: string) => void;
+  onPoEmailDeliveryWaivedChange?: (
+    poId: string,
+    waived: boolean,
+  ) => void | Promise<void>;
   activeKey: SupplierKey;
   onArchive?: (key: SupplierKey) => void;
   onUnarchive?: (key: SupplierKey) => void;
@@ -558,6 +670,7 @@ function WithPoMeta({
 }) {
   const router = useRouter();
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [waivingEmail, setWaivingEmail] = useState(false);
   const [emailSentLocal, setEmailSentLocal] = useState(false);
   const [emailSendError, setEmailSendError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -566,14 +679,16 @@ function WithPoMeta({
   const [editExpected, setEditExpected] = useState('');
   const [editComment, setEditComment] = useState('');
   const [editPoNumber, setEditPoNumber] = useState('');
-  const [poNumberError, setPoNumberError] = useState<'duplicate' | 'required' | null>(null);
+  const [poNumberError, setPoNumberError] = useState<
+    'duplicate' | 'required' | null
+  >(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setEmailSentLocal(!!poPanelMeta?.emailSentAt);
     setEmailSendError(null);
-  }, [selectedPoBlockId, poPanelMeta?.emailSentAt]);
+  }, [selectedPoBlockId, poPanelMeta?.emailSentAt, poPanelMeta?.emailDeliveryWaivedAt]);
 
   const performSendEmail = async () => {
     if (!selectedPoBlockId || selectedPoBlockId === '__drafts__') return;
@@ -583,25 +698,39 @@ function WithPoMeta({
       const result = await postSendPurchaseOrderEmail(selectedPoBlockId);
       if (!result.ok) {
         setEmailSendError(result.error);
-        toast.error(result.error);
         return;
       }
       onPoEmailSent?.(selectedPoBlockId);
       setEmailSentLocal(true);
       router.refresh();
-      if (result.recipientCount > 0) {
-        toast.success(
-          `Email sent to ${result.recipientCount} contact${result.recipientCount === 1 ? '' : 's'}.`,
-        );
-      } else {
-        toast.success('PO email sent.');
-      }
     } catch {
       const msg = 'Network error — could not send email';
       setEmailSendError(msg);
       toast.error(msg);
     } finally {
       setSendingEmail(false);
+    }
+  };
+
+  const handleDoNotSendEmail = async () => {
+    if (!selectedPoBlockId || selectedPoBlockId === '__drafts__') return;
+    if (!onPoEmailDeliveryWaivedChange) return;
+    setWaivingEmail(true);
+    try {
+      await onPoEmailDeliveryWaivedChange(selectedPoBlockId, true);
+    } finally {
+      setWaivingEmail(false);
+    }
+  };
+
+  const handleUndoEmailWaive = async () => {
+    if (!selectedPoBlockId || selectedPoBlockId === '__drafts__') return;
+    if (!onPoEmailDeliveryWaivedChange) return;
+    setWaivingEmail(true);
+    try {
+      await onPoEmailDeliveryWaivedChange(selectedPoBlockId, false);
+    } finally {
+      setWaivingEmail(false);
     }
   };
 
@@ -652,11 +781,17 @@ function WithPoMeta({
         detail?: string;
       };
       if (!res.ok) {
-        setSyncError([json.error, json.detail].filter(Boolean).join(': ') || `HTTP ${res.status}`);
+        setSyncError(
+          [json.error, json.detail].filter(Boolean).join(': ') ||
+            `HTTP ${res.status}`,
+        );
         return;
       }
       if (json.ok) router.refresh();
-      else setSyncError([json.error, json.detail].filter(Boolean).join(': ') || 'Sync failed');
+      else
+        setSyncError(
+          [json.error, json.detail].filter(Boolean).join(': ') || 'Sync failed',
+        );
     } catch (err) {
       console.error('Manual sync failed:', err);
       setSyncError(err instanceof Error ? err.message : String(err));
@@ -665,12 +800,19 @@ function WithPoMeta({
     }
   };
 
-  const [editShipAddr, setEditShipAddr] = useState<PoAddress>({ ...EMPTY_ADDR });
-  const [editBillAddr, setEditBillAddr] = useState<PoAddress>({ ...EMPTY_ADDR });
+  const [editShipAddr, setEditShipAddr] = useState<PoAddress>({
+    ...EMPTY_ADDR,
+  });
+  const [editBillAddr, setEditBillAddr] = useState<PoAddress>({
+    ...EMPTY_ADDR,
+  });
   const [editBillSame, setEditBillSame] = useState(true);
 
   const handleStartEdit = () => {
-    setEditExpected(poPanelMeta?.expectedDate ?? '');
+    const minY = poPanelMeta?.minExpectedDateYmd ?? null;
+    const raw = poPanelMeta?.expectedDate ?? '';
+    const expY = raw.length >= 10 ? raw.slice(0, 10) : '';
+    setEditExpected(minY && (!expY || expY < minY) ? minY : expY);
     setEditComment('');
     setEditPoNumber(poPanelMeta?.poNumber ?? entry.referenceKey ?? '');
     setPoNumberError(null);
@@ -698,7 +840,11 @@ function WithPoMeta({
         comment: editComment || null,
         poNumber: trimmed,
         shippingAddress: isAddrEmpty(editShipAddr) ? null : editShipAddr,
-        billingAddress: editBillSame ? null : (isAddrEmpty(editBillAddr) ? null : editBillAddr),
+        billingAddress: editBillSame
+          ? null
+          : isAddrEmpty(editBillAddr)
+            ? null
+            : editBillAddr,
         billingSameAsShipping: editBillSame,
       });
       if (result.ok) {
@@ -737,22 +883,43 @@ function WithPoMeta({
     poPrintBlock.panelMeta != null &&
     poPrintBlock.lineItems.length > 0;
 
-  const handlePrintPo = () => {
-    if (!poPrintBlock) return;
-    const input = buildPoPdfInput({
+  const buildCurrentPoPdfInput = () => {
+    if (!poPrintBlock) return null;
+    return buildPoPdfInput({
       block: poPrintBlock,
       supplierCompany: entry.supplierCompany,
       customerHeadline: poPrintHeadline ?? null,
       fallbackBillingAddress: customerDefaultBilling ?? null,
       fallbackShippingAddress: customerDefaultShipping ?? null,
     });
+  };
+
+  const handleDownloadPo = () => {
+    const input = buildCurrentPoPdfInput();
+    if (input) downloadPoPdf(input);
+  };
+
+  const handlePrintPo = () => {
+    const input = buildCurrentPoPdfInput();
     if (input) openPoPdfPrint(input);
   };
 
   return (
     <>
       <Section>
-        <MetaLabel>PO no.</MetaLabel>
+        <div className="flex items-center justify-between gap-1 mb-0.5">
+          <MetaLabel>PO no.</MetaLabel>
+          {!editing && (
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground rounded p-0.5 shrink-0"
+              aria-label="Edit PO number and other fields"
+              onClick={handleStartEdit}
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          )}
+        </div>
         {editing ? (
           <MetaPoNumberInput
             value={editPoNumber}
@@ -767,7 +934,10 @@ function WithPoMeta({
           <MetaValue mono>{poNumber}</MetaValue>
         )}
         <div className="mt-1.5 flex flex-wrap gap-1">
-          <Badge variant="blue" className="rounded px-1.5 text-[10px] capitalize">
+          <Badge
+            variant="blue"
+            className="rounded px-1.5 text-[10px] capitalize"
+          >
             {statusLabel.replace(/_/g, ' ')}
           </Badge>
           {poPanelMeta?.currency && (
@@ -786,10 +956,10 @@ function WithPoMeta({
       <Section>
         <MetaLabel>Expected delivery</MetaLabel>
         {editing ? (
-          <Input
-            type="date"
+          <YmdDateInput
             value={editExpected}
             onChange={(e) => setEditExpected(e.target.value)}
+            min={poPanelMeta?.minExpectedDateYmd ?? undefined}
             className="h-auto min-h-0 text-[11px] px-1.5 py-[4px] rounded-[5px] md:text-[11px]"
           />
         ) : (
@@ -825,7 +995,11 @@ function WithPoMeta({
           )}
         </div>
         {editing ? (
-          <CompactAddressInput label="" address={editShipAddr} onChange={setEditShipAddr} />
+          <CompactAddressInput
+            label=""
+            address={editShipAddr}
+            onChange={setEditShipAddr}
+          />
         ) : (
           <MetaValue>{formatAddrOneLine(poShipAddr)}</MetaValue>
         )}
@@ -842,18 +1016,27 @@ function WithPoMeta({
                 onChange={(e) => setEditBillSame(e.target.checked)}
                 className="h-3 w-3 rounded border-gray-300"
               />
-              <label htmlFor="edit-bill-same" className="text-[9px] text-muted-foreground uppercase tracking-wide font-medium">
+              <label
+                htmlFor="edit-bill-same"
+                className="text-[9px] text-muted-foreground uppercase tracking-wide font-medium"
+              >
                 Billing same as shipping
               </label>
             </div>
             {!editBillSame && (
-              <CompactAddressInput label="" address={editBillAddr} onChange={setEditBillAddr} />
+              <CompactAddressInput
+                label=""
+                address={editBillAddr}
+                onChange={setEditBillAddr}
+              />
             )}
           </>
         ) : (
           <>
             <MetaLabel>Bill to</MetaLabel>
-            <MetaValue>{poBillSame ? 'Same as shipping' : formatAddrOneLine(poBillAddr)}</MetaValue>
+            <MetaValue>
+              {poBillSame ? 'Same as shipping' : formatAddrOneLine(poBillAddr)}
+            </MetaValue>
           </>
         )}
       </Section>
@@ -917,28 +1100,81 @@ function WithPoMeta({
                   >
                     {sendingEmail ? 'Sending…' : 'Email sent - resend?'}
                   </Button>
+                ) : poPanelMeta?.emailDeliveryWaivedAt ? (
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-[10px] text-muted-foreground text-center leading-snug px-0.5">
+                      Not sending email from the hub for this PO (reminders off).
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      className="w-full justify-center text-[11px] rounded-[5px]"
+                      disabled={waivingEmail || lineItemsLoading}
+                      onClick={() => void handleUndoEmailWaive()}
+                    >
+                      {waivingEmail ? 'Updating…' : 'Undo — show reminders'}
+                    </Button>
+                  </div>
                 ) : entry.hasEmail ? (
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    className="w-full justify-center text-[11px] rounded-[5px] border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500"
-                    onClick={() => handleSendEmailClick()}
-                    disabled={sendingEmail || lineItemsLoading}
-                  >
-                    {sendingEmail ? 'Sending…' : 'Send email'}
-                  </Button>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        className="w-full justify-center text-[11px] rounded-[5px] border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500"
+                        onClick={() => handleSendEmailClick()}
+                        disabled={sendingEmail || lineItemsLoading}
+                      >
+                        {sendingEmail ? 'Sending…' : 'Send email'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        className="w-full justify-center text-[11px] rounded-[5px]"
+                        disabled={
+                          waivingEmail ||
+                          lineItemsLoading ||
+                          !onPoEmailDeliveryWaivedChange
+                        }
+                        onClick={() => void handleDoNotSendEmail()}
+                      >
+                        {waivingEmail ? '…' : 'Do not send'}
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    disabled
-                    className="w-full justify-center text-[11px] rounded-[5px]"
-                  >
-                    No email on file
-                  </Button>
+                  <div className="flex flex-col gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      disabled
+                      className="w-full justify-center text-[11px] rounded-[5px]"
+                    >
+                      No email on file
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      className="w-full justify-center text-[11px] rounded-[5px] text-muted-foreground"
+                      disabled={
+                        waivingEmail ||
+                        lineItemsLoading ||
+                        !onPoEmailDeliveryWaivedChange
+                      }
+                      onClick={() => void handleDoNotSendEmail()}
+                    >
+                      {waivingEmail ? '…' : 'Do not send'}
+                    </Button>
+                  </div>
                 )}
                 {emailSendError && (
-                  <p className="text-[9px] text-destructive leading-snug break-words" role="alert">
+                  <p
+                    className="text-[9px] text-destructive leading-snug break-words"
+                    role="alert"
+                  >
                     {emailSendError}
                   </p>
                 )}
@@ -953,20 +1189,32 @@ function WithPoMeta({
               </p>
             )}
             <Separator className="my-0.5" />
+            <div className="flex gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="min-w-0 flex-1 justify-center text-[11px] rounded-[5px]"
+                disabled={!canPrintPo || lineItemsLoading}
+                onClick={handleDownloadPo}
+              >
+                Download PO
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="min-w-0 flex-1 justify-center text-[11px] rounded-[5px]"
+                disabled={!canPrintPo || lineItemsLoading}
+                onClick={handlePrintPo}
+              >
+                Print PO
+              </Button>
+            </div>
             <Button
               variant="outline"
               size="xs"
               className="w-full justify-center text-[11px] rounded-[5px]"
-              disabled={!canPrintPo || lineItemsLoading}
-              onClick={handlePrintPo}
-            >
-              Print PO
-            </Button>
-            <Button
-              variant="outline"
-              size="xs"
-              className="w-full justify-center text-[11px] rounded-[5px]"
-              disabled={lineItemsLoading}
               onClick={handleStartEdit}
             >
               Edit PO
@@ -1044,13 +1292,19 @@ function WithPoMeta({
         </div>
         <div className="text-[10px] text-muted-foreground mt-0.5">
           {lastSyncedAt ? (
-            <>Last synced {formatDistanceToNow(new Date(lastSyncedAt), { addSuffix: true })}</>
+            <>
+              Last synced{' '}
+              {formatDistanceToNow(new Date(lastSyncedAt), { addSuffix: true })}
+            </>
           ) : (
             'Not synced yet'
           )}
         </div>
         {syncError && (
-          <p className="text-[9px] text-destructive mt-1 leading-snug break-words" role="alert">
+          <p
+            className="text-[9px] text-destructive mt-1 leading-snug break-words"
+            role="alert"
+          >
             {syncError}
           </p>
         )}
@@ -1066,22 +1320,35 @@ function LinkedOrderRow({ order }: { order: LinkedShopifyOrder }) {
     ? formatShopifyOrderDisplayFulfillmentStatus(order.fulfillmentStatus)
     : '—';
   const isFulfilled = order.fulfillmentStatus === 'FULFILLED';
+  const note = order.customerNote?.trim();
 
   return (
-    <div className="flex items-start gap-1">
-      <Badge
-        variant={isFulfilled ? 'green' : 'gray'}
-        className="rounded px-1 text-[9px] flex-shrink-0 mt-px"
-      >
-        {order.name}
-      </Badge>
-      <div className="min-w-0 text-[10px] text-muted-foreground truncate">
-        {order.customerName && (
-          <span className="text-foreground">{order.customerName}</span>
-        )}
-        {order.customerName && ' · '}
-        {statusLabel}
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-start gap-1">
+        <Badge
+          variant={isFulfilled ? 'green' : 'gray'}
+          className="rounded px-1 text-[9px] flex-shrink-0 mt-px"
+        >
+          {order.name}
+        </Badge>
+        <div className="min-w-0 text-[10px] text-muted-foreground truncate">
+          {order.customerName && (
+            <span className="text-foreground">{order.customerName}</span>
+          )}
+          {order.customerName && ' · '}
+          {statusLabel}
+        </div>
       </div>
+      {note && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 dark:border-amber-900 dark:bg-amber-950/40">
+          <div className="text-[9px] font-semibold uppercase tracking-wide text-amber-950 dark:text-amber-100">
+            Customer note
+          </div>
+          <p className="text-[11px] leading-snug text-amber-950 dark:text-amber-50 mt-0.5 whitespace-pre-wrap break-words">
+            {note}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

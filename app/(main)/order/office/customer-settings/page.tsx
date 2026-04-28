@@ -19,6 +19,7 @@ export default async function OfficeCustomerSettingsPage() {
       displayNameOverride: true,
       email: true,
       company: true,
+      officePoAccountCode: true,
       shippingAddress: true,
       billingAddress: true,
       billingSameAsShipping: true,
@@ -32,8 +33,9 @@ export default async function OfficeCustomerSettingsPage() {
       <div>
         <h1 className="text-lg font-semibold">Office — Customer Settings</h1>
         <p className="text-sm text-muted-foreground">
-          Manage display names for Shopify customers. Override names are used
-          throughout the order management interface.
+          Manage display names for Shopify customers. Set a short PO account code per
+          customer for suggested PO numbers (e.g. 6107 MA - Millda). Override names are
+          used throughout the order management interface.
         </p>
       </div>
 

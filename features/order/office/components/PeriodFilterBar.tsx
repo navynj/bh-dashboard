@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { YmdDateInput } from '@/components/ui/ymd-date-input';
 import {
   Dialog,
   DialogContent,
@@ -66,8 +66,9 @@ export function PeriodFilterBar({
   const today = new Date().toISOString().slice(0, 10);
   const [from, setFrom] = useState(orderedDateOnly ? '' : today);
   const [to, setTo] = useState(orderedDateOnly ? '' : today);
-  const af = orderedDateOnly && onArchiveFromChange ? archiveFrom ?? '' : from;
-  const at = orderedDateOnly && onArchiveToChange ? archiveTo ?? '' : to;
+  const af =
+    orderedDateOnly && onArchiveFromChange ? (archiveFrom ?? '') : from;
+  const at = orderedDateOnly && onArchiveToChange ? (archiveTo ?? '') : to;
   const setAf = onArchiveFromChange ?? setFrom;
   const setAt = onArchiveToChange ?? setTo;
   const [moreOpen, setMoreOpen] = useState(false);
@@ -92,7 +93,9 @@ export function PeriodFilterBar({
     return (
       <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-5 py-[7px] border-b bg-background flex-shrink-0">
         <div className="flex items-center gap-1 shrink-0">
-          <span className="text-[10px] text-muted-foreground">Supplier group</span>
+          <span className="text-[10px] text-muted-foreground">
+            Supplier group
+          </span>
           <select
             value={activeSupplierGroupSlug ?? ''}
             onChange={(e) => onSupplierGroupChange?.(e.target.value || null)}
@@ -110,16 +113,14 @@ export function PeriodFilterBar({
         <span className="flex-shrink-0 text-[11px] font-medium text-foreground">
           {dateLabel}
         </span>
-        <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5">
-          <Input
-            type="date"
+        <div className="flex flex-wrap items-center gap-1.5">
+          <YmdDateInput
             value={af}
             onChange={(e) => setAf(e.target.value)}
             className="h-auto min-h-0 w-auto text-[11px] px-1.5 py-[3px] rounded-[5px] md:text-[11px]"
           />
           <span className="text-[10px] text-muted-foreground">–</span>
-          <Input
-            type="date"
+          <YmdDateInput
             value={at}
             onChange={(e) => setAt(e.target.value)}
             className="h-auto min-h-0 w-auto text-[11px] px-1.5 py-[3px] rounded-[5px] md:text-[11px]"
@@ -158,7 +159,9 @@ export function PeriodFilterBar({
   return (
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 px-5 py-[7px] border-b bg-background flex-shrink-0">
       <div className="flex items-center gap-1 shrink-0">
-        <span className="text-[10px] text-muted-foreground">Supplier group</span>
+        <span className="text-[10px] text-muted-foreground">
+          Supplier group
+        </span>
         <select
           value={activeSupplierGroupSlug ?? ''}
           onChange={(e) => onSupplierGroupChange?.(e.target.value || null)}
@@ -265,7 +268,8 @@ export function PeriodFilterBar({
                   size="sm"
                   className={cn(
                     'w-full justify-start text-[11px] h-auto min-h-8 py-1.5 font-normal',
-                    isOn && 'bg-foreground text-background hover:bg-foreground/90 hover:text-background',
+                    isOn &&
+                      'bg-foreground text-background hover:bg-foreground/90 hover:text-background',
                   )}
                   onClick={() => {
                     onPeriodChange(p.id);
@@ -287,20 +291,18 @@ export function PeriodFilterBar({
 
       <div className="h-4 w-px bg-border mx-1 flex-shrink-0 self-center" />
 
-      <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5">
+      <div className="flex flex-shrink-0 items-center gap-1.5">
         <span className="text-[10px] text-muted-foreground">Custom</span>
-        <Input
-          type="date"
+        <YmdDateInput
           value={from}
           onChange={(e) => setFrom(e.target.value)}
-          className="h-auto min-h-0 w-auto text-[11px] px-1.5 py-[3px] rounded-[5px] md:text-[11px]"
+          className="h-auto min-h-0 w-auto min-w-[10.5rem] text-[11px] px-1.5 py-[3px] rounded-[5px] md:text-[11px]"
         />
         <span className="text-[10px] text-muted-foreground">–</span>
-        <Input
-          type="date"
+        <YmdDateInput
           value={to}
           onChange={(e) => setTo(e.target.value)}
-          className="h-auto min-h-0 w-auto text-[11px] px-1.5 py-[3px] rounded-[5px] md:text-[11px]"
+          className="h-auto min-h-0 w-auto min-w-[10.5rem] text-[11px] px-1.5 py-[3px] rounded-[5px] md:text-[11px]"
         />
         <Button
           type="button"

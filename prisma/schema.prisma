@@ -566,6 +566,8 @@ model ShopifyCustomer {
   email                 String?
   phone                 String?
   company               String?
+  /// Short code for default PO numbers (e.g. `6107 MA - …`); not synced to Shopify.
+  officePoAccountCode   String?        @map("office_po_account_code")
   /// Default shipping address (JSON: address1, address2, city, province, postalCode, country).
   shippingAddress       Json?          @map("shipping_address")
   /// Default billing address (JSON, same shape as shipping).
@@ -600,6 +602,8 @@ model ShopifyOrder {
   shopifyCreatedAt         DateTime?              @map("shopify_created_at") @db.Timestamptz
   billingAddress           Json?                  @map("billing_address")
   shippingAddress          Json?                  @map("shipping_address")
+  /// Customer-visible order note from Shopify (`Order.note`).
+  customerNote             String?                @map("customer_note") @db.Text
   archivedAt               DateTime?              @map("archived_at") @db.Timestamptz
   syncedAt                 DateTime               @default(now()) @map("synced_at") @db.Timestamptz
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz
@@ -664,6 +668,8 @@ model Supplier {
   /// Shopify product vendor name (matched during import or manual link).
   shopifyVendorName String?                @unique @map("shopify_vendor_name")
   company           String
+  /// Short code in default PO numbers; if null, `company` is used (never supplier group name).
+  officePoSupplierCode String?             @map("office_po_supplier_code")
   groupId           String?                @map("group_id")
   group             SupplierGroup?         @relation(fields: [groupId], references: [id])
   contactName       String?                @map("contact_name")
@@ -685,6 +691,8 @@ model Supplier {
   orderChannelType    String  @default("email") @map("order_channel_type")
   /// Mode-specific JSON (contact, URLs, instructions).
   orderChannelPayload Json?   @map("order_channel_payload")
+  /// Default PO expected delivery: ISO weekdays 1–7 (Mon–Sun), rule — see `supplier-delivery-schedule` zod.
+  deliverySchedule    Json?   @map("delivery_schedule")
 
   @@index([groupId])
   @@map("suppliers")
@@ -754,6 +762,8 @@ model PurchaseOrder {
   emailTrackingToken    String?                 @unique @map("email_tracking_token")
   emailOpenedAt         DateTime?               @map("email_opened_at") @db.Timestamptz
   emailReplyReceivedAt  DateTime?               @map("email_reply_received_at") @db.Timestamptz
+  /// Office chose not to send supplier email; suppresses outstanding-email alerts until cleared or email is sent.
+  emailDeliveryWaivedAt   DateTime?               @map("email_delivery_waived_at") @db.Timestamptz
   /// Shipping address for this PO (JSON: address1, address2, city, province, postalCode, country).
   shippingAddress       Json?                   @map("shipping_address")
   /// Billing address for this PO (JSON, same shape as shipping).

@@ -8,7 +8,8 @@ import {
   assertSupplierOrderChannel,
   legacyColumnsFromOrderChannel,
 } from '@/lib/order/supplier-order-channel';
-import type { Prisma } from '@prisma/client';
+import { parseSupplierDeliverySchedule } from '@/lib/order/supplier-delivery-schedule';
+import { Prisma } from '@prisma/client';
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -69,15 +70,32 @@ export async function PUT(request: NextRequest, ctx: RouteCtx) {
       };
     }
 
+    let deliveryScheduleUpdate:
+      | Prisma.NullableJsonNullValueInput
+      | Prisma.InputJsonValue
+      | undefined;
+    if (data.deliverySchedule !== undefined) {
+      deliveryScheduleUpdate =
+        data.deliverySchedule === null
+          ? Prisma.JsonNull
+          : (parseSupplierDeliverySchedule(data.deliverySchedule) as Prisma.InputJsonValue);
+    }
+
     const supplier = await prisma.supplier.update({
       where: { id },
       data: {
         ...(data.company !== undefined && { company: data.company }),
+        ...(data.officePoSupplierCode !== undefined && {
+          officePoSupplierCode: data.officePoSupplierCode?.trim() || null,
+        }),
         ...(data.shopifyVendorName !== undefined && {
           shopifyVendorName: data.shopifyVendorName ?? null,
         }),
         ...(data.groupId !== undefined && { groupId: resolvedGroupId }),
         ...(data.notes !== undefined && { notes: data.notes ?? null }),
+        ...(deliveryScheduleUpdate !== undefined && {
+          deliverySchedule: deliveryScheduleUpdate,
+        }),
         ...(orderChannelPrisma && {
           orderChannelType: orderChannelPrisma.orderChannelType,
           orderChannelPayload: orderChannelPrisma.orderChannelPayload,

@@ -1,6 +1,8 @@
 import { format, parseISO } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 
+import { formatYmdWithWeekday } from '@/lib/datetime/format-ymd-weekday';
+
 /** `YYYY-MM-DD` or ISO datetime — returns date portion for parsing. */
 export function isoDateOnly(iso: string): string {
   const t = iso.trim();
@@ -22,9 +24,8 @@ export function formatOfficeDateChip(iso: string): string {
 /** Sidebar bucket header (includes year), e.g. `Apr 20, 2026 (Mon)` */
 export function formatOfficeDateHeader(iso: string): string {
   try {
-    const d = parseISO(isoDateOnly(iso));
-    if (Number.isNaN(d.getTime())) return iso;
-    return format(d, 'MMM d, yyyy (EEE)', { locale: enUS });
+    const key = isoDateOnly(iso);
+    return formatYmdWithWeekday(key) || iso;
   } catch {
     return iso;
   }

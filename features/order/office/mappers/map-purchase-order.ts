@@ -17,6 +17,7 @@ import type {
 import { derivePurchaseOrderStatusFromShopify } from '@/lib/order/purchase-order-status-compute';
 import { legacyFallbackOrderChannel } from '@/lib/order/supplier-order-channel';
 import { sortPoLineItemsByProductTitleAsc } from '../utils/sort-lines-by-product-title';
+import { minExpectedDateYmdFromShopifyOrders } from '@/lib/order/min-expected-date-ymd-from-shopify-orders';
 import { toOrderedAtIso } from '../utils/vancouver-datetime';
 import { computeEmailDeliveryOutstanding } from '../utils/po-email-delivery-policy';
 
@@ -90,6 +91,7 @@ export function mapPrismaPoToBlock(
     emailSentAt: po.emailSentAt,
     archivedAt: po.archivedAt,
     legacyExternalId: po.legacyExternalId,
+    emailDeliveryWaivedAt: po.emailDeliveryWaivedAt,
   });
 
   // Build orderId→order map so we can resolve each lineItem's source order
@@ -124,7 +126,10 @@ export function mapPrismaPoToBlock(
   const lineItems = sortPoLineItemsByProductTitleAsc(
     po.lineItems.map((li) => {
       const soli = li.shopifyOrderLineItem;
-      const srcOrder = soli ? orderById.get(soli.orderId) : undefined;
+      /** Must match the Shopify order that owns this line (for `/apply-edit` routing). */
+      const owningOrder = soli
+        ? orderById.get(soli.orderId) ?? linkedOrders.find((o) => o.id === soli.orderId)
+        : undefined;
       return {
         id: li.id,
         purchaseOrderId: li.purchaseOrderId,
@@ -142,8 +147,8 @@ export function mapPrismaPoToBlock(
         shopifyLineItemGid: soli?.shopifyGid ?? null,
         shopifyVariantGid: li.shopifyVariantGid ?? soli?.variantGid ?? null,
         shopifyProductGid: li.shopifyProductGid ?? null,
-        shopifyOrderId: srcOrder?.id ?? firstOrder?.id ?? null,
-        shopifyOrderNumber: srcOrder?.name ?? firstOrderName,
+        shopifyOrderId: soli?.orderId ?? null,
+        shopifyOrderNumber: owningOrder?.name ?? firstOrderName,
         fulfillmentStatus: lineFulfillmentStatus(li),
         note: li.note?.trim() ? li.note.trim() : null,
       };
@@ -162,7 +167,10 @@ export function mapPrismaPoToBlock(
     name: o.name,
     customerName: o.customer?.displayName ?? o.customer?.email ?? null,
     fulfillmentStatus: o.displayFulfillmentStatus,
+    customerNote: o.customerNote?.trim() ? o.customerNote.trim() : null,
   }));
+
+  const minExpectedDateYmd = minExpectedDateYmdFromShopifyOrders(linkedOrders);
 
   const syncDates = linkedOrders
     .map((o) => o.syncedAt)
@@ -183,6 +191,7 @@ export function mapPrismaPoToBlock(
     orderedAt,
     dateCreated: dateToIso(po.dateCreated),
     expectedDate: dateToIso(po.expectedDate),
+    minExpectedDateYmd,
     fulfillDoneCount: linesFulfilled,
     fulfillPendingCount: linesTotal - linesFulfilled,
     fulfillTotalCount: linesTotal,
@@ -196,6 +205,9 @@ export function mapPrismaPoToBlock(
     authorizedBy: po.authorizedBy?.trim() ?? null,
     emailSentAt: po.emailSentAt ? po.emailSentAt.toISOString() : null,
     emailReplyReceivedAt: po.emailReplyReceivedAt ? po.emailReplyReceivedAt.toISOString() : null,
+    emailDeliveryWaivedAt: po.emailDeliveryWaivedAt
+      ? po.emailDeliveryWaivedAt.toISOString()
+      : null,
     emailDeliveries: po.emailDeliveries.map((d): PoEmailDeliveryItem => ({
       recipientEmail: d.recipientEmail,
       recipientName: d.recipientName,
@@ -248,6 +260,7 @@ export function mapPrismaPoToSlimBlock(
     emailSentAt: po.emailSentAt,
     archivedAt: po.archivedAt,
     legacyExternalId: po.legacyExternalId,
+    emailDeliveryWaivedAt: po.emailDeliveryWaivedAt,
   });
 
   const orderById = new Map(linkedOrders.map((o) => [o.id, o]));
@@ -281,7 +294,10 @@ export function mapPrismaPoToSlimBlock(
     name: o.name,
     customerName: o.customer?.displayName ?? o.customer?.email ?? null,
     fulfillmentStatus: o.displayFulfillmentStatus,
+    customerNote: o.customerNote?.trim() ? o.customerNote.trim() : null,
   }));
+
+  const minExpectedDateYmd = minExpectedDateYmdFromShopifyOrders(linkedOrders);
 
   const syncDates = linkedOrders
     .map((o) => o.syncedAt)
@@ -296,6 +312,7 @@ export function mapPrismaPoToSlimBlock(
     orderedAt,
     dateCreated: dateToIso(po.dateCreated),
     expectedDate: dateToIso(po.expectedDate),
+    minExpectedDateYmd,
     fulfillDoneCount: linesFulfilled,
     fulfillPendingCount: linesTotal - linesFulfilled,
     fulfillTotalCount: linesTotal,
@@ -307,6 +324,9 @@ export function mapPrismaPoToSlimBlock(
     authorizedBy: po.authorizedBy?.trim() ?? null,
     emailSentAt: po.emailSentAt ? po.emailSentAt.toISOString() : null,
     emailReplyReceivedAt: po.emailReplyReceivedAt ? po.emailReplyReceivedAt.toISOString() : null,
+    emailDeliveryWaivedAt: po.emailDeliveryWaivedAt
+      ? po.emailDeliveryWaivedAt.toISOString()
+      : null,
     emailDeliveries: po.emailDeliveries.map((d): PoEmailDeliveryItem => ({
       recipientEmail: d.recipientEmail,
       recipientName: d.recipientName,

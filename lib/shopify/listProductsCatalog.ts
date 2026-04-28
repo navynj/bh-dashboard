@@ -3,6 +3,7 @@
  */
 
 import { createAdminApiClient } from '@shopify/admin-api-client';
+import { shopifyMoneyAmountToDecimalString } from '@/lib/shopify/graphql-money';
 import type { ShopifyAdminCredentials } from '@/types/shopify';
 
 const PRODUCTS_CATALOG = `query OfficeProductsCatalog($first: Int!, $after: String, $query: String!, $sortKey: ProductSortKeys!) {
@@ -63,7 +64,7 @@ export type OfficeProductsCatalogData = {
               id: string;
               title: string | null;
               sku: string | null;
-              price: string | null;
+              price?: unknown;
               image?: { url: string | null } | null;
             };
           }>;
@@ -177,7 +178,7 @@ export async function fetchProductsCatalogPage(
         variantId: v.id,
         variantTitle: v.title,
         sku: v.sku,
-        price: v.price ?? null,
+        price: shopifyMoneyAmountToDecimalString(v.price),
         imageUrl,
       });
     }

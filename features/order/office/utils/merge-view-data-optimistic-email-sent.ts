@@ -25,7 +25,11 @@ export function mergeViewDataWithOptimisticEmailSent(
         ...po,
         emailDeliveryOutstanding: false,
         panelMeta: po.panelMeta
-          ? { ...po.panelMeta, emailSentAt: sentIso }
+          ? {
+              ...po.panelMeta,
+              emailSentAt: sentIso,
+              emailDeliveryWaivedAt: null,
+            }
           : po.panelMeta,
       };
       return next;

@@ -17,13 +17,18 @@ import { cn } from '@/lib/utils/cn';
 import {
   legacyFallbackOrderChannel,
   normalizeSupplierEmailContacts,
+  normalizeSupplierContactEmails,
   type SupplierOrderChannelType,
   type EmailOrderChannelPayload,
   type OrderLinkChannelPayload,
   type DirectInstructionChannelPayload,
 } from '@/lib/order/supplier-order-channel';
+import type { SupplierDeliverySchedule } from '@/lib/order/supplier-delivery-schedule';
+import { SupplierDeliveryScheduleFields } from './SupplierDeliveryScheduleFields';
+import { useSupplierDeliveryScheduleForm } from '../hooks/use-supplier-delivery-schedule-form';
 
 type EmailFormRow = { email: string; name: string };
+type CcFormRow = { email: string };
 
 export type SupplierGroup = {
   id: string;
@@ -37,6 +42,7 @@ export type VendorMappingRow = { id: string; vendorName: string };
 export type SupplierRow = {
   id: string;
   company: string;
+  officePoSupplierCode: string | null;
   shopifyVendorName: string | null;
   groupId: string | null;
   group: { name: string; slug: string } | null;
@@ -47,6 +53,7 @@ export type SupplierRow = {
   notes: string | null;
   orderChannelType: string;
   orderChannelPayload: unknown;
+  deliverySchedule: unknown | null;
   createdAt: string;
   vendorMappings: VendorMappingRow[];
   _count: { purchaseOrders: number };
@@ -74,10 +81,11 @@ const CHANNEL_OPTIONS: {
 
 function initialOrderChannel(editing: SupplierRow | null) {
   const emptyEmailRow = (): EmailFormRow => ({ email: '', name: '' });
+  const emptyCcRow = (): CcFormRow => ({ email: '' });
   if (!editing) {
     return {
       orderChannelType: 'email' as SupplierOrderChannelType,
-      email: { rows: [emptyEmailRow()] },
+      email: { rows: [emptyEmailRow()], ccRows: [emptyCcRow()] },
       link: {
         orderUrl: '',
         instruction: '',
@@ -103,9 +111,12 @@ function initialOrderChannel(editing: SupplierRow | null) {
             name: c.name?.trim() ?? '',
           }))
         : [emptyEmailRow()];
+    const ccList = normalizeSupplierContactEmails(p.ccEmails ?? []);
+    const ccRows: CcFormRow[] =
+      ccList.length > 0 ? ccList.map((email) => ({ email })) : [emptyCcRow()];
     return {
       orderChannelType: type,
-      email: { rows },
+      email: { rows, ccRows },
       link: { orderUrl: '', instruction: '', invoiceConfirmSenderEmail: '' },
       direct: { instruction: '' },
     };
@@ -114,7 +125,7 @@ function initialOrderChannel(editing: SupplierRow | null) {
     const p = payload as OrderLinkChannelPayload;
     return {
       orderChannelType: type,
-      email: { rows: [emptyEmailRow()] },
+      email: { rows: [emptyEmailRow()], ccRows: [emptyCcRow()] },
       link: {
         orderUrl: p.orderUrl ?? '',
         instruction: p.instruction ?? '',
@@ -126,7 +137,7 @@ function initialOrderChannel(editing: SupplierRow | null) {
   const p = payload as DirectInstructionChannelPayload;
   return {
     orderChannelType: type,
-    email: { rows: [emptyEmailRow()] },
+    email: { rows: [emptyEmailRow()], ccRows: [emptyCcRow()] },
     link: { orderUrl: '', instruction: '', invoiceConfirmSenderEmail: '' },
     direct: { instruction: p.instruction ?? '' },
   };
@@ -147,6 +158,9 @@ export function SupplierForm({
   const [company, setCompany] = useState(
     editing?.company ?? prefillVendor ?? '',
   );
+  const [officePoSupplierCode, setOfficePoSupplierCode] = useState(
+    editing?.officePoSupplierCode?.trim() ?? '',
+  );
   const [shopifyVendorName, setShopifyVendorName] = useState(
     editing?.shopifyVendorName ?? prefillVendor ?? '',
   );
@@ -160,6 +174,7 @@ export function SupplierForm({
   const [orderChannelType, setOrderChannelType] =
     useState<SupplierOrderChannelType>(ic.orderChannelType);
   const [emailRows, setEmailRows] = useState<EmailFormRow[]>(ic.email.rows);
+  const [ccEmailRows, setCcEmailRows] = useState<CcFormRow[]>(ic.email.ccRows);
   const [linkOrderUrl, setLinkOrderUrl] = useState(ic.link.orderUrl);
   const [linkInstruction, setLinkInstruction] = useState(ic.link.instruction);
   const [linkInvoiceEmail, setLinkInvoiceEmail] = useState(
@@ -171,6 +186,8 @@ export function SupplierForm({
     editing?.vendorMappings.map((m) => m.vendorName) ?? [],
   );
   const [newAlias, setNewAlias] = useState('');
+
+  const deliveryForm = useSupplierDeliveryScheduleForm(editing?.deliverySchedule);
 
   function addAlias() {
     const trimmed = newAlias.trim();
@@ -193,6 +210,22 @@ export function SupplierForm({
     );
   }
 
+  function addCcRow() {
+    setCcEmailRows((prev) => [...prev, { email: '' }]);
+  }
+
+  function removeCcRow(index: number) {
+    setCcEmailRows((prev) =>
+      prev.length <= 1 ? prev : prev.filter((_, i) => i !== index),
+    );
+  }
+
+  function patchCcRow(index: number, patch: Partial<CcFormRow>) {
+    setCcEmailRows((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    );
+  }
+
   function patchEmailRow(
     index: number,
     patch: Partial<Pick<EmailFormRow, 'email' | 'name'>>,
@@ -204,6 +237,9 @@ export function SupplierForm({
 
   function buildPayload(): unknown {
     if (orderChannelType === 'email') {
+      const ccEmails = normalizeSupplierContactEmails(
+        ccEmailRows.map((r) => r.email),
+      );
       return {
         contacts: normalizeSupplierEmailContacts(
           emailRows.map((r) => ({
@@ -211,6 +247,7 @@ export function SupplierForm({
             name: r.name.trim() || null,
           })),
         ),
+        ccEmails,
       };
     }
     if (orderChannelType === 'order_link') {
@@ -228,14 +265,24 @@ export function SupplierForm({
     setError(null);
 
     startTransition(async () => {
+      const scheduleErr = deliveryForm.validateScheduleForSubmit();
+      if (scheduleErr) {
+        setError(scheduleErr);
+        return;
+      }
+
+      const schedulePayload = deliveryForm.buildDeliverySchedulePayload();
+
       const body = {
         company: company.trim(),
+        officePoSupplierCode: officePoSupplierCode.trim() || null,
         shopifyVendorName: shopifyVendorName.trim() || null,
         groupId: groupId || null,
         notes: notes.trim() || null,
         orderChannelType,
         orderChannelPayload: buildPayload(),
         vendorAliases,
+        deliverySchedule: schedulePayload,
       };
 
       const url = isEdit ? `/api/suppliers/${editing.id}` : '/api/suppliers';
@@ -264,7 +311,11 @@ export function SupplierForm({
   const canDelete = isEdit && poCount === 0;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
+    <form
+      key={editing?.id ?? 'new-supplier'}
+      onSubmit={handleSubmit}
+      className="space-y-3"
+    >
       <h3 className="text-sm font-semibold">
         {isEdit ? 'Edit Supplier' : 'Create Supplier'}
       </h3>
@@ -314,6 +365,24 @@ export function SupplierForm({
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor="sf-po-supplier-code" className="text-xs">
+          PO supplier code (optional)
+        </Label>
+        <Input
+          id="sf-po-supplier-code"
+          value={officePoSupplierCode}
+          onChange={(e) => setOfficePoSupplierCode(e.target.value)}
+          placeholder="e.g. Millda"
+          maxLength={40}
+          className={fieldCls}
+        />
+        <p className="text-[10px] text-muted-foreground leading-snug">
+          Suggested PO numbers use this code; if empty, the company name is used (not
+          the supplier group).
+        </p>
       </div>
 
       <div className="grid gap-2">
@@ -479,6 +548,53 @@ export function SupplierForm({
               Add contact
             </Button>
           </div>
+          <div className="grid gap-2">
+            <Label className="text-xs">CC</Label>
+            <p className="text-[10px] text-muted-foreground -mt-1">
+              Optional. Included on PO emails with office-wide CC (invalid /
+              duplicate addresses removed on save; not sent as To).
+            </p>
+            {ccEmailRows.map((row, index) => (
+              <div
+                key={index}
+                className="flex flex-col sm:flex-row gap-1.5 items-stretch sm:items-end"
+              >
+                <div className="grid gap-1 flex-1 min-w-0">
+                  <Label className="text-[10px] text-muted-foreground">
+                    Email
+                  </Label>
+                  <Input
+                    type="email"
+                    value={row.email}
+                    onChange={(e) =>
+                      patchCcRow(index, { email: e.target.value })
+                    }
+                    placeholder="cc@example.com"
+                    className={fieldCls}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs shrink-0 px-2 h-8 sm:mb-0.5 self-end"
+                  onClick={() => removeCcRow(index)}
+                  disabled={ccEmailRows.length <= 1}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs w-fit"
+              onClick={addCcRow}
+            >
+              Add CC
+            </Button>
+          </div>
         </div>
       )}
 
@@ -537,6 +653,11 @@ export function SupplierForm({
           />
         </div>
       )}
+
+      <SupplierDeliveryScheduleFields
+        form={deliveryForm}
+        radioName="sf-delivery-rule"
+      />
 
       <div className="grid gap-2">
         <Label htmlFor="sf-notes" className="text-xs">

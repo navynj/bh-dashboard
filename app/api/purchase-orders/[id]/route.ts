@@ -5,6 +5,11 @@ import { parseBody, purchaseOrderUpdateSchema } from '@/lib/api/schemas';
 import { toApiErrorResponse } from '@/lib/core/errors';
 import { recomputePurchaseOrderStatusById } from '@/lib/order/purchase-order-status';
 import { mapPrismaPoToBlock } from '@/features/order/office/mappers/map-purchase-order';
+import {
+  EXPECTED_DATE_BEFORE_ORDER_CODE,
+  expectedDateBeforeOrderMessage,
+  minExpectedDateYmdFromShopifyOrders,
+} from '@/lib/order/min-expected-date-ymd-from-shopify-orders';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -95,6 +100,23 @@ export async function PUT(
       );
     }
 
+    if (data.expectedDate) {
+      const linkedOrders = await prisma.shopifyOrder.findMany({
+        where: { purchaseOrders: { some: { id } } },
+        select: { processedAt: true, shopifyCreatedAt: true },
+      });
+      const minY = minExpectedDateYmdFromShopifyOrders(linkedOrders);
+      if (minY && data.expectedDate < minY) {
+        return NextResponse.json(
+          {
+            error: expectedDateBeforeOrderMessage(),
+            code: EXPECTED_DATE_BEFORE_ORDER_CODE,
+          },
+          { status: 400 },
+        );
+      }
+    }
+
     if (data.poNumber !== undefined) {
       const taken = await prisma.purchaseOrder.findFirst({
         where: { poNumber: data.poNumber, NOT: { id } },
@@ -121,6 +143,11 @@ export async function PUT(
     if (data.completedAt !== undefined) {
       updateData.completedAt = data.completedAt
         ? new Date(data.completedAt)
+        : null;
+    }
+    if (data.emailDeliveryWaived !== undefined) {
+      updateData.emailDeliveryWaivedAt = data.emailDeliveryWaived
+        ? new Date()
         : null;
     }
 

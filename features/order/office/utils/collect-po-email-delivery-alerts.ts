@@ -116,3 +116,25 @@ export function supplierHasPoEmailDeliveryOutstanding(
     (p) => p.id !== 'new' && p.emailDeliveryOutstanding,
   );
 }
+
+/**
+ * Like {@link supplierHasPoEmailDeliveryOutstanding}, but only POs in `visiblePoIds`
+ * (e.g. one expected-date bucket). Avoids red “email not sent” on customers whose
+ * outstanding PO is on another delivery date.
+ */
+export function supplierHasPoEmailDeliveryOutstandingInVisiblePos(
+  supplierKey: SupplierKey,
+  viewDataMap: Record<SupplierKey, ViewData>,
+  visiblePoIds: readonly string[],
+): boolean {
+  if (visiblePoIds.length === 0) return false;
+  const vd = viewDataMap[supplierKey];
+  if (vd?.type !== 'post') return false;
+  const allow = new Set(visiblePoIds);
+  return vd.purchaseOrders.some(
+    (p) =>
+      p.id !== 'new' &&
+      allow.has(p.id) &&
+      p.emailDeliveryOutstanding,
+  );
+}

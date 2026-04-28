@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
 import { redirect } from 'next/navigation';
@@ -11,12 +12,17 @@ import {
 } from '@/lib/order/office-table-view-fetch';
 import { buildInboxData } from '@/features/order/office/mappers/build-inbox-data';
 import { buildWeekPeriods } from '@/features/order/office/mappers/periods';
-import { isShopifyAdminEnvConfigured } from '@/lib/shopify/env';
+import {
+  getShopifyAdminStoreHandleForOfficeUi,
+  isShopifyAdminEnvConfigured,
+} from '@/lib/shopify/env';
 import type {
   PrismaPoWithRelations,
   PrismaPoSlimWithRelations,
 } from '@/features/order/office/mappers/map-purchase-order';
 import { executeShopifySync } from '@/lib/shopify/sync/run-shopify-sync';
+import { loadVariantOfficeNotesMap } from '@/lib/order/shopify-variant-office-note';
+import { fetchLegacyOrphanPoLinesForInbox } from '@/lib/order/fetch-legacy-orphan-po-lines-for-inbox';
 import OfficeOrderLoading from './loading';
 
 export const dynamic = 'force-dynamic';
@@ -96,23 +102,53 @@ async function OfficeInboxContent() {
         suppliers: { orderBy: { company: 'asc' } },
       },
     }),
-    // Unlinked orders — filter VOIDED in DB (null-safe OR clause preserves orders with no status)
-    prisma.shopifyOrder.findMany({
-      where: {
-        purchaseOrders: { none: {} },
-        displayFulfillmentStatus: { not: 'FULFILLED' },
-        shopifyCreatedAt: { gte: unlinkedCutoff },
-        OR: [
-          { displayFinancialStatus: null },
-          { displayFinancialStatus: { not: 'VOIDED' } },
-        ],
-      },
-      orderBy: { shopifyCreatedAt: 'desc' },
-      include: {
-        customer: true,
-        lineItems: true,
-      },
-    }),
+    // Inbox Shopify orders: per **line** open qty vs active (non-archived) PO lines — not order↔PO.
+    (async () => {
+      const idRows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT o.id
+        FROM "order".shopify_orders o
+        WHERE (o.display_fulfillment_status IS DISTINCT FROM 'FULFILLED')
+          AND o.shopify_created_at >= ${unlinkedCutoff}
+          AND (o.display_financial_status IS NULL OR o.display_financial_status IS DISTINCT FROM 'VOIDED')
+          AND (
+            NOT EXISTS (
+              SELECT 1 FROM "order".shopify_order_line_items li WHERE li.order_id = o.id
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM "order".shopify_order_line_items li
+              WHERE li.order_id = o.id
+                AND COALESCE(
+                  (
+                    SELECT SUM(poli.quantity)::int
+                    FROM "order".purchase_order_line_items poli
+                    INNER JOIN "order".purchase_orders po ON po.id = poli.purchase_order_id
+                    WHERE poli.shopify_order_line_item_id = li.id
+                      AND po.archived_at IS NULL
+                  ),
+                  0
+                ) < li.quantity
+            )
+          )
+      `);
+      const ids = idRows.map((r) => r.id);
+      if (ids.length === 0) return [];
+      return prisma.shopifyOrder.findMany({
+        where: { id: { in: ids } },
+        orderBy: { shopifyCreatedAt: 'desc' },
+        include: {
+          customer: true,
+          lineItems: {
+            include: {
+              purchaseOrderLineItems: {
+                where: { purchaseOrder: { archivedAt: null } },
+                select: { id: true, quantity: true },
+              },
+            },
+          },
+        },
+      });
+    })(),
     prisma.shopifyVendorMapping.findMany({
       select: { vendorName: true, supplierId: true },
     }),
@@ -148,6 +184,23 @@ async function OfficeInboxContent() {
     `[OfficeInbox] DB loaded in ${Date.now() - t0}ms — ${activePurchaseOrders.length} active + ${archivedPurchaseOrders.length} archived POs, ${unlinkedShopifyOrders.length} unlinked orders`,
   );
 
+  const variantGidsForNotes = new Set<string>();
+  for (const o of unlinkedShopifyOrders) {
+    for (const li of o.lineItems) {
+      const g = li.variantGid?.trim();
+      if (g) variantGidsForNotes.add(g);
+    }
+  }
+  const variantDefaultLineNotes = await loadVariantOfficeNotesMap(
+    prisma,
+    [...variantGidsForNotes],
+  );
+
+  const legacyOrphanPoLines = await fetchLegacyOrphanPoLinesForInbox(
+    prisma,
+    unlinkedShopifyOrders.map((o) => o.id),
+  );
+
   const inbox = buildInboxData(
     activePurchaseOrders,
     archivedPurchaseOrders,
@@ -155,12 +208,16 @@ async function OfficeInboxContent() {
     unlinkedShopifyOrders,
     vendorMappings,
     lineCountsByPoId,
+    variantDefaultLineNotes,
+    legacyOrphanPoLines,
   );
 
   const periods = buildWeekPeriods();
+  const shopifyAdminStoreHandle = getShopifyAdminStoreHandleForOfficeUi();
 
   return (
     <OrderManagementView
+      shopifyAdminStoreHandle={shopifyAdminStoreHandle}
       initialStates={inbox.initialStates}
       viewDataMap={inbox.viewDataMap}
       customerGroups={inbox.customerGroups}

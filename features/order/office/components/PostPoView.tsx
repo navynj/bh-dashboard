@@ -3,13 +3,20 @@ import { PoTable } from './PoTable';
 import type { PostViewData } from '../types';
 
 type Props = {
+  shopifyAdminStoreHandle?: string | null;
   viewData: PostViewData;
   selectedPoBlockId: string | null;
   lineItemsLoading?: boolean;
   onRetryLineItems?: () => void;
 };
 
-export function PostPoView({ viewData, selectedPoBlockId, lineItemsLoading, onRetryLineItems }: Props) {
+export function PostPoView({
+  shopifyAdminStoreHandle,
+  viewData,
+  selectedPoBlockId,
+  lineItemsLoading,
+  onRetryLineItems,
+}: Props) {
   const pos = viewData.purchaseOrders;
   const hasMulti = pos.length > 1;
 
@@ -36,6 +43,7 @@ export function PostPoView({ viewData, selectedPoBlockId, lineItemsLoading, onRe
       {visiblePos.map((po) => (
         <PoTable
           key={po.id}
+          shopifyAdminStoreHandle={shopifyAdminStoreHandle}
           purchaseOrder={po}
           lineItemsLoading={lineItemsLoading}
           onRetryLineItems={onRetryLineItems}

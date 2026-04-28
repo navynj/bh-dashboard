@@ -41,6 +41,8 @@ export type LinkedShopifyOrder = {
   name: string;
   customerName: string | null;
   fulfillmentStatus: string | null;
+  /** Shopify `Order.note` synced to DB (`shopify_orders.customer_note`). */
+  customerNote: string | null;
 };
 
 export type PoAddress = {
@@ -65,6 +67,11 @@ export type PoPanelMeta = {
   orderedAt: string | null;
   dateCreated: string | null;
   expectedDate: string | null;
+  /**
+   * Vancouver `YYYY-MM-DD` — earliest allowed expected delivery (latest Shopify order placement
+   * day among linked orders). Null when no linked orders or placement dates unknown.
+   */
+  minExpectedDateYmd: string | null;
   fulfillDoneCount: number;
   fulfillPendingCount: number;
   fulfillTotalCount: number;
@@ -76,6 +83,8 @@ export type PoPanelMeta = {
   authorizedBy: string | null;
   emailSentAt: string | null;
   emailReplyReceivedAt: string | null;
+  /** ISO — user chose not to send hub email; reminders suppressed until cleared or send logged. */
+  emailDeliveryWaivedAt: string | null;
   emailDeliveries: PoEmailDeliveryItem[];
 };
 

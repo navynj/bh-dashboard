@@ -73,7 +73,7 @@ This communication including any information transmitted with it is intended onl
 export const DEFAULT_PO_EMAIL_OUTBOUND: PoEmailOutboundSettings = {
   senderName: 'Yoonji Lee',
   ccEmail: 'work@cmarket.ca',
-  subjectTemplate: 'Purchase Order {{poNumber}}',
+  subjectTemplate: 'Purchase Order {{poNumber}} from BH Food Group',
   bodyIntroTemplate: `Hi, {{supplierName}}
 
 Please see attached PDF for Purchase Order {{poNumber}}.

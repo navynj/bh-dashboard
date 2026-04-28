@@ -1,6 +1,6 @@
 'use client';
 
-import { useOptimistic, useRef, useState, useTransition } from 'react';
+import { useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils/cn';
+import {
+  GroupBulkDeliveryScheduleDialog,
+  pickBulkDeliveryScheduleSeed,
+} from './GroupBulkDeliveryScheduleDialog';
 import { SupplierForm, type SupplierRow, type SupplierGroup } from './SupplierForm';
 
 type Props = {
@@ -54,6 +58,9 @@ export function SuppliersClient({
   const [addingGroup, setAddingGroup] = useState(false);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editGroupName, setEditGroupName] = useState('');
+  const [bulkDeliveryGroupId, setBulkDeliveryGroupId] = useState<string | null>(
+    null,
+  );
   const [groupError, setGroupError] = useState<string | null>(null);
   const editGroupRef = useRef<HTMLInputElement>(null);
 
@@ -65,6 +72,33 @@ export function SuppliersClient({
           s.id === toggledId ? { ...s, isFavorite: !s.isFavorite } : s,
         ),
       ),
+  );
+
+  const bulkDeliveryGroup = useMemo(
+    () =>
+      bulkDeliveryGroupId
+        ? (groups.find((g) => g.id === bulkDeliveryGroupId) ?? null)
+        : null,
+    [bulkDeliveryGroupId, groups],
+  );
+  const bulkGroupSupplierCount = useMemo(
+    () =>
+      bulkDeliveryGroup
+        ? optimisticSuppliers.filter((s) => s.groupId === bulkDeliveryGroup.id)
+            .length
+        : 0,
+    [bulkDeliveryGroup, optimisticSuppliers],
+  );
+  const bulkScheduleSeed = useMemo(
+    () =>
+      bulkDeliveryGroup
+        ? pickBulkDeliveryScheduleSeed(
+            optimisticSuppliers,
+            bulkDeliveryGroup.id,
+            bulkDeliveryGroup.slug,
+          )
+        : null,
+    [bulkDeliveryGroup, optimisticSuppliers],
   );
 
   const registeredVendors = new Set(
@@ -361,6 +395,23 @@ export function SuppliersClient({
                             variant="ghost"
                             size="xs"
                             className="text-[10px] h-5 px-1"
+                            disabled={g._count.suppliers === 0}
+                            title={
+                              g._count.suppliers === 0
+                                ? 'No suppliers in this group'
+                                : 'Bulk-edit PO delivery schedule for all suppliers in this group'
+                            }
+                            onClick={() => {
+                              setBulkDeliveryGroupId(g.id);
+                              setGroupError(null);
+                            }}
+                          >
+                            Schedule
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            className="text-[10px] h-5 px-1"
                             onClick={() => {
                               setEditingGroupId(g.id);
                               setEditGroupName(g.name);
@@ -561,38 +612,53 @@ export function SuppliersClient({
       </div>
 
       {/* Edit Supplier Dialog */}
+      <GroupBulkDeliveryScheduleDialog
+        open={bulkDeliveryGroupId !== null}
+        onOpenChange={(open) => {
+          if (!open) setBulkDeliveryGroupId(null);
+        }}
+        group={bulkDeliveryGroup}
+        supplierCount={bulkGroupSupplierCount}
+        seedScheduleRaw={bulkScheduleSeed}
+        onApplied={() => router.refresh()}
+      />
+
       <Dialog
         open={editing !== null}
         onOpenChange={(open) => {
           if (!open) setEditing(null);
         }}
       >
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>{editing?.company}</DialogTitle>
-            <DialogDescription>
-              {editing && (
-                <>
-                  {editing._count.purchaseOrders} purchase order
-                  {editing._count.purchaseOrders !== 1 && 's'}
-                  {editing.shopifyVendorName &&
-                    ` · Shopify vendor: ${editing.shopifyVendorName}`}
-                  {editing.vendorMappings.length > 0 &&
-                    ` · ${editing.vendorMappings.length} vendor alias${editing.vendorMappings.length !== 1 ? 'es' : ''}`}
-                </>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          {editing && (
-            <SupplierForm
-              key={editing.id}
-              editing={editing}
-              prefillVendor={null}
-              vendors={vendors}
-              groups={groups}
-              onDone={handleDone}
-            />
-          )}
+        <DialogContent className="flex max-h-[min(90vh,880px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+          <div className="shrink-0 space-y-1.5 border-b px-6 pt-6 pb-4 pr-14">
+            <DialogHeader className="space-y-1.5 text-left">
+              <DialogTitle>{editing?.company}</DialogTitle>
+              <DialogDescription>
+                {editing && (
+                  <>
+                    {editing._count.purchaseOrders} purchase order
+                    {editing._count.purchaseOrders !== 1 && 's'}
+                    {editing.shopifyVendorName &&
+                      ` · Shopify vendor: ${editing.shopifyVendorName}`}
+                    {editing.vendorMappings.length > 0 &&
+                      ` · ${editing.vendorMappings.length} vendor alias${editing.vendorMappings.length !== 1 ? 'es' : ''}`}
+                  </>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
+            {editing && (
+              <SupplierForm
+                key={editing.id}
+                editing={editing}
+                prefillVendor={null}
+                vendors={vendors}
+                groups={groups}
+                onDone={handleDone}
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </>

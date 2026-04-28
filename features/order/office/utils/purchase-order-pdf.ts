@@ -50,8 +50,9 @@ const TITLE_BAND_BASELINE_NUDGE_MM = 1.25;
 
 function ymd2display(ymd: string | null): string | null {
   if (!ymd) return null;
-  const d = parseISO(`${ymd}T12:00:00`);
-  return isValid(d) ? format(d, 'MMMM d, yyyy') : ymd;
+  const day = ymd.trim().slice(0, 10);
+  const d = parseISO(`${day}T12:00:00`);
+  return isValid(d) ? format(d, 'MMMM d, yyyy (EEE)') : ymd.trim();
 }
 
 function countryLabel(code: string | undefined): string {
@@ -434,6 +435,30 @@ export function buildPoPdfInput(args: {
 export function buildPoPdfBuffer(input: PoPdfInput): Buffer {
   const doc = buildDoc(input);
   return Buffer.from(doc.output('arraybuffer'));
+}
+
+function poPdfFilename(poNumber: string): string {
+  const safe = poNumber
+    .trim()
+    .replace(/[/\\?%*:|"<>]/g, '-')
+    .replace(/\s+/g, ' ')
+    .slice(0, 80);
+  return `PO-${safe || 'order'}.pdf`;
+}
+
+/** Saves the same PDF as print, as a file download in the browser. */
+export function downloadPoPdf(input: PoPdfInput): void {
+  const doc = buildDoc(input);
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = poPdfFilename(input.poNumber);
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export function openPoPdfPrint(input: PoPdfInput): void {

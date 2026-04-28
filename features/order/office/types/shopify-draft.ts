@@ -1,3 +1,5 @@
+import type { PoAddress } from './purchase-order';
+
 export type PrePoLineDraft = {
   /** Local `ShopifyOrderLineItem.id` for API edits. */
   shopifyLineItemId?: string;
@@ -13,9 +15,14 @@ export type PrePoLineDraft = {
   itemPrice: string | null;
   /** Variant unit cost from Shopify inventory, when synced. */
   itemCost?: string | null;
+  /** Shopify order line qty before subtracting qty already on active POs (Inbox dedupe). */
+  shopifySourceLineQty?: number;
+  /** Remaining qty for the next PO (≤ `shopifySourceLineQty` when set). */
   quantity: number;
   includeInPo: boolean;
   disabled?: boolean;
+  /** Item settings default for this variant (PO/PDF line note); editable in Inbox before PO create. */
+  defaultPoLineNote?: string | null;
 };
 
 export type ShopifyOrderDraft = {
@@ -30,6 +37,11 @@ export type ShopifyOrderDraft = {
   customerEmail: string | null;
   customerPhone: string | null;
   shippingAddressLine: string | null;
+  /**
+   * When `shippingAddress` JSON on the order has full fields — used for Separate PO
+   * defaults and PO create `shippingAddress`.
+   */
+  defaultPoShippingAddress: PoAddress | null;
   customerDisplayName: string | null;
   orderedAt: string | null;
   note?: string;

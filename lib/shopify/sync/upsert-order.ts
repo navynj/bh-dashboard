@@ -8,7 +8,12 @@ import { prisma } from '@/lib/core/prisma';
 import type { ShopifyMailingAddress, ShopifyOrderNode } from '@/types/shopify';
 import type { ShopifyAdminCustomerNode } from '@/lib/shopify/fetchCustomers';
 import { lineItemImageUrlFromShopifyNode } from '@/lib/shopify/line-item-image-url';
-import { recomputePurchaseOrderStatusesForShopifyOrderId } from '@/lib/order/purchase-order-status';
+import { effectiveAdminGraphqlLineItemQuantity } from '@/lib/shopify/line-item-effective-quantity';
+import { detachPoLinesForFulfilledFinanciallyCanceledShopifyOrder } from '@/lib/order/detach-po-lines-for-fulfilled-financially-canceled-shopify-order';
+import {
+  recomputePurchaseOrderStatusById,
+  recomputePurchaseOrderStatusesForShopifyOrderId,
+} from '@/lib/order/purchase-order-status';
 
 function parseOrderNumber(name: string | null): number {
   if (!name) return 0;
@@ -22,6 +27,14 @@ function toDecimalOrNull(
   if (!amount) return null;
   const n = parseFloat(amount);
   return isNaN(n) ? null : new Prisma.Decimal(n);
+}
+
+function customerNoteFromShopify(
+  note: string | null | undefined,
+): string | null {
+  if (note == null) return null;
+  const t = note.trim();
+  return t.length > 0 ? t : null;
 }
 
 /** Shopify often omits `province` and only sets `provinceCode` / REST `province_code`. */
@@ -186,6 +199,7 @@ export async function upsertShopifyOrder(
       shopifyCreatedAt: order.createdAt ? new Date(order.createdAt) : null,
       billingAddress: addressToJson(order.billingAddress),
       shippingAddress: addressToJson(order.shippingAddress),
+      customerNote: customerNoteFromShopify(order.note),
       syncedAt: new Date(),
     },
     update: {
@@ -201,6 +215,7 @@ export async function upsertShopifyOrder(
       shopifyCreatedAt: order.createdAt ? new Date(order.createdAt) : null,
       billingAddress: addressToJson(order.billingAddress),
       shippingAddress: addressToJson(order.shippingAddress),
+      customerNote: customerNoteFromShopify(order.note),
       syncedAt: new Date(),
     },
   });
@@ -210,6 +225,7 @@ export async function upsertShopifyOrder(
 
   for (const li of lineItems) {
     const imageUrl = lineItemImageUrlFromShopifyNode(li);
+    const qty = effectiveAdminGraphqlLineItemQuantity(li);
     await prisma.shopifyOrderLineItem.upsert({
       where: { shopifyGid: li.id },
       create: {
@@ -221,7 +237,7 @@ export async function upsertShopifyOrder(
         variantGid: li.variant?.id ?? null,
         imageUrl,
         vendor: li.vendor ?? null,
-        quantity: li.quantity,
+        quantity: qty,
         price: toDecimalOrNull(li.discountedUnitPriceSet?.shopMoney?.amount),
         unitCost: toDecimalOrNull(li.variant?.inventoryItem?.unitCost?.amount),
       },
@@ -233,7 +249,7 @@ export async function upsertShopifyOrder(
         variantGid: li.variant?.id ?? null,
         imageUrl,
         vendor: li.vendor ?? null,
-        quantity: li.quantity,
+        quantity: qty,
         price: toDecimalOrNull(li.discountedUnitPriceSet?.shopMoney?.amount),
         unitCost: toDecimalOrNull(li.variant?.inventoryItem?.unitCost?.amount),
       },
@@ -262,6 +278,15 @@ export async function upsertShopifyOrder(
     await prisma.shopifyOrderLineItem.deleteMany({
       where: { id: { in: removeIds } },
     });
+  }
+
+  const touchedPoIds = await detachPoLinesForFulfilledFinanciallyCanceledShopifyOrder(
+    shopifyOrder.id,
+    order.displayFulfillmentStatus,
+    order.displayFinancialStatus,
+  );
+  for (const poId of touchedPoIds) {
+    await recomputePurchaseOrderStatusById(poId);
   }
 
   await recomputePurchaseOrderStatusesForShopifyOrderId(shopifyOrder.id);

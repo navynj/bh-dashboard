@@ -22,6 +22,8 @@ export type SupplierEmailContact = {
 
 export type EmailOrderChannelPayload = {
   contacts: SupplierEmailContact[];
+  /** Optional CC addresses for PO emails (merged with office-wide CC at send time). */
+  ccEmails: string[];
 };
 
 export type OrderLinkChannelPayload = {
@@ -99,15 +101,29 @@ const contactRowSchema = z.object({
   name: z.string().optional().nullable(),
 });
 
+function normalizedCcEmailsFromEmailPayloadRaw(raw: {
+  ccEmails?: string[] | undefined;
+  ccEmail?: string | null | undefined;
+}): string[] {
+  const merged = [
+    ...(raw.ccEmails ?? []),
+    ...(raw.ccEmail ? looseContactEmailsFromRaw(raw.ccEmail) : []),
+  ];
+  return normalizeSupplierContactEmails(merged);
+}
+
 const emailPayloadSchema = z
   .object({
     contacts: z.array(contactRowSchema).optional(),
     contactEmails: z.array(z.string()).optional(),
     contactEmail: z.string().optional().nullable(),
     contactName: z.string().optional().nullable(),
+    ccEmails: z.array(z.string()).optional(),
+    ccEmail: z.string().optional().nullable(),
   })
   .transform((raw): EmailOrderChannelPayload => {
     const sharedName = raw.contactName?.trim() || null;
+    const ccEmails = normalizedCcEmailsFromEmailPayloadRaw(raw);
     if (raw.contacts != null && raw.contacts.length > 0) {
       return {
         contacts: normalizeSupplierEmailContacts(
@@ -116,6 +132,7 @@ const emailPayloadSchema = z
             name: c.name,
           })),
         ),
+        ccEmails,
       };
     }
     const emails = normalizeSupplierContactEmails([
@@ -124,6 +141,7 @@ const emailPayloadSchema = z
     ]);
     return {
       contacts: contactsFromLegacyEmailFields(emails, sharedName),
+      ccEmails,
     };
   });
 
@@ -249,7 +267,10 @@ export function legacyFallbackOrderChannel(input: {
             input.contactName?.trim() ?? null,
           );
           if (fromDb.length > 0) {
-            return { type: 'email', payload: { contacts: fromDb } };
+            return {
+              type: 'email',
+              payload: { contacts: fromDb, ccEmails: ep.ccEmails },
+            };
           }
         }
       }
@@ -262,7 +283,7 @@ export function legacyFallbackOrderChannel(input: {
     input.contactName?.trim() ?? null,
   );
   if (fromDb.length > 0) {
-    return { type: 'email', payload: { contacts: fromDb } };
+    return { type: 'email', payload: { contacts: fromDb, ccEmails: [] } };
   }
   if (input.link?.trim()) {
     return {

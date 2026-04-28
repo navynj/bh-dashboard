@@ -17,12 +17,18 @@ type Props = {
   poEmailSentAt?: string | null;
   /** Selected PO still needs a logged supplier email under the office policy. */
   poEmailDeliveryOutstanding?: boolean;
+  /** ISO — user waived hub email reminders for this PO. */
+  poEmailDeliveryWaivedAt?: string | null;
   /** Selected PO id for send-email API (omit when drafts or none). */
   selectedPoBlockId?: string | null;
   /** Per-recipient delivery records for the selected PO. */
   emailDeliveries?: PoEmailDeliveryItem[];
   onPoEmailSent?: (poId: string) => void;
   onSendEmailComplete?: () => void;
+  onPoEmailDeliveryWaivedChange?: (
+    poId: string,
+    waived: boolean,
+  ) => void | Promise<void>;
   /** Line items are being lazy-loaded — disable email send. */
   lineItemsLoading?: boolean;
   /** ISO timestamp when supplier reply was manually marked as received. */
@@ -55,10 +61,12 @@ export function OrderProcessingBlock({
   includePoEmailTools = true,
   poEmailSentAt = null,
   poEmailDeliveryOutstanding = false,
+  poEmailDeliveryWaivedAt = null,
   selectedPoBlockId = null,
   emailDeliveries = [],
   onPoEmailSent,
   onSendEmailComplete,
+  onPoEmailDeliveryWaivedChange,
   lineItemsLoading = false,
   poEmailReplyReceivedAt = null,
   onReplyReceivedChange,
@@ -67,6 +75,7 @@ export function OrderProcessingBlock({
   const contacts = entry.supplierPoContacts;
   const savedInstruction = entry.supplierOrderInstruction?.trim() ?? '';
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [waivingEmail, setWaivingEmail] = useState(false);
   const [togglingReply, setTogglingReply] = useState(false);
 
   const deliveryByEmail = new Map(emailDeliveries.map((d) => [d.recipientEmail.toLowerCase(), d]));
@@ -83,22 +92,46 @@ export function OrderProcessingBlock({
     try {
       const result = await postSendPurchaseOrderEmail(selectedPoBlockId);
       if (!result.ok) {
-        toast.error(result.error);
         return;
       }
       onPoEmailSent?.(selectedPoBlockId);
       onSendEmailComplete?.();
-      if (result.recipientCount > 0) {
-        toast.success(
-          `Email sent to ${result.recipientCount} contact${result.recipientCount === 1 ? '' : 's'}.`,
-        );
-      } else {
-        toast.success('PO email sent.');
-      }
     } catch {
       toast.error('Network error — could not send email');
     } finally {
       setSendingEmail(false);
+    }
+  };
+
+  const handleDoNotSendEmail = async () => {
+    if (
+      !selectedPoBlockId ||
+      selectedPoBlockId === '__drafts__' ||
+      !onPoEmailDeliveryWaivedChange
+    ) {
+      return;
+    }
+    setWaivingEmail(true);
+    try {
+      await onPoEmailDeliveryWaivedChange(selectedPoBlockId, true);
+    } finally {
+      setWaivingEmail(false);
+    }
+  };
+
+  const handleUndoEmailWaive = async () => {
+    if (
+      !selectedPoBlockId ||
+      selectedPoBlockId === '__drafts__' ||
+      !onPoEmailDeliveryWaivedChange
+    ) {
+      return;
+    }
+    setWaivingEmail(true);
+    try {
+      await onPoEmailDeliveryWaivedChange(selectedPoBlockId, false);
+    } finally {
+      setWaivingEmail(false);
     }
   };
 
@@ -177,6 +210,13 @@ export function OrderProcessingBlock({
                       </span>
                       .
                     </>
+                  ) : poEmailDeliveryWaivedAt ? (
+                    <>
+                      {' '}
+                      <span className="font-medium text-muted-foreground">
+                        Marked not to send from the hub.
+                      </span>
+                    </>
                   ) : poEmailDeliveryOutstanding ? (
                     <>
                       {' '}
@@ -197,31 +237,80 @@ export function OrderProcessingBlock({
         </div>
         {t === 'email' && includePoEmailTools ? (
           <div className="flex flex-col items-end gap-1.5 shrink-0">
-            <Button
-              type="button"
-              size="sm"
-              className={
-                poEmailSentAt
-                  ? 'h-8 shrink-0 text-[11px] rounded-md gap-1.5 bg-emerald-50 text-emerald-900 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-100 dark:border-emerald-800 dark:hover:bg-emerald-950/60'
-                  : 'h-8 shrink-0 text-[11px] rounded-md gap-1.5 border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500'
-              }
-              variant="outline"
-              disabled={
-                contacts.length === 0 ||
-                !selectedPoBlockId ||
-                selectedPoBlockId === '__drafts__' ||
-                sendingEmail ||
-                lineItemsLoading
-              }
-              onClick={() => handleSendEmailClick()}
-            >
-              <Mail className="size-3.5" aria-hidden />
-              {sendingEmail
-                ? 'Sending…'
-                : poEmailSentAt
-                  ? 'Email sent - resend?'
-                  : 'Send email to all contacts'}
-            </Button>
+            {poEmailSentAt ? (
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 shrink-0 text-[11px] rounded-md gap-1.5 bg-emerald-50 text-emerald-900 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-100 dark:border-emerald-800 dark:hover:bg-emerald-950/60"
+                variant="outline"
+                disabled={
+                  contacts.length === 0 ||
+                  !selectedPoBlockId ||
+                  selectedPoBlockId === '__drafts__' ||
+                  sendingEmail ||
+                  lineItemsLoading
+                }
+                onClick={() => handleSendEmailClick()}
+              >
+                <Mail className="size-3.5" aria-hidden />
+                {sendingEmail ? 'Sending…' : 'Email sent - resend?'}
+              </Button>
+            ) : poEmailDeliveryWaivedAt ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 shrink-0 text-[11px] rounded-md gap-1.5"
+                disabled={
+                  !selectedPoBlockId ||
+                  selectedPoBlockId === '__drafts__' ||
+                  waivingEmail ||
+                  lineItemsLoading ||
+                  !onPoEmailDeliveryWaivedChange
+                }
+                onClick={() => void handleUndoEmailWaive()}
+              >
+                {waivingEmail ? 'Updating…' : 'Undo not sending'}
+              </Button>
+            ) : (
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 shrink-0 text-[11px] rounded-md gap-1.5 border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500"
+                    variant="outline"
+                    disabled={
+                      contacts.length === 0 ||
+                      !selectedPoBlockId ||
+                      selectedPoBlockId === '__drafts__' ||
+                      sendingEmail ||
+                      lineItemsLoading
+                    }
+                    onClick={() => handleSendEmailClick()}
+                  >
+                    <Mail className="size-3.5" aria-hidden />
+                    {sendingEmail ? 'Sending…' : 'Send email'}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 shrink-0 text-[11px] rounded-md px-2.5 text-muted-foreground"
+                    disabled={
+                      !selectedPoBlockId ||
+                      selectedPoBlockId === '__drafts__' ||
+                      waivingEmail ||
+                      lineItemsLoading ||
+                      !onPoEmailDeliveryWaivedChange
+                    }
+                    onClick={() => void handleDoNotSendEmail()}
+                  >
+                    {waivingEmail ? '…' : 'Do not send'}
+                  </Button>
+                </div>
+              </div>
+            )}
             {poEmailSentAt ? (
               <Button
                 type="button"

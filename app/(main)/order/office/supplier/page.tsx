@@ -36,6 +36,7 @@ export default async function OfficeSuppliersPage() {
       select: {
         id: true,
         company: true,
+        officePoSupplierCode: true,
         shopifyVendorName: true,
         groupId: true,
         group: { select: { name: true, slug: true } },
@@ -46,6 +47,7 @@ export default async function OfficeSuppliersPage() {
         isFavorite: true,
         link: true,
         notes: true,
+        deliverySchedule: true,
         createdAt: true,
         vendorMappings: {
           select: { id: true, vendorName: true },

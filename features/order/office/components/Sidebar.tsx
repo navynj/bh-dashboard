@@ -17,7 +17,10 @@ import {
   type ScopedSupplierRow,
 } from '../utils/sidebar-by-expected-date';
 import { formatVancouverOrderedSidebar } from '../utils/vancouver-datetime';
-import { supplierHasPoEmailDeliveryOutstanding } from '../utils/collect-po-email-delivery-alerts';
+import {
+  supplierHasPoEmailDeliveryOutstanding,
+  supplierHasPoEmailDeliveryOutstandingInVisiblePos,
+} from '../utils/collect-po-email-delivery-alerts';
 
 type Props = {
   customerGroups: SidebarCustomerGroup[];
@@ -44,17 +47,38 @@ function expandKey(bucketKey: string | undefined, groupId: string) {
   return bucketKey ? `${bucketKey}::${groupId}` : groupId;
 }
 
-function PoSidebarEmailStatusLine({ po }: { po: OfficePurchaseOrderBlock }) {
+function PoSidebarEmailStatusLine({
+  po,
+  emphasizeOutstanding,
+}: {
+  po: OfficePurchaseOrderBlock;
+  /** Red “not sent” only on PO Created tab; elsewhere muted. */
+  emphasizeOutstanding: boolean;
+}) {
   if (po.supplierOrderChannelType !== 'email') return null;
   if (po.legacyExternalId != null) return null;
 
   const deliveries = po.panelMeta?.emailDeliveries ?? [];
   const sentIso = po.panelMeta?.emailSentAt;
+  const waivedIso = po.panelMeta?.emailDeliveryWaivedAt;
 
   // Nothing sent yet
   if (deliveries.length === 0 && !sentIso) {
+    if (waivedIso) {
+      return (
+        <div className="text-[9px] leading-tight mt-px text-muted-foreground font-medium">
+          Email: Not sending (waived)
+        </div>
+      );
+    }
     return (
-      <div className="text-[9px] leading-tight mt-px text-destructive font-semibold">
+      <div
+        className={
+          emphasizeOutstanding
+            ? 'text-[9px] leading-tight mt-px text-destructive font-semibold'
+            : 'text-[9px] leading-tight mt-px text-muted-foreground font-medium'
+        }
+      >
         Email: Not sent
       </div>
     );
@@ -120,6 +144,9 @@ export function Sidebar({
   activeStatusTab,
   showArchived = false,
 }: Props) {
+  /** PO email “nag” (red) only on PO Created — not on Inbox / other status tabs. */
+  const emphasizePoEmailNag = activeStatusTab === 'po_created';
+
   const draftsOnly =
     activeStatusTab === 'without_po' || activeStatusTab === 'inbox';
   const hideIndicators =
@@ -206,6 +233,7 @@ export function Sidebar({
     const hasPoEmailAlert = group.suppliers.some((s) =>
       supplierHasPoEmailDeliveryOutstanding(s.key, viewDataMap),
     );
+    const nag = emphasizePoEmailNag && hasPoEmailAlert;
     return (
       <div key={eid} className="border-b">
         <div className="flex items-start justify-between px-2 py-2 gap-2 hover:bg-muted/50">
@@ -224,11 +252,21 @@ export function Sidebar({
               )}
               <div
                 className={cn(
-                  'text-[13px] font-medium truncate',
-                  hasPoEmailAlert && 'text-destructive',
+                  'flex min-w-0 items-baseline gap-1 text-[13px] font-medium',
+                  nag && 'text-destructive',
                 )}
               >
-                {group.name}
+                {group.officePoAccountCode?.trim() ? (
+                  <>
+                    <span className="shrink-0 font-mono text-[12px]">
+                      {group.officePoAccountCode.trim()}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground font-normal">
+                      ·
+                    </span>
+                  </>
+                ) : null}
+                <span className="min-w-0 truncate">{group.name}</span>
               </div>
             </div>
             {(() => {
@@ -237,9 +275,7 @@ export function Sidebar({
                 <div
                   className={cn(
                     'text-[10px] mt-0.5 truncate',
-                    hasPoEmailAlert
-                      ? 'text-destructive/90'
-                      : 'text-muted-foreground',
+                    nag ? 'text-destructive/90' : 'text-muted-foreground',
                     !hideIndicators && 'pl-[10px]',
                   )}
                 >
@@ -334,6 +370,7 @@ export function Sidebar({
                 states={states}
                 viewDataMap={viewDataMap}
                 hideIndicators={hideIndicators}
+                emphasizePoEmailNag={emphasizePoEmailNag}
                 onSelectPo={onSelectPo}
               />
             </div>
@@ -364,6 +401,7 @@ function ExpectedDateBucketPanel({
   states,
   viewDataMap,
   hideIndicators,
+  emphasizePoEmailNag,
   onSelectPo,
 }: {
   bucket: ExpectedDateSidebarBucket;
@@ -373,6 +411,7 @@ function ExpectedDateBucketPanel({
   states: Record<SupplierKey, SupplierEntry>;
   viewDataMap: Record<SupplierKey, ViewData>;
   hideIndicators: boolean;
+  emphasizePoEmailNag: boolean;
   onSelectPo: (key: SupplierKey, poBlockId: string) => void;
 }) {
   const customers = bucket.customerGroups;
@@ -397,8 +436,13 @@ function ExpectedDateBucketPanel({
             bucket.expectedDateKey === selectionExpectedDateKey;
           const refs = collectPoRefsInCustomer(cg, viewDataMap);
           const hasPoEmailAlert = cg.suppliers.some((s) =>
-            supplierHasPoEmailDeliveryOutstanding(s.key, viewDataMap),
+            supplierHasPoEmailDeliveryOutstandingInVisiblePos(
+              s.key,
+              viewDataMap,
+              s.visiblePoIds,
+            ),
           );
+          const nag = emphasizePoEmailNag && hasPoEmailAlert;
           return (
             <div
               key={cg.id}
@@ -423,7 +467,7 @@ function ExpectedDateBucketPanel({
                 <div
                   className={cn(
                     'text-[12px] font-medium truncate',
-                    hasPoEmailAlert && 'text-destructive',
+                    nag && 'text-destructive',
                   )}
                 >
                   {cg.name}
@@ -435,9 +479,7 @@ function ExpectedDateBucketPanel({
                   <div
                     className={cn(
                       'text-[10px] mt-0.5 truncate',
-                      hasPoEmailAlert
-                        ? 'text-destructive/90'
-                        : 'text-muted-foreground',
+                      nag ? 'text-destructive/90' : 'text-muted-foreground',
                       !hideIndicators && 'pl-[10px]',
                     )}
                   >
@@ -488,7 +530,7 @@ function ExpectedDateBucketPanel({
                   <span
                     className={cn(
                       'text-[11px] truncate',
-                      po.emailDeliveryOutstanding
+                      emphasizePoEmailNag && po.emailDeliveryOutstanding
                         ? 'text-destructive font-semibold'
                         : isOn
                           ? 'text-[#0C447C] font-medium'
@@ -518,7 +560,10 @@ function ExpectedDateBucketPanel({
                       label="Delivery expected"
                       value={meta.expectedDate}
                     />
-                    <PoSidebarEmailStatusLine po={po} />
+                    <PoSidebarEmailStatusLine
+                      po={po}
+                      emphasizeOutstanding={emphasizePoEmailNag}
+                    />
                     <FulfillLine
                       done={meta.fulfillDoneCount}
                       total={meta.fulfillTotalCount}
@@ -556,6 +601,8 @@ function TwoColumnView({
   onSelectPo: (key: SupplierKey, poBlockId: string) => void;
   activeStatusTab?: StatusTab;
 }) {
+  const emphasizePoEmailNag = activeStatusTab === 'po_created';
+
   const isDraftsOnly =
     activeStatusTab === 'without_po' || activeStatusTab === 'inbox';
   const hideIndicators =
@@ -605,6 +652,7 @@ function TwoColumnView({
             sup.key,
             viewDataMap,
           );
+          const nag = emphasizePoEmailNag && hasPoEmailAlert;
 
           return (
             <div
@@ -623,8 +671,8 @@ function TwoColumnView({
               <span
                 className={cn(
                   'text-[11px] truncate',
-                  hasPoEmailAlert && 'text-destructive font-semibold',
-                  !hasPoEmailAlert &&
+                  nag && 'text-destructive font-semibold',
+                  !nag &&
                     (isOn
                       ? 'text-[#0C447C] font-medium'
                       : 'text-muted-foreground'),
@@ -729,7 +777,7 @@ function TwoColumnView({
                   <span
                     className={cn(
                       'text-[11px] truncate',
-                      po.emailDeliveryOutstanding
+                      emphasizePoEmailNag && po.emailDeliveryOutstanding
                         ? 'text-destructive font-semibold'
                         : isOn
                           ? 'text-[#0C447C] font-medium'
@@ -746,7 +794,10 @@ function TwoColumnView({
                         label="Delivery expected"
                         value={meta.expectedDate}
                       />
-                      <PoSidebarEmailStatusLine po={po} />
+                      <PoSidebarEmailStatusLine
+                        po={po}
+                        emphasizeOutstanding={emphasizePoEmailNag}
+                      />
                       <FulfillLine
                         done={meta.fulfillDoneCount}
                         total={meta.fulfillTotalCount}

@@ -14,6 +14,7 @@ import crypto from 'crypto';
 import { prisma } from '@/lib/core/prisma';
 import { recomputePurchaseOrderStatusesForShopifyOrderId } from '@/lib/order/purchase-order-status';
 import { syncOneOrder } from '@/lib/shopify/sync/upsert-order';
+import { effectiveRestOrderLineItemQuantity } from '@/lib/shopify/line-item-effective-quantity';
 import type { ShopifyOrderNode } from '@/types/shopify';
 
 function verifyHmac(body: string, hmacHeader: string): boolean {
@@ -50,6 +51,7 @@ function restOrderToNode(o: any): ShopifyOrderNode {
     id: typeof o.admin_graphql_api_id === 'string' ? o.admin_graphql_api_id : adminGid(o.id),
     name: o.name ?? null,
     email: o.email ?? null,
+    note: typeof o.note === 'string' ? (o.note.trim() || null) : null,
     customer: o.customer
       ? {
           id: o.customer.admin_graphql_api_id ?? customerGid(o.customer.id),
@@ -121,32 +123,35 @@ function restOrderToNode(o: any): ShopifyOrderNode {
         }
       : null,
     lineItems: {
-      edges: (o.line_items ?? []).map((li: any) => ({
-        node: {
-          id: li.admin_graphql_api_id ?? lineItemGid(li.id),
-          title: li.title ?? '',
-          quantity: li.quantity ?? 0,
-          sku: li.sku ?? null,
-          vendor: li.vendor ?? null,
-          discountedUnitPriceSet:
-            li.price != null && li.price !== ''
+      edges: (o.line_items ?? []).map((li: any) => {
+        const effQty = effectiveRestOrderLineItemQuantity(li);
+        return {
+          node: {
+            id: li.admin_graphql_api_id ?? lineItemGid(li.id),
+            title: li.title ?? '',
+            quantity: effQty,
+            sku: li.sku ?? null,
+            vendor: li.vendor ?? null,
+            discountedUnitPriceSet:
+              li.price != null && li.price !== ''
+                ? {
+                    shopMoney: {
+                      amount: String(li.price),
+                      currencyCode: o.currency ?? 'CAD',
+                    },
+                  }
+                : null,
+            variant: li.variant_id
               ? {
-                  shopMoney: {
-                    amount: String(li.price),
-                    currencyCode: o.currency ?? 'CAD',
-                  },
+                  id: `gid://shopify/ProductVariant/${li.variant_id}`,
+                  title: li.variant_title ?? null,
+                  sku: li.sku ?? null,
+                  inventoryItem: null,
                 }
               : null,
-          variant: li.variant_id
-            ? {
-                id: `gid://shopify/ProductVariant/${li.variant_id}`,
-                title: li.variant_title ?? null,
-                sku: li.sku ?? null,
-                inventoryItem: null,
-              }
-            : null,
-        },
-      })),
+          },
+        };
+      }),
     },
   } as ShopifyOrderNode;
 }

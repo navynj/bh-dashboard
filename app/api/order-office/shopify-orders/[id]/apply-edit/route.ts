@@ -60,7 +60,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     await syncOneOrder(node);
 
-    if (data.purchaseOrderId) {
+    if (data.purchaseOrderId && !data.deferPurchaseOrderResync) {
       await resyncPurchaseOrderLineItemsFromShopify({
         purchaseOrderId: data.purchaseOrderId,
         appendFromShopifyOrderId: data.appendLinesFromShopifyOrderLocalId ?? null,

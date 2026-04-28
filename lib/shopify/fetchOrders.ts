@@ -16,6 +16,7 @@ const ORDER_LINE_ITEM_SELECTION_SYNC = `
               id
               title
               quantity
+              currentQuantity
               sku
               vendor
               image { url }
@@ -46,6 +47,7 @@ const ORDER_LINE_ITEM_SELECTION_DETAIL = `
               id
               title
               quantity
+              currentQuantity
               sku
               vendor
               image { url }
@@ -125,6 +127,7 @@ const ORDERS_QUERY = `query Orders($first: Int!, $after: String, $query: String)
         id
         name
         email
+        note
         customer {
           id
           displayName
@@ -199,6 +202,7 @@ const ORDER_NODE_QUERY = `query OrderNode($id: ID!) {
       id
       name
       email
+      note
       customer {
         id
         displayName

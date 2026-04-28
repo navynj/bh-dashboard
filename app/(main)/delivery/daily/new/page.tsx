@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { YmdDateInput } from '@/components/ui/ymd-date-input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -215,11 +216,10 @@ export default function NewDailySchedulePage() {
 
       <div className="space-y-2">
         <Label>Date</Label>
-        <Input
-          type="date"
+        <YmdDateInput
           value={dateStr}
           onChange={(e) => setDateStr(e.target.value)}
-          className="w-[160px]"
+          className="min-w-[12rem] max-w-full"
         />
       </div>
       <div className="space-y-2">

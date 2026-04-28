@@ -2,6 +2,7 @@ import type {
   SupplierEmailContact,
   SupplierOrderChannelType,
 } from '@/lib/order/supplier-order-channel';
+import type { SupplierDeliverySchedule } from '@/lib/order/supplier-delivery-schedule';
 
 export type SupplierKey = string;
 
@@ -52,6 +53,10 @@ export type SupplierEntry = {
   /** IDs for `/api/archive`: PO ids when the row has POs; always includes unlinked Shopify order ids for that row. */
   archivePurchaseOrderIds: string[];
   archiveShopifyOrderIds: string[];
+  /** Parsed default PO delivery schedule; null when unassigned or unset. */
+  deliverySchedule: SupplierDeliverySchedule | null;
+  /** Short code for default PO # after order number; if null, supplier `company` is used (not group). */
+  officePoSupplierCode: string | null;
 };
 
 export type StatusTab = 'inbox' | 'without_po' | 'po_created' | 'fulfilled' | 'completed' | 'archived';
@@ -97,4 +102,6 @@ export type SidebarCustomerGroup = {
   defaultBillingAddress: CustomerAddress | null;
   /** Whether billing address is same as shipping (customer default). */
   billingSameAsShipping: boolean;
+  /** Short customer account code for default PO # (Office → Customer Settings). */
+  officePoAccountCode: string | null;
 };

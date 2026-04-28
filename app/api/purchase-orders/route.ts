@@ -6,6 +6,11 @@ import { toApiErrorResponse } from '@/lib/core/errors';
 import { mapPrismaPoToBlock } from '@/features/order/office/mappers/map-purchase-order';
 import { resolvePoCreateLineShopifyLinks } from '@/lib/order/resolve-po-create-line-shopify-links';
 import { loadVariantOfficeNotesMap } from '@/lib/order/shopify-variant-office-note';
+import {
+  EXPECTED_DATE_BEFORE_ORDER_CODE,
+  expectedDateBeforeOrderMessage,
+  minExpectedDateYmdFromShopifyOrders,
+} from '@/lib/order/min-expected-date-ymd-from-shopify-orders';
 
 export async function GET() {
   try {
@@ -69,6 +74,39 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const lineItems = data.lineItems;
+    const orderNamesFromRefs = (data.shopifyOrderRefs ?? []).map(
+      (r) => r.orderNumber,
+    );
+    /** One resolve for validation + create (avoids duplicate queries inside the transaction). */
+    const resolved = await resolvePoCreateLineShopifyLinks(
+      prisma,
+      orderNamesFromRefs,
+      lineItems,
+    );
+    if (data.expectedDate && resolved.shopifyOrderIds.length > 0) {
+      const ordersForMin = await prisma.shopifyOrder.findMany({
+        where: { id: { in: resolved.shopifyOrderIds } },
+        select: { processedAt: true, shopifyCreatedAt: true },
+      });
+      const minY = minExpectedDateYmdFromShopifyOrders(ordersForMin);
+      if (minY && data.expectedDate < minY) {
+        return NextResponse.json(
+          {
+            error: expectedDateBeforeOrderMessage(),
+            code: EXPECTED_DATE_BEFORE_ORDER_CODE,
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    const {
+      shopifyOrderIds,
+      lineShopifyOrderLineItemIds,
+      lineResolvedVariantGids,
+    } = resolved;
+
     const po = await prisma.$transaction(async (tx) => {
       let poNumber = data.poNumber;
       if (poNumber === 'AUTO') {
@@ -103,46 +141,24 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      const orderNamesFromRefs = (data.shopifyOrderRefs ?? []).map(
-        (ref) => ref.orderNumber,
-      );
-      const { shopifyOrderIds, lineShopifyOrderLineItemIds } =
-        await resolvePoCreateLineShopifyLinks(tx, orderNamesFromRefs, data.lineItems);
-
-      if (data.lineItems.length > 0) {
-        const soliIds = lineShopifyOrderLineItemIds.filter((id): id is string => Boolean(id));
-        const soliById =
-          soliIds.length > 0
-            ? new Map(
-                (
-                  await tx.shopifyOrderLineItem.findMany({
-                    where: { id: { in: soliIds } },
-                    select: { id: true, variantGid: true },
-                  })
-                ).map((r) => [r.id, r.variantGid]),
-              )
-            : new Map<string, string | null>();
-
+      if (lineItems.length > 0) {
         const resolvedVariantGids: string[] = [];
-        for (let idx = 0; idx < data.lineItems.length; idx++) {
-          const li = data.lineItems[idx];
+        for (let idx = 0; idx < lineItems.length; idx++) {
+          const li = lineItems[idx];
           let vg = li.shopifyVariantGid?.trim() ?? null;
-          if (!vg) {
-            const sid = lineShopifyOrderLineItemIds[idx];
-            if (sid) vg = soliById.get(sid)?.trim() ?? null;
-          }
+          if (!vg) vg = lineResolvedVariantGids[idx]?.trim() ?? null;
           if (vg) resolvedVariantGids.push(vg);
         }
         const noteByVariant = await loadVariantOfficeNotesMap(tx, resolvedVariantGids);
 
         await tx.purchaseOrderLineItem.createMany({
-          data: data.lineItems.map((li, idx) => {
+          data: lineItems.map((li, idx) => {
             let vg = li.shopifyVariantGid?.trim() ?? null;
-            if (!vg) {
-              const sid = lineShopifyOrderLineItemIds[idx];
-              if (sid) vg = soliById.get(sid)?.trim() ?? null;
-            }
+            if (!vg) vg = lineResolvedVariantGids[idx]?.trim() ?? null;
             const defaultNote = vg ? noteByVariant.get(vg) ?? null : null;
+            const fromClient =
+              typeof li.note === 'string' ? li.note.trim() : '';
+            const resolvedNote = (fromClient || defaultNote) ?? null;
             return {
               purchaseOrderId: created.id,
               sequence: idx + 1,
@@ -156,7 +172,7 @@ export async function POST(request: NextRequest) {
               shopifyVariantGid: li.shopifyVariantGid ?? null,
               shopifyProductGid: li.shopifyProductGid ?? null,
               shopifyOrderLineItemId: lineShopifyOrderLineItemIds[idx] ?? null,
-              note: defaultNote,
+              note: resolvedNote,
             };
           }),
         });

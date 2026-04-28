@@ -66,6 +66,10 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
 
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  /** Variant GIDs currently showing the note textarea (edit mode). */
+  const [editingByVariant, setEditingByVariant] = useState<
+    Record<string, boolean>
+  >({});
 
   const loadNotes = useCallback(async () => {
     try {
@@ -188,6 +192,15 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
           notesRef.current = next;
           return next;
         });
+        setDrafts((prev) => ({
+          ...prev,
+          [variantId]: raw.trim() ? raw.trim() : '',
+        }));
+        setEditingByVariant((prev) => {
+          const next = { ...prev };
+          delete next[variantId];
+          return next;
+        });
         toast.success('Saved');
       } catch {
         toast.error('Network error');
@@ -298,8 +311,8 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
               <TableHead className="w-[40%] text-[10px] uppercase text-muted-foreground">
                 Default note (PO / PDF)
               </TableHead>
-              <TableHead className="w-[10%] text-right text-[10px] uppercase text-muted-foreground">
-                Save
+              <TableHead className="w-[12%] text-right text-[10px] uppercase text-muted-foreground">
+                Actions
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -326,6 +339,10 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
               rows.map((r) => {
                 const label = `${r.productTitle}${r.variantTitle ? ` — ${r.variantTitle}` : ''}`;
                 const draft = drafts[r.variantId] ?? '';
+                const isEditing = Boolean(editingByVariant[r.variantId]);
+                const saved = notesByVariant[r.variantId] ?? '';
+                const viewerText = saved.trim();
+
                 return (
                   <TableRow key={r.variantId}>
                     <TableCell className="align-top py-2">
@@ -349,31 +366,91 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
                       {r.vendor?.trim() || '—'}
                     </TableCell>
                     <TableCell className="align-top py-2">
-                      <Textarea
-                        className="min-h-[5.5rem] max-h-48 resize-y text-[11px] leading-snug py-1.5 md:text-[11px]"
-                        value={draft}
-                        onChange={(e) =>
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [r.variantId]: e.target.value,
-                          }))
-                        }
-                        maxLength={8000}
-                        rows={4}
-                        placeholder="Product default note for new PO lines / PDF. Enter for new lines."
-                      />
+                      {isEditing ? (
+                        <Textarea
+                          className="min-h-[5.5rem] max-h-48 resize-y text-[11px] leading-snug py-1.5 md:text-[11px]"
+                          value={draft}
+                          onChange={(e) =>
+                            setDrafts((prev) => ({
+                              ...prev,
+                              [r.variantId]: e.target.value,
+                            }))
+                          }
+                          maxLength={8000}
+                          rows={4}
+                          placeholder="Product default note for new PO lines / PDF. Enter for new lines."
+                          autoFocus
+                        />
+                      ) : (
+                        <div
+                          className="min-h-[5.5rem] max-h-48 overflow-y-auto rounded-md border border-transparent bg-muted/20 px-2 py-1.5 text-[11px] leading-snug text-foreground whitespace-pre-wrap"
+                          role="region"
+                          aria-label="Default note (read-only)"
+                        >
+                          {viewerText ? (
+                            viewerText
+                          ) : (
+                            <span className="text-muted-foreground">
+                              No default note. Use Edit to add one.
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="align-top py-2 text-right">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-8 text-[11px]"
-                        disabled={savingId === r.variantId}
-                        onClick={() => void saveNote(r.variantId)}
-                      >
-                        {savingId === r.variantId ? '…' : 'Save'}
-                      </Button>
+                      {isEditing ? (
+                        <div className="flex flex-col items-end gap-1.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className="h-8 text-[11px]"
+                            disabled={savingId === r.variantId}
+                            onClick={() => void saveNote(r.variantId)}
+                          >
+                            {savingId === r.variantId ? '…' : 'Save'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-[10px] text-muted-foreground"
+                            disabled={savingId === r.variantId}
+                            onClick={() => {
+                              setDrafts((prev) => ({
+                                ...prev,
+                                [r.variantId]: saved,
+                              }));
+                              setEditingByVariant((prev) => {
+                                const next = { ...prev };
+                                delete next[r.variantId];
+                                return next;
+                              });
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-[11px]"
+                          onClick={() => {
+                            setDrafts((prev) => ({
+                              ...prev,
+                              [r.variantId]: saved,
+                            }));
+                            setEditingByVariant((prev) => ({
+                              ...prev,
+                              [r.variantId]: true,
+                            }));
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

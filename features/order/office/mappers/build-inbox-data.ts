@@ -6,7 +6,9 @@
  *
  * Without-PO orders are grouped by **line-item** vendor → supplier (via
  * `ShopifyVendorMapping`). A single Shopify order may appear under multiple
- * supplier rows (one slice per supplier), each showing only that supplier’s lines.
+ * supplier rows (one slice per supplier), each showing only that supplier’s lines
+ * that are not yet on an **active** PO (`purchase_order_line_items` →
+ * `shopify_order_line_item_id`).
  *
  * All data comes from the DB — no live Shopify API calls needed.
  */
@@ -48,6 +50,9 @@ import {
   supplierRowHasOpenDeliveryPo,
 } from '../utils/po-fulfillment-for-tab';
 import { computeEmailDeliveryOutstanding } from '../utils/po-email-delivery-policy';
+import { parseSupplierDeliverySchedule } from '@/lib/order/supplier-delivery-schedule';
+import { orderShippingJsonToPoAddress } from '../utils/order-shipping-json-to-po-address';
+import type { LegacyOrphanPoLineForInbox } from '@/lib/order/fetch-legacy-orphan-po-lines-for-inbox';
 
 // ─── DB payload types ─────────────────────────────────────────────────────────
 
@@ -102,12 +107,16 @@ function buildChannelEntryFields(supplier: SupplierScalar | undefined): Pick<
     const emails = contacts.map((c) => c.email);
     const emailLine = emails.join(', ');
     const hasEmail = contacts.length > 0;
+    const ccPart =
+      (p.ccEmails ?? []).length > 0
+        ? ` · CC: ${(p.ccEmails ?? []).join(', ')}`
+        : '';
     const summary = hasEmail
       ? contacts
           .map((c) =>
             [c.name?.trim(), c.email].filter(Boolean).join(' · '),
           )
-          .join('; ')
+          .join('; ') + ccPart
       : 'Email (not set)';
     return {
       supplierOrderChannelSummary: summary,
@@ -169,7 +178,17 @@ function buildChannelEntryFields(supplier: SupplierScalar | undefined): Pick<
 }
 
 export type ShopifyOrderWithCustomer = Prisma.ShopifyOrderGetPayload<{
-  include: { customer: true; lineItems: true };
+  include: {
+    customer: true;
+    lineItems: {
+      include: {
+        purchaseOrderLineItems: {
+          where: { purchaseOrder: { archivedAt: null } };
+          select: { id: true; quantity: true };
+        };
+      };
+    };
+  };
 }>;
 
 export type VendorMapping = { vendorName: string; supplierId: string };
@@ -264,6 +283,8 @@ type CustomerIdentity = {
   /** Shopify `displayName` only (for subtitle when headline is company). */
   customerDisplayName: string | null;
   displayNameOverride: string | null;
+  /** Short code for default PO numbers (local hub field). */
+  officePoAccountCode: string | null;
   defaultShippingAddress: CustomerAddress | null;
   defaultBillingAddress: CustomerAddress | null;
   billingSameAsShipping: boolean;
@@ -326,6 +347,7 @@ function getPoCustomerIdentity(
         company,
         customerDisplayName,
         displayNameOverride,
+        officePoAccountCode: so.customer.officePoAccountCode?.trim() || null,
         ...addr,
       };
     }
@@ -339,6 +361,7 @@ function getPoCustomerIdentity(
         company: null,
         customerDisplayName: null,
         displayNameOverride: null,
+        officePoAccountCode: null,
         defaultShippingAddress: null,
         defaultBillingAddress: null,
         billingSameAsShipping: true,
@@ -346,6 +369,21 @@ function getPoCustomerIdentity(
     }
   }
   return null;
+}
+
+/** Prefer real `ShopifyCustomer` row over `email::…` stubs; keep best PO account code. */
+function mergeCustomerIdentities(
+  a: CustomerIdentity,
+  b: CustomerIdentity,
+): CustomerIdentity {
+  const aEmail = a.customerId.startsWith('email::');
+  const bEmail = b.customerId.startsWith('email::');
+  if (aEmail && !bEmail) return b;
+  if (!aEmail && bEmail) return a;
+  const code =
+    (b.officePoAccountCode?.trim() || a.officePoAccountCode?.trim() || null) ??
+    null;
+  return { ...a, ...b, officePoAccountCode: code };
 }
 
 function getShopifyOrderCustomerIdentity(
@@ -362,6 +400,7 @@ function getShopifyOrderCustomerIdentity(
       company,
       customerDisplayName,
       displayNameOverride,
+      officePoAccountCode: order.customer.officePoAccountCode?.trim() || null,
       ...addr,
     };
   }
@@ -373,6 +412,7 @@ function getShopifyOrderCustomerIdentity(
       company: null,
       customerDisplayName: null,
       displayNameOverride: null,
+      officePoAccountCode: null,
       defaultShippingAddress: null,
       defaultBillingAddress: null,
       billingSameAsShipping: true,
@@ -405,14 +445,170 @@ function supplierIdForLineItem(
   return vendorLookup.get(vendor) ?? UNASSIGNED_SUPPLIER_ID;
 }
 
-/** One bucket per supplier that appears on the order (plus unassigned if any line has no / unknown vendor). */
+/** Match legacy PO lines (no `shopify_order_line_item_id`) to Shopify lines. */
+function inboxLineBucketKey(
+  variantGid: string | null | undefined,
+  sku: string | null | undefined,
+): string | null {
+  const v = variantGid?.trim();
+  if (v) return `v:${v}`;
+  const s = sku?.trim();
+  if (s) return `s:${s.toLowerCase()}`;
+  return null;
+}
+
+const LEGACY_POOL_KEY_SEP = '\x1e';
+
+function fkPoQtyOnShopifyLine(
+  li: ShopifyOrderWithCustomer['lineItems'][number],
+): number {
+  let q = 0;
+  for (const pol of li.purchaseOrderLineItems ?? []) {
+    q += pol.quantity ?? 0;
+  }
+  return q;
+}
+
+/**
+ * Legacy CSV PO lines are not FK’d to `shopify_order_line_items`. For each PO,
+ * sum orphan qty per bucket (variant GID, else SKU), then FIFO across **all**
+ * inbox-candidate Shopify lines on **any** order linked to that PO that matches
+ * the bucket (stable sort: order id, line id). Caps each line by
+ * `lineQty − FK pol qty − extra already assigned` so multi-PO overlap does not
+ * over-count capacity.
+ */
+function buildLegacyExtraQtyByShopifyLineItemId(
+  orders: ShopifyOrderWithCustomer[],
+  legacyRows: LegacyOrphanPoLineForInbox[],
+): Map<string, number> {
+  const extra = new Map<string, number>();
+  if (legacyRows.length === 0) return extra;
+
+  const candidateOrderIds = new Set(orders.map((o) => o.id));
+  /** `${poId}${SEP}${bucketKey}` → summed legacy qty */
+  const poolByPoAndBucket = new Map<string, number>();
+  const linkedCandidateOrderIdsByPo = new Map<string, Set<string>>();
+
+  for (const row of legacyRows) {
+    const poId = row.purchaseOrder.id;
+    const linked = row.purchaseOrder.shopifyOrders.map((o) => o.id);
+    const relevant = linked.filter((id) => candidateOrderIds.has(id));
+    if (relevant.length === 0) continue;
+
+    let set = linkedCandidateOrderIdsByPo.get(poId);
+    if (!set) {
+      set = new Set();
+      linkedCandidateOrderIdsByPo.set(poId, set);
+    }
+    for (const id of relevant) set.add(id);
+
+    const k = inboxLineBucketKey(row.shopifyVariantGid, row.sku);
+    if (!k) continue;
+    const poolKey = `${poId}${LEGACY_POOL_KEY_SEP}${k}`;
+    poolByPoAndBucket.set(
+      poolKey,
+      (poolByPoAndBucket.get(poolKey) ?? 0) + (row.quantity ?? 0),
+    );
+  }
+
+  type Li = ShopifyOrderWithCustomer['lineItems'][number];
+  const linesByPoAndBucket = new Map<string, Li[]>();
+
+  const lineIdToOrderId = new Map<string, string>();
+  const orderIdToLinkedPoIds = new Map<string, string[]>();
+  for (const [poId, allowed] of linkedCandidateOrderIdsByPo) {
+    for (const oid of allowed) {
+      if (!orderIdToLinkedPoIds.has(oid)) orderIdToLinkedPoIds.set(oid, []);
+      orderIdToLinkedPoIds.get(oid)!.push(poId);
+    }
+  }
+
+  for (const order of orders) {
+    const oid = order.id;
+    const rawPoIds = orderIdToLinkedPoIds.get(oid);
+    if (!rawPoIds?.length) continue;
+    const poIdsForOrder = [...new Set(rawPoIds)];
+
+    for (const li of order.lineItems) {
+      if ((li.quantity ?? 0) <= 0) continue;
+      lineIdToOrderId.set(li.id, oid);
+      const k = inboxLineBucketKey(li.variantGid, li.sku);
+      if (!k) continue;
+      for (const poId of poIdsForOrder) {
+        const key = `${poId}${LEGACY_POOL_KEY_SEP}${k}`;
+        if (!poolByPoAndBucket.has(key)) continue;
+        if (!linesByPoAndBucket.has(key)) linesByPoAndBucket.set(key, []);
+        linesByPoAndBucket.get(key)!.push(li);
+      }
+    }
+  }
+
+  for (const [, list] of linesByPoAndBucket) {
+    list.sort((a, b) => {
+      const ca = lineIdToOrderId.get(a.id) ?? '';
+      const cb = lineIdToOrderId.get(b.id) ?? '';
+      if (ca !== cb) return ca.localeCompare(cb);
+      return a.id.localeCompare(b.id);
+    });
+  }
+
+  const sortedPoolKeys = [...poolByPoAndBucket.keys()].sort();
+  for (const poolKey of sortedPoolKeys) {
+    let pool = poolByPoAndBucket.get(poolKey) ?? 0;
+    if (pool <= 0) continue;
+    const lines = linesByPoAndBucket.get(poolKey);
+    if (!lines?.length) continue;
+    for (const li of lines) {
+      if (pool <= 0) break;
+      const lineQty = li.quantity ?? 0;
+      const fk = fkPoQtyOnShopifyLine(li);
+      const assigned = extra.get(li.id) ?? 0;
+      const cap = Math.max(0, lineQty - fk - assigned);
+      const take = Math.min(cap, pool);
+      if (take > 0) {
+        extra.set(li.id, assigned + take);
+        pool -= take;
+      }
+    }
+  }
+
+  return extra;
+}
+
+function activePoQtyOnShopifyLine(
+  li: ShopifyOrderWithCustomer['lineItems'][number],
+  legacyExtraQtyByShopifyLineItemId: Map<string, number>,
+): number {
+  let q = 0;
+  for (const pol of li.purchaseOrderLineItems ?? []) {
+    q += pol.quantity ?? 0;
+  }
+  q += legacyExtraQtyByShopifyLineItemId.get(li.id) ?? 0;
+  return q;
+}
+
+/** Units of this Shopify line not yet on active (non-archived) POs. */
+function shopifyLineRemainingQty(
+  li: ShopifyOrderWithCustomer['lineItems'][number],
+  legacyExtraQtyByShopifyLineItemId: Map<string, number>,
+): number {
+  return Math.max(
+    0,
+    (li.quantity ?? 0) - activePoQtyOnShopifyLine(li, legacyExtraQtyByShopifyLineItemId),
+  );
+}
+
+/** One bucket per supplier that still has ≥1 open unit on a line (plus unassigned). */
 function distinctSupplierIdsForOrder(
   order: ShopifyOrderWithCustomer,
   vendorLookup: Map<string, string>,
+  legacyExtraQtyByShopifyLineItemId: Map<string, number>,
 ): string[] {
   if (order.lineItems.length === 0) return [UNASSIGNED_SUPPLIER_ID];
   const set = new Set<string>();
   for (const li of order.lineItems) {
+    if ((li.quantity ?? 0) <= 0) continue;
+    if (shopifyLineRemainingQty(li, legacyExtraQtyByShopifyLineItemId) <= 0) continue;
     set.add(supplierIdForLineItem(li, vendorLookup));
   }
   return [...set];
@@ -424,6 +620,8 @@ function shopifyOrderToDraft(
   order: ShopifyOrderWithCustomer,
   supplierBucketId: string,
   vendorLookup: Map<string, string>,
+  variantDefaultLineNotes: ReadonlyMap<string, string>,
+  legacyExtraQtyByShopifyLineItemId: Map<string, number>,
 ): ShopifyOrderDraft {
   const customer = order.customer;
   const orderEmail = order.email ?? customer?.email ?? null;
@@ -438,12 +636,17 @@ function shopifyOrderToDraft(
   const rawLines =
     supplierBucketId === UNASSIGNED_SUPPLIER_ID
       ? order.lineItems.filter(
-          (li) => supplierIdForLineItem(li, vendorLookup) === UNASSIGNED_SUPPLIER_ID,
+          (li) =>
+            shopifyLineRemainingQty(li, legacyExtraQtyByShopifyLineItemId) > 0 &&
+            supplierIdForLineItem(li, vendorLookup) === UNASSIGNED_SUPPLIER_ID,
         )
       : order.lineItems.filter(
-          (li) => supplierIdForLineItem(li, vendorLookup) === supplierBucketId,
+          (li) =>
+            shopifyLineRemainingQty(li, legacyExtraQtyByShopifyLineItemId) > 0 &&
+            supplierIdForLineItem(li, vendorLookup) === supplierBucketId,
         );
 
+  const rawNote = order.customerNote?.trim();
   return {
     id: order.id,
     archivedAt: order.archivedAt ? order.archivedAt.toISOString() : null,
@@ -453,24 +656,37 @@ function shopifyOrderToDraft(
     customerEmail: customer?.email ?? order.email ?? null,
     customerPhone: customer?.phone ?? null,
     shippingAddressLine: flattenShippingAddress(order.shippingAddress),
+    defaultPoShippingAddress: orderShippingJsonToPoAddress(order.shippingAddress),
     customerDisplayName: primaryLabel,
+    ...(rawNote
+      ? {
+          note: rawNote,
+        }
+      : {}),
     orderedAt:
       order.processedAt?.toISOString() ??
       order.shopifyCreatedAt?.toISOString() ??
       null,
     lineItems: sortPrePoLineDraftsByProductTitleAsc(
-      rawLines.map((li) => ({
-        shopifyLineItemId: li.id,
-        shopifyLineItemGid: li.shopifyGid,
-        shopifyVariantGid: li.variantGid,
-        sku: li.sku,
-        imageUrl: li.imageUrl ?? null,
-        productTitle: li.title ?? '(untitled)',
-        itemPrice: li.price ? String(li.price) : null,
-        itemCost: li.unitCost ? String(li.unitCost) : null,
-        quantity: li.quantity,
-        includeInPo: true,
-      })),
+      rawLines.map((li) => {
+        const vg = li.variantGid?.trim() ?? null;
+        const defaultPoLineNote = vg ? variantDefaultLineNotes.get(vg) ?? null : null;
+        const shopifySourceLineQty = li.quantity ?? 0;
+        return {
+          shopifyLineItemId: li.id,
+          shopifyLineItemGid: li.shopifyGid,
+          shopifyVariantGid: li.variantGid,
+          sku: li.sku,
+          imageUrl: li.imageUrl ?? null,
+          productTitle: li.title ?? '(untitled)',
+          itemPrice: li.price ? String(li.price) : null,
+          itemCost: li.unitCost ? String(li.unitCost) : null,
+          shopifySourceLineQty,
+          quantity: shopifyLineRemainingQty(li, legacyExtraQtyByShopifyLineItemId),
+          includeInPo: true,
+          defaultPoLineNote,
+        };
+      }),
     ),
   };
 }
@@ -486,6 +702,13 @@ export function buildInboxData(
   unlinkedShopifyOrders: ShopifyOrderWithCustomer[],
   vendorMappings: VendorMapping[],
   lineCountsByPoId: Map<string, { total: number; done: number }>,
+  /** Catalog default PO line notes by Shopify variant GID (Item settings). */
+  variantDefaultLineNotes: ReadonlyMap<string, string> = new Map(),
+  /**
+   * CSV / legacy PO lines without `shopify_order_line_item_id` — allocated in
+   * {@link buildLegacyExtraQtyByShopifyLineItemId} across all inbox-linked orders on the PO.
+   */
+  legacyOrphanPoLines: LegacyOrphanPoLineForInbox[] = [],
 ): InboxData {
   const purchaseOrders: AnyPo[] = [...activePurchaseOrders, ...archivedPurchaseOrders];
   const initialStates: Record<SupplierKey, SupplierEntry> = {};
@@ -518,6 +741,10 @@ export function buildInboxData(
   }
 
   const vendorLookup = buildVendorLookup(vendorMappings);
+  const legacyExtraQtyByShopifyLineItemId = buildLegacyExtraQtyByShopifyLineItemId(
+    unlinkedShopifyOrders,
+    legacyOrphanPoLines,
+  );
 
   // ── Group POs by customer → supplier ──
 
@@ -528,8 +755,12 @@ export function buildInboxData(
     const identity = getPoCustomerIdentity(po);
     const custKey = identity?.customerId ?? UNKNOWN_CUSTOMER_KEY;
 
-    if (identity && !custInfoMap.has(custKey)) {
-      custInfoMap.set(custKey, identity);
+    if (identity) {
+      const prev = custInfoMap.get(custKey);
+      custInfoMap.set(
+        custKey,
+        prev ? mergeCustomerIdentities(prev, identity) : identity,
+      );
     }
 
     const supKey = po.supplierId;
@@ -551,11 +782,19 @@ export function buildInboxData(
     const identity = getShopifyOrderCustomerIdentity(o);
     const custKey = identity?.customerId ?? UNKNOWN_CUSTOMER_KEY;
 
-    if (identity && !custInfoMap.has(custKey)) {
-      custInfoMap.set(custKey, identity);
+    if (identity) {
+      const prev = custInfoMap.get(custKey);
+      custInfoMap.set(
+        custKey,
+        prev ? mergeCustomerIdentities(prev, identity) : identity,
+      );
     }
 
-    const supIds = distinctSupplierIdsForOrder(o, vendorLookup);
+    const supIds = distinctSupplierIdsForOrder(
+      o,
+      vendorLookup,
+      legacyExtraQtyByShopifyLineItemId,
+    );
 
     if (!unlinkedByCustSup.has(custKey))
       unlinkedByCustSup.set(custKey, new Map());
@@ -620,7 +859,15 @@ export function buildInboxData(
           : (groupSlugById.get(supplier.groupId) ?? null);
       const entryKey: SupplierKey = `${custKey}::${supId}`;
 
-      const drafts = draftOrders.map((o) => shopifyOrderToDraft(o, supId, vendorLookup));
+      const drafts = draftOrders.map((o) =>
+        shopifyOrderToDraft(
+          o,
+          supId,
+          vendorLookup,
+          variantDefaultLineNotes,
+          legacyExtraQtyByShopifyLineItemId,
+        ),
+      );
 
       // ── Fulfillment stats (line rows — same as PoTable / mapPrismaPoToBlock panelMeta) ──
 
@@ -704,6 +951,7 @@ export function buildInboxData(
             emailSentAt: p.emailSentAt,
             archivedAt: p.archivedAt,
             legacyExternalId: p.legacyExternalId,
+            emailDeliveryWaivedAt: p.emailDeliveryWaivedAt,
           }),
         );
       const custLabel = custInfo?.name ?? 'Unknown';
@@ -793,6 +1041,10 @@ export function buildInboxData(
         expectedDate: isoDate(latestExpected),
         supplierCompany: supplierName,
         supplierGroupSlug,
+        officePoSupplierCode:
+          supId === UNASSIGNED_SUPPLIER_ID || !supplier
+            ? null
+            : supplier.officePoSupplierCode?.trim() || null,
         ...channelFields,
         fulfillDoneCount: fulfillDone,
         fulfillPendingCount: fulfillPending,
@@ -812,6 +1064,10 @@ export function buildInboxData(
         isArchived,
         archivePurchaseOrderIds,
         archiveShopifyOrderIds,
+        deliverySchedule:
+          supplier != null
+            ? parseSupplierDeliverySchedule(supplier.deliverySchedule) ?? null
+            : null,
       };
 
       // ── Build view data ──
@@ -868,6 +1124,27 @@ export function buildInboxData(
       supLatestOrderDate.set(entryKey, supLatest ? supLatest.toISOString() : null);
     }
 
+    /** Prefer map + any linked Shopify `customer` row (custInfo alone can miss after merge order). */
+    function officePoAccountCodeForCustomer(): string | null {
+      const fromMap = custInfo?.officePoAccountCode?.trim();
+      if (fromMap) return fromMap;
+      for (const pos of poSupMap.values()) {
+        for (const po of pos) {
+          for (const so of po.shopifyOrders) {
+            const c = so.customer?.officePoAccountCode?.trim();
+            if (c) return c;
+          }
+        }
+      }
+      for (const orders of draftSupMap.values()) {
+        for (const o of orders) {
+          const c = o.customer?.officePoAccountCode?.trim();
+          if (c) return c;
+        }
+      }
+      return null;
+    }
+
     if (supplierRows.length > 0) {
       supplierRows.sort((a, b) => {
         const da = supLatestOrderDate.get(a.key) ?? '';
@@ -910,6 +1187,7 @@ export function buildInboxData(
         company: custInfo?.company ?? null,
         customerDisplayName: custInfo?.customerDisplayName ?? null,
         displayNameOverride: custInfo?.displayNameOverride ?? null,
+        officePoAccountCode: officePoAccountCodeForCustomer(),
         suppliers: supplierRows,
         hasWithoutPo,
         latestOrderDate: latestDate ? latestDate.toISOString() : null,

@@ -95,6 +95,11 @@ export interface ShopifyOrderLineNode {
   id: string;
   title: string;
   quantity: number;
+  /**
+   * GraphQL `LineItem.currentQuantity` — units remaining after order-edit removals.
+   * When omitted, callers should treat {@link quantity} as the effective count.
+   */
+  currentQuantity?: number | null;
   sku: string | null;
   vendor: string | null;
   /** Line-item snapshot image when present. */
@@ -257,6 +262,8 @@ export interface ShopifyOrderNode {
   id: string;
   name: string | null;
   email: string | null;
+  /** Shopify `Order.note` (checkout / customer order note). */
+  note?: string | null;
   customer: ShopifyOrderCustomer | null;
   processedAt: string | null;
   createdAt: string;
