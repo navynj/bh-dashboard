@@ -1,18 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils/cn';
 import type {
   SupplierKey,
   SupplierEntry,
   SidebarCustomerGroup,
+  SidebarSupplierGroup,
   StatusTab,
   ViewData,
   OfficePurchaseOrderBlock,
 } from '../types';
 import {
   collectPoRefsInCustomer,
+  collectPoRefsForSupplierIdInBucket,
+  supplierDatabaseIdFromEntryKey,
   type ExpectedDateSidebarBucket,
   type ScopedSupplierRow,
 } from '../utils/sidebar-by-expected-date';
@@ -24,8 +27,18 @@ import {
 
 type Props = {
   customerGroups: SidebarCustomerGroup[];
+  /**
+   * When set (Inbox / `layout="customer"`), sidebar is grouped **supplier → customer**
+   * instead of `customerGroups` order.
+   */
+  supplierFirstInboxGroups?: SidebarSupplierGroup[] | null;
   /** Inbox: customer-first. Other PO tabs: expected-date buckets (see below). */
   layout?: 'customer' | 'expected_date';
+  /**
+   * Within each expected-date bucket: left column lists customers (default) or suppliers,
+   * then customer, then POs (PO Created / Fulfilled).
+   */
+  expectedDateBucketFirstColumn?: 'customer' | 'supplier';
   expectedDateBuckets?: ExpectedDateSidebarBucket[];
   expectedDatePage?: number;
   expectedDatePageCount?: number;
@@ -127,9 +140,20 @@ function sidebarCustomerSubline(group: SidebarCustomerGroup): string {
   return parts.filter((p) => p !== headline).join(' · ');
 }
 
+function sidebarSupplierChannelSubline(
+  group: SidebarSupplierGroup,
+  states: Record<SupplierKey, SupplierEntry>,
+): string {
+  const k = group.customers[0]?.key;
+  if (!k) return '';
+  return states[k]?.supplierOrderChannelSummary?.trim() ?? '';
+}
+
 export function Sidebar({
   customerGroups,
+  supplierFirstInboxGroups = null,
   layout = 'customer',
+  expectedDateBucketFirstColumn = 'customer',
   expectedDateBuckets,
   expectedDatePage = 0,
   expectedDatePageCount = 1,
@@ -156,10 +180,27 @@ export function Sidebar({
     activeStatusTab === 'completed' ||
     showArchived;
 
+  /** Parent passes `null` for customer-first; non-null (possibly empty) for supplier-first inbox. */
+  const inboxSupplierFirst =
+    layout === 'customer' && supplierFirstInboxGroups != null;
+
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     const id = customerGroups[0]?.id;
     return id ? new Set([id]) : new Set();
   });
+
+  useEffect(() => {
+    if (layout !== 'customer') return;
+    if (inboxSupplierFirst) {
+      const head = supplierFirstInboxGroups?.[0];
+      setExpanded(head ? new Set([`supfg::${head.id}`]) : new Set());
+      return;
+    }
+    const id = customerGroups[0]?.id;
+    setExpanded(id ? new Set([id]) : new Set());
+    // Intentionally only when switching customer ↔ supplier grouping (not on filter churn).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+  }, [inboxSupplierFirst, layout]);
 
   function toggleArrow(id: string) {
     setExpanded((prev) => {
@@ -223,6 +264,44 @@ export function Sidebar({
     }
 
     onSelect(firstSup.key);
+  }
+
+  function handleSupplierGroupNameClick(group: SidebarSupplierGroup) {
+    const eid = `supfg::${group.id}`;
+    setExpanded((prev) => {
+      if (prev.has(eid)) {
+        const next = new Set(prev);
+        next.delete(eid);
+        return next;
+      }
+      return new Set([eid]);
+    });
+
+    if (expanded.has(eid)) return;
+
+    const firstRow = group.customers[0];
+    if (!firstRow) return;
+
+    const vd = viewDataMap[firstRow.key];
+    if (vd) {
+      const draftsForNav =
+        vd.type === 'pre'
+          ? vd.shopifyOrderDrafts
+          : (vd.shopifyOrderDrafts ?? []);
+      const draftCount = draftsForNav.filter((d) => !d.archivedAt).length;
+
+      if (draftCount > 0) {
+        onSelectPo(firstRow.key, '__drafts__');
+        return;
+      }
+
+      if (vd.type === 'post' && vd.purchaseOrders.length > 0) {
+        pickFirstPoForSupplier(firstRow, vd);
+        return;
+      }
+    }
+
+    onSelect(firstRow.key);
   }
 
   function renderCustomerGroup(
@@ -312,10 +391,94 @@ export function Sidebar({
     );
   }
 
+  function renderSupplierGroup(group: SidebarSupplierGroup) {
+    const eid = `supfg::${group.id}`;
+    const isOpen = expanded.has(eid);
+    const hasPoEmailAlert = group.customers.some((row) =>
+      supplierHasPoEmailDeliveryOutstanding(row.key, viewDataMap),
+    );
+    const nag = emphasizePoEmailNag && hasPoEmailAlert;
+    return (
+      <div key={eid} className="border-b">
+        <div className="flex items-start justify-between gap-2 px-2 py-2 hover:bg-muted/50">
+          <div
+            className="min-w-0 flex-1 cursor-pointer gap-[5px]"
+            onClick={() => handleSupplierGroupNameClick(group)}
+          >
+            <div className="flex items-center gap-[5px]">
+              {!hideIndicators && (
+                <span
+                  className={cn(
+                    'h-[5px] w-[5px] flex-shrink-0 rounded-full bg-[#EF9F27]',
+                    group.hasWithoutPo ? 'block' : 'invisible',
+                  )}
+                />
+              )}
+              <div
+                className={cn(
+                  'flex min-w-0 items-baseline gap-1 text-[13px] font-medium',
+                  nag && 'text-destructive',
+                )}
+              >
+                {group.officePoSupplierCode?.trim() ? (
+                  <>
+                    <span className="shrink-0 font-mono text-[12px]">
+                      {group.officePoSupplierCode.trim()}
+                    </span>
+                    <span className="shrink-0 font-normal text-muted-foreground">
+                      ·
+                    </span>
+                  </>
+                ) : null}
+                <span className="min-w-0 truncate">{group.name}</span>
+              </div>
+            </div>
+            {(() => {
+              const sub = sidebarSupplierChannelSubline(group, states);
+              return sub ? (
+                <div
+                  className={cn(
+                    'mt-0.5 truncate text-[10px]',
+                    nag ? 'text-destructive/90' : 'text-muted-foreground',
+                  )}
+                >
+                  {sub}
+                </div>
+              ) : null;
+            })()}
+          </div>
+          <span
+            className={cn(
+              'mt-[2px] flex-shrink-0 cursor-pointer px-1 text-[9px] text-muted-foreground transition-transform duration-150',
+              isOpen && 'rotate-90',
+            )}
+            onClick={() => toggleArrow(eid)}
+          >
+            ▶
+          </span>
+        </div>
+
+        {isOpen && (
+          <TwoColumnView
+            suppliers={group.customers}
+            activeKey={activeKey}
+            states={states}
+            viewDataMap={viewDataMap}
+            selectedPoBlockId={selectedPoBlockId}
+            onSelect={onSelect}
+            onSelectPo={onSelectPo}
+            activeStatusTab={activeStatusTab}
+            leftColumnEmptyHint="Select customer"
+          />
+        )}
+      </div>
+    );
+  }
+
   const showLegend = !hideIndicators && layout === 'customer';
 
   return (
-    <div className="w-[248px] flex-shrink-0 border-r bg-background flex flex-col overflow-y-auto">
+    <div className="flex w-[248px] flex-shrink-0 flex-col overflow-y-auto border-r bg-background">
       {layout === 'expected_date' &&
         expectedDateBuckets &&
         expectedDateBuckets.length > 0 && (
@@ -363,21 +526,39 @@ export function Sidebar({
                   {bucket.headerRight}
                 </span>
               </div>
-              <ExpectedDateBucketPanel
-                bucket={bucket}
-                activeKey={activeKey}
-                selectedPoBlockId={selectedPoBlockId}
-                selectionExpectedDateKey={selectionExpectedDateKey}
-                states={states}
-                viewDataMap={viewDataMap}
-                hideIndicators={hideIndicators}
-                emphasizePoEmailNag={emphasizePoEmailNag}
-                onSelectPo={onSelectPo}
-              />
+              {expectedDateBucketFirstColumn === 'supplier' ? (
+                <ExpectedDateSupplierFirstPanel
+                  bucket={bucket}
+                  activeKey={activeKey}
+                  selectedPoBlockId={selectedPoBlockId}
+                  selectionExpectedDateKey={selectionExpectedDateKey}
+                  states={states}
+                  viewDataMap={viewDataMap}
+                  hideIndicators={hideIndicators}
+                  emphasizePoEmailNag={emphasizePoEmailNag}
+                  onSelectPo={onSelectPo}
+                />
+              ) : (
+                <ExpectedDateBucketPanel
+                  bucket={bucket}
+                  activeKey={activeKey}
+                  selectedPoBlockId={selectedPoBlockId}
+                  selectionExpectedDateKey={selectionExpectedDateKey}
+                  states={states}
+                  viewDataMap={viewDataMap}
+                  hideIndicators={hideIndicators}
+                  emphasizePoEmailNag={emphasizePoEmailNag}
+                  onSelectPo={onSelectPo}
+                />
+              )}
             </div>
           ))
         : layout === 'customer'
-          ? customerGroups.map((group) => renderCustomerGroup(group, undefined))
+          ? supplierFirstInboxGroups
+            ? supplierFirstInboxGroups.map(renderSupplierGroup)
+            : customerGroups.map((group) =>
+                renderCustomerGroup(group, undefined),
+              )
           : null}
 
       {showLegend && (
@@ -388,6 +569,309 @@ export function Sidebar({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Expected date: one row per supplier (DB id) → POs (PO Created / Fulfilled) ─
+
+function customerHeadlineForEntryKey(
+  bucket: ExpectedDateSidebarBucket,
+  supplierKey: SupplierKey,
+): string {
+  const cg = bucket.customerGroups.find((c) =>
+    c.suppliers.some((s) => s.key === supplierKey),
+  );
+  return cg?.name ?? '—';
+}
+
+function supplierHasPoEmailAlertAnyKeyForDbId(
+  bucket: ExpectedDateSidebarBucket,
+  supplierDbId: string,
+  viewDataMap: Record<SupplierKey, ViewData>,
+): boolean {
+  for (const cg of bucket.customerGroups) {
+    for (const s of cg.suppliers) {
+      if (supplierDatabaseIdFromEntryKey(s.key) !== supplierDbId) continue;
+      if (
+        supplierHasPoEmailDeliveryOutstandingInVisiblePos(
+          s.key,
+          viewDataMap,
+          s.visiblePoIds,
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function labelForSupplierDbId(
+  bucket: ExpectedDateSidebarBucket,
+  states: Record<SupplierKey, SupplierEntry>,
+  supplierDbId: string,
+): { company: string; code: string | null } {
+  for (const cg of bucket.customerGroups) {
+    for (const s of cg.suppliers) {
+      if (supplierDatabaseIdFromEntryKey(s.key) !== supplierDbId) continue;
+      const e = states[s.key];
+      return {
+        company: e?.supplierCompany ?? '—',
+        code: e?.officePoSupplierCode?.trim() || null,
+      };
+    }
+  }
+  return { company: '—', code: null };
+}
+
+function ExpectedDateSupplierFirstPanel({
+  bucket,
+  activeKey,
+  selectedPoBlockId,
+  selectionExpectedDateKey: _selectionExpectedDateKey,
+  states,
+  viewDataMap,
+  hideIndicators,
+  emphasizePoEmailNag,
+  onSelectPo,
+}: {
+  bucket: ExpectedDateSidebarBucket;
+  activeKey: SupplierKey;
+  selectedPoBlockId?: string | null;
+  selectionExpectedDateKey?: string | null;
+  states: Record<SupplierKey, SupplierEntry>;
+  viewDataMap: Record<SupplierKey, ViewData>;
+  hideIndicators: boolean;
+  emphasizePoEmailNag: boolean;
+  onSelectPo: (key: SupplierKey, poBlockId: string) => void;
+}) {
+  const supplierDbIdsInBucket = useMemo(() => {
+    const ids = new Set<string>();
+    for (const cg of bucket.customerGroups) {
+      for (const s of cg.suppliers) {
+        ids.add(supplierDatabaseIdFromEntryKey(s.key));
+      }
+    }
+    return [...ids].sort((a, b) => {
+      const la = labelForSupplierDbId(bucket, states, a).company;
+      const lb = labelForSupplierDbId(bucket, states, b).company;
+      return la.localeCompare(lb, undefined, { sensitivity: 'base' });
+    });
+  }, [bucket.customerGroups, states]);
+
+  const [pickedSupId, setPickedSupId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const idFromActive = supplierDatabaseIdFromEntryKey(activeKey);
+    const hit = bucket.customerGroups
+      .flatMap((cg) => cg.suppliers.map((s) => ({ cg, s })))
+      .find(
+        ({ s }) =>
+          s.key === activeKey &&
+          selectedPoBlockId &&
+          selectedPoBlockId !== '__drafts__' &&
+          s.visiblePoIds.includes(selectedPoBlockId),
+      );
+    if (hit && supplierDbIdsInBucket.includes(idFromActive)) {
+      setPickedSupId(idFromActive);
+      return;
+    }
+    if (supplierDbIdsInBucket.includes(idFromActive)) {
+      setPickedSupId(idFromActive);
+    }
+  }, [
+    bucket.expectedDateKey,
+    bucket.customerGroups,
+    activeKey,
+    selectedPoBlockId,
+    supplierDbIdsInBucket,
+  ]);
+
+  useEffect(() => {
+    if (pickedSupId != null && supplierDbIdsInBucket.includes(pickedSupId))
+      return;
+    setPickedSupId(supplierDbIdsInBucket[0] ?? null);
+  }, [supplierDbIdsInBucket, pickedSupId]);
+
+  const refs = useMemo(
+    () =>
+      pickedSupId
+        ? collectPoRefsForSupplierIdInBucket(
+            bucket,
+            pickedSupId,
+            viewDataMap,
+          )
+        : [],
+    [bucket.customerGroups, bucket.expectedDateKey, pickedSupId, viewDataMap],
+  );
+
+  const distinctCustomerCount = useMemo(() => {
+    const cust = new Set<string>();
+    for (const r of refs) {
+      const part = r.supplierKey.split('::')[0];
+      if (part) cust.add(part);
+    }
+    return cust.size;
+  }, [refs]);
+
+  const showCustomerOnPo = distinctCustomerCount > 1;
+
+  return (
+    <div className="flex border-t border-border/40 pb-1">
+      <div className="w-1/2 min-w-0 border-r border-border/40 overflow-y-auto">
+        {supplierDbIdsInBucket.map((supId) => {
+          const { company, code } = labelForSupplierDbId(
+            bucket,
+            states,
+            supId,
+          );
+          const isOn = pickedSupId === supId;
+          const nag =
+            emphasizePoEmailNag &&
+            supplierHasPoEmailAlertAnyKeyForDbId(
+              bucket,
+              supId,
+              viewDataMap,
+            );
+          return (
+            <div
+              key={supId}
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setPickedSupId(supId);
+                const next = collectPoRefsForSupplierIdInBucket(
+                  bucket,
+                  supId,
+                  viewDataMap,
+                )[0];
+                if (next) onSelectPo(next.supplierKey, next.poId);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  (e.currentTarget as HTMLDivElement).click();
+                }
+              }}
+              className={cn(
+                'cursor-pointer border-b border-border/30 px-1.5 py-2 last:border-b-0',
+                isOn ? 'bg-[#EBF4FD]' : 'hover:bg-muted/50',
+              )}
+            >
+              <div className="flex items-center gap-1">
+                {!hideIndicators && (
+                  <span className="invisible h-[5px] w-[5px] flex-shrink-0 rounded-full bg-[#EF9F27]" />
+                )}
+                <div
+                  className={cn(
+                    'min-w-0 truncate text-[11px] font-medium',
+                    nag && 'text-destructive',
+                  )}
+                >
+                  {company}
+                </div>
+              </div>
+              {code ? (
+                <div className="mt-0.5 truncate font-mono text-[9px] text-muted-foreground">
+                  {code}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="w-1/2 min-w-0 overflow-y-auto">
+        {!pickedSupId ? (
+          <div className="flex min-h-[48px] items-center justify-center px-2">
+            <span className="text-center text-[10px] italic text-muted-foreground/50">
+              Select supplier
+            </span>
+          </div>
+        ) : refs.length === 0 ? (
+          <div className="flex min-h-[48px] items-center justify-center px-2">
+            <span className="text-center text-[10px] italic text-muted-foreground/50">
+              No POs
+            </span>
+          </div>
+        ) : (
+          refs.map((ref) => {
+            const vd = viewDataMap[ref.supplierKey];
+            const po =
+              vd?.type === 'post'
+                ? vd.purchaseOrders.find((p) => p.id === ref.poId)
+                : undefined;
+            if (!po) return null;
+            const meta = po.panelMeta;
+            const isOn =
+              activeKey === ref.supplierKey &&
+              selectedPoBlockId !== '__drafts__' &&
+              selectedPoBlockId === ref.poId;
+            const custLabel = customerHeadlineForEntryKey(
+              bucket,
+              ref.supplierKey,
+            );
+
+            return (
+              <button
+                key={`${ref.supplierKey}-${ref.poId}`}
+                type="button"
+                onClick={() => onSelectPo(ref.supplierKey, ref.poId)}
+                className={cn(
+                  'flex w-full flex-col border-b border-border/30 px-2 py-[5px] text-left last:border-b-0',
+                  isOn ? 'bg-[#EBF4FD]' : 'hover:bg-muted/40',
+                )}
+              >
+                <div className="flex w-full min-w-0 flex-col gap-1">
+                  <span
+                    className={cn(
+                      'truncate text-[11px]',
+                      emphasizePoEmailNag && po.emailDeliveryOutstanding
+                        ? 'text-destructive font-semibold'
+                        : isOn
+                          ? 'font-medium text-[#0C447C]'
+                          : 'text-muted-foreground',
+                    )}
+                  >
+                    #{po.poNumber}
+                  </span>
+                  {showCustomerOnPo && (
+                    <Badge
+                      variant="gray"
+                      title={custLabel}
+                      className={cn(
+                        'h-auto max-w-full min-w-0 shrink self-start justify-start truncate rounded-md border-transparent px-1.5 py-px text-[10px] font-normal leading-tight',
+                        isOn &&
+                          'border border-[#B8D4EF] bg-white text-[#0C447C] hover:bg-white',
+                      )}
+                    >
+                      {custLabel}
+                    </Badge>
+                  )}
+                </div>
+                {meta && (
+                  <div className="mt-0.5 flex flex-col gap-px">
+                    <DateLine label="Created" value={meta.dateCreated} />
+                    <DateLine
+                      label="Delivery expected"
+                      value={meta.expectedDate}
+                    />
+                    <PoSidebarEmailStatusLine
+                      po={po}
+                      emphasizeOutstanding={emphasizePoEmailNag}
+                    />
+                    <FulfillLine
+                      done={meta.fulfillDoneCount}
+                      total={meta.fulfillTotalCount}
+                    />
+                  </div>
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -592,6 +1076,7 @@ function TwoColumnView({
   onSelect,
   onSelectPo,
   activeStatusTab,
+  leftColumnEmptyHint = 'Select supplier',
 }: {
   suppliers: SidebarCustomerGroup['suppliers'];
   activeKey: SupplierKey;
@@ -601,6 +1086,8 @@ function TwoColumnView({
   onSelect: (key: SupplierKey) => void;
   onSelectPo: (key: SupplierKey, poBlockId: string) => void;
   activeStatusTab?: StatusTab;
+  /** Inbox supplier-first: left column is customers — adjust empty-state copy. */
+  leftColumnEmptyHint?: string;
 }) {
   const emphasizePoEmailNag = activeStatusTab === 'po_created';
 
@@ -692,7 +1179,7 @@ function TwoColumnView({
         {!groupContainsActive ? (
           <div className="flex items-center justify-center h-full min-h-[40px] px-2">
             <span className="text-[10px] text-muted-foreground/40 italic">
-              Select supplier
+              {leftColumnEmptyHint}
             </span>
           </div>
         ) : (

@@ -82,6 +82,20 @@ export type CustomerAddress = {
   country: string;
 };
 
+/**
+ * Inbox-style sidebar when grouped **supplier → customer**: supplier headline row,
+ * nested rows reuse {@link SidebarSupplierRow} (key = `custId::supplierId` entry key,
+ * name = customer headline).
+ */
+export type SidebarSupplierGroup = {
+  /** DB supplier id (`custKey::supId` pair) or sentinel for unassigned. */
+  id: string;
+  name: string;
+  officePoSupplierCode: string | null;
+  customers: SidebarSupplierRow[];
+  hasWithoutPo: boolean;
+};
+
 export type SidebarCustomerGroup = {
   id: string;
   /** Primary label: displayNameOverride → company → Shopify displayName → email. */

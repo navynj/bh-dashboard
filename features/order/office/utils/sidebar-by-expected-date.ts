@@ -194,6 +194,47 @@ export function collectPoRefsInCustomer(
   return sortPoRefsByPoNumber(refs, viewDataMap);
 }
 
+/** PO refs for one customer row scoped to a single supplier entry in an expected-date bucket. */
+export function collectPoRefsForSupplierInCustomer(
+  cg: ScopedCustomerGroup,
+  supplierKey: SupplierKey,
+  viewDataMap: Record<SupplierKey, ViewData>,
+): PoRefInBucket[] {
+  const sup = cg.suppliers.find((s) => s.key === supplierKey);
+  if (!sup) return [];
+  return sortPoRefsByPoNumber(
+    sup.visiblePoIds.map((poId) => ({ supplierKey, poId })),
+    viewDataMap,
+  );
+}
+
+/** DB supplier id segment from inbox row key (`customerId::supplierId`). */
+export function supplierDatabaseIdFromEntryKey(key: SupplierKey): string {
+  const parts = key.split('::');
+  return parts.length >= 2 ? parts[1]! : key;
+}
+
+/**
+ * All PO refs in a date bucket for every customer × supplier row whose supplier id matches
+ * (same supplier appears once in the supplier-first PO sidebar).
+ */
+export function collectPoRefsForSupplierIdInBucket(
+  bucket: ExpectedDateSidebarBucket,
+  supplierDbId: string,
+  viewDataMap: Record<SupplierKey, ViewData>,
+): PoRefInBucket[] {
+  const refs: PoRefInBucket[] = [];
+  for (const cg of bucket.customerGroups) {
+    for (const s of cg.suppliers) {
+      if (supplierDatabaseIdFromEntryKey(s.key) !== supplierDbId) continue;
+      for (const poId of s.visiblePoIds) {
+        refs.push({ supplierKey: s.key, poId });
+      }
+    }
+  }
+  return sortPoRefsByPoNumber(refs, viewDataMap);
+}
+
 /**
  * Default selection when opening PO tabs: same order as the sidebar — newest expected-date
  * bucket first, then customers A→Z within the bucket (`buildExpectedDateBuckets`), then the

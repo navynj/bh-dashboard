@@ -62,6 +62,7 @@ import {
   findBucketPageIndex,
   pickFirstPoInNewestExpectedBucket,
 } from '../utils/sidebar-by-expected-date';
+import { buildSupplierFirstGroups } from '../utils/build-supplier-first-sidebar';
 import {
   expectedDateKeysForPoTab,
   isOfficePoDeliveryDone,
@@ -238,6 +239,13 @@ export function OrderManagementView({
   const [activeSupplierGroupSlug, setActiveSupplierGroupSlug] = useState<
     string | null
   >(null);
+
+  /**
+   * Sidebar: customer → supplier (default) vs supplier → customer (Inbox + PO Created / Fulfilled buckets).
+   */
+  const [sidebarHierarchy, setSidebarHierarchy] = useState<
+    'customer_first' | 'supplier_first'
+  >('customer_first');
 
   // ── Draft inclusion state (lifted from OrderBlock checkboxes) ──
   const [draftInclusions, setDraftInclusions] = useState<
@@ -1716,6 +1724,14 @@ export function OrderManagementView({
       .filter((g) => g.suppliers.length > 0);
   }, [tabPeriodFilteredGroups, activeSupplierGroupSlug, states]);
 
+  const supplierFirstInboxGroups = useMemo(
+    () =>
+      sidebarHierarchy === 'supplier_first'
+        ? buildSupplierFirstGroups(filteredGroups, states)
+        : null,
+    [sidebarHierarchy, filteredGroups, states],
+  );
+
   const usePoCreatedBuckets =
     activeStatusTab === 'po_created' && poCreatedDateMode === 'po_created';
 
@@ -2471,10 +2487,53 @@ export function OrderManagementView({
               onSupplierGroupChange={setActiveSupplierGroupSlug}
             />
 
+            {(useInboxCustomerLayout ||
+              activeStatusTab === 'po_created' ||
+              activeStatusTab === 'fulfilled' ||
+              showArchived) && (
+              <div className="flex shrink-0 items-center gap-2 border-b bg-muted/15 px-3 py-1.5">
+                <span className="text-[10px] text-muted-foreground">
+                  Sidebar
+                </span>
+                <div className="inline-flex rounded-md border border-border bg-background p-px text-[10px]">
+                  <button
+                    type="button"
+                    className={cn(
+                      'rounded px-2 py-1 font-medium transition-colors',
+                      sidebarHierarchy === 'customer_first'
+                        ? 'bg-muted text-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                    onClick={() => setSidebarHierarchy('customer_first')}
+                  >
+                    Customer → Supplier
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      'rounded px-2 py-1 font-medium transition-colors',
+                      sidebarHierarchy === 'supplier_first'
+                        ? 'bg-muted text-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                    onClick={() => setSidebarHierarchy('supplier_first')}
+                  >
+                    Supplier → Customer
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="flex min-h-0 flex-1 overflow-hidden">
               <Sidebar
                 layout={useInboxCustomerLayout ? 'customer' : 'expected_date'}
                 customerGroups={filteredGroups}
+                supplierFirstInboxGroups={supplierFirstInboxGroups}
+                expectedDateBucketFirstColumn={
+                  sidebarHierarchy === 'supplier_first'
+                    ? 'supplier'
+                    : 'customer'
+                }
                 expectedDateBuckets={
                   useInboxCustomerLayout
                     ? undefined
