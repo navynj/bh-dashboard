@@ -191,6 +191,8 @@ function TabCount({ active, n }: { active: boolean; n: number }) {
 
 export function OfficeTableSplitView({
   shopifyAdminStoreHandle,
+  shopifyCreateOrderEnabled = false,
+  onRequestCreateShopifyOrder,
   initialShopifyRows,
   initialPoRows,
   shopifyTotal,
@@ -201,6 +203,8 @@ export function OfficeTableSplitView({
   onOpenPoDetail,
 }: {
   shopifyAdminStoreHandle?: string | null;
+  shopifyCreateOrderEnabled?: boolean;
+  onRequestCreateShopifyOrder?: () => void;
   initialShopifyRows: OfficeTableViewShopifyRow[];
   initialPoRows: OfficeTableViewPoRow[];
   shopifyTotal: number;
@@ -970,25 +974,38 @@ export function OfficeTableSplitView({
               ? `${selectedArchivableShopifyIds.length} selected`
               : 'Select orders to archive'}
           </span>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="h-8 text-xs"
-            disabled={
-              archivingShopifySelection ||
-              selectedArchivableShopifyIds.length === 0
-            }
-            onClick={() => void handleArchiveSelectedShopifyOrders()}
-          >
-            {archivingShopifySelection
-              ? 'Archiving…'
-              : `Archive selected${
-                  selectedArchivableShopifyIds.length > 0
-                    ? ` (${selectedArchivableShopifyIds.length})`
-                    : ''
-                }`}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {shopifyCreateOrderEnabled && onRequestCreateShopifyOrder ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={onRequestCreateShopifyOrder}
+              >
+                New Shopify order
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-8 text-xs"
+              disabled={
+                archivingShopifySelection ||
+                selectedArchivableShopifyIds.length === 0
+              }
+              onClick={() => void handleArchiveSelectedShopifyOrders()}
+            >
+              {archivingShopifySelection
+                ? 'Archiving…'
+                : `Archive selected${
+                    selectedArchivableShopifyIds.length > 0
+                      ? ` (${selectedArchivableShopifyIds.length})`
+                      : ''
+                  }`}
+            </Button>
+          </div>
         </div>
       ) : null}
 

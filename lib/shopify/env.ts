@@ -6,7 +6,8 @@ import { parseMyshopifyStoreHandle } from '@/lib/shopify/parse-myshopify-store-h
  * Set `SHOPIFY_SHOP_DOMAIN`, `SHOPIFY_ADMIN_TOKEN`; optional `SHOPIFY_API_VERSION` (default 2024-10).
  * Distinct from `cost.shopify_config`, which remains for cost-module DB-backed config.
  *
- * Office order edits need `write_order_edits`; product search / variant price updates need
+ * Office order edits need `write_order_edits`; creating orders needs `write_orders`;
+ * customer search needs `read_customers`; product search / variant price updates need
  * `read_products` / `write_products` on the Admin token.
  */
 

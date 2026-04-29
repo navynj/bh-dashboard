@@ -79,6 +79,7 @@ import { mergeViewDataWithOptimisticEmailSent } from '../utils/merge-view-data-o
 import { mergeViewDataWithOptimisticEmailWaived } from '../utils/merge-view-data-optimistic-email-waived';
 import { filterInboxDraftsForDisplay } from '../utils/filter-inbox-drafts-for-display';
 import { buildPoPdfInput, openPoPdfPrint } from '../utils/purchase-order-pdf';
+import { CreateShopifyOrderDialog } from '../components/CreateShopifyOrderDialog';
 
 /** PO Created tab: max expected-date chips in the bar; older dates go to “More”. */
 const MAX_EXPECTED_DATE_CHIPS = 10;
@@ -170,6 +171,8 @@ function mergeViewDataWithLazyLineItems(
 }
 
 export type OrderManagementViewProps = {
+  /** When true, office can create Shopify orders and use Admin search APIs (`SHOPIFY_*` env). */
+  shopifyAdminApiConfigured?: boolean;
   /** Parsed from `SHOPIFY_SHOP_DOMAIN` for Admin product links in Inbox / PO tables. */
   shopifyAdminStoreHandle?: string | null;
   initialStates: Record<SupplierKey, SupplierEntry>;
@@ -186,6 +189,7 @@ export type OrderManagementViewProps = {
 };
 
 export function OrderManagementView({
+  shopifyAdminApiConfigured = false,
   shopifyAdminStoreHandle,
   initialStates,
   viewDataMap,
@@ -200,6 +204,7 @@ export function OrderManagementView({
   tableViewPoTotal,
 }: OrderManagementViewProps) {
   void _statusTabCounts;
+  const [createShopifyOrderOpen, setCreateShopifyOrderOpen] = useState(false);
   const [mainPanel, setMainPanel] = useState<'grouped' | 'table'>('grouped');
   /** Table view: drill-in to same center/meta UI as Grouped view for one PO. */
   const [tablePoDetailPoId, setTablePoDetailPoId] = useState<string | null>(
@@ -2398,6 +2403,20 @@ export function OrderManagementView({
           onEmailDeliveryWaivedChange={handlePoEmailDeliveryWaivedChange}
         />
 
+        {shopifyAdminApiConfigured ? (
+          <div className="flex shrink-0 items-center justify-end gap-2 border-b bg-muted/10 px-3 py-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setCreateShopifyOrderOpen(true)}
+            >
+              New Shopify order
+            </Button>
+          </div>
+        ) : null}
+
         {mainPanel === 'table' ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {tablePoDetailPoId ? (
@@ -2420,6 +2439,8 @@ export function OrderManagementView({
             ) : (
               <OfficeTableSplitView
                 shopifyAdminStoreHandle={shopifyAdminStoreHandle}
+                shopifyCreateOrderEnabled={shopifyAdminApiConfigured}
+                onRequestCreateShopifyOrder={() => setCreateShopifyOrderOpen(true)}
                 initialShopifyRows={tableViewShopifyRows}
                 initialPoRows={tableViewPoRows}
                 shopifyTotal={tableViewShopifyTotal}
@@ -2561,6 +2582,14 @@ export function OrderManagementView({
           </>
         )}
       </div>
+
+      {shopifyAdminApiConfigured ? (
+        <CreateShopifyOrderDialog
+          open={createShopifyOrderOpen}
+          onOpenChange={setCreateShopifyOrderOpen}
+          onCreated={() => router.refresh()}
+        />
+      ) : null}
     </div>
   );
 }

@@ -537,6 +537,55 @@ export const purchaseOrderResyncFromShopifyBodySchema = z.object({
 export type ShopifyOrderApplyEditBody = z.infer<typeof shopifyOrderApplyEditBodySchema>;
 export type ShopifyOrderEditOperation = z.infer<typeof shopifyOrderEditOperationSchema>;
 
+const shopifyOrderCreateMailingSchema = z.object({
+  address1: z.string().trim().min(1, 'Address line 1 is required'),
+  address2: z.string().trim().optional().default(''),
+  city: z.string().trim().min(1, 'City is required'),
+  zip: z.string().trim().min(1, 'Postal / ZIP code is required'),
+  countryCode: z
+    .string()
+    .trim()
+    .length(2, 'Use a 2-letter country code (e.g. CA)')
+    .transform((s) => s.toUpperCase()),
+  provinceCode: z.string().trim().optional().default(''),
+  company: z.string().trim().optional().default(''),
+  phone: z.string().trim().optional().default(''),
+  firstName: z.string().trim().optional().default(''),
+  lastName: z.string().trim().optional().default(''),
+});
+
+const shopifyOrderCreateLineSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('variant'),
+    variantGid: z.string().trim().min(1),
+    quantity: z.number().int().min(1),
+  }),
+  z.object({
+    kind: z.literal('custom'),
+    title: z.string().trim().min(1, 'Custom item title is required'),
+    quantity: z.number().int().min(1),
+    unitPrice: z.number().nonnegative(),
+  }),
+]);
+
+/** POST /api/order-office/shopify-orders/create */
+export const shopifyOrderCreateBodySchema = z.object({
+  customerShopifyGid: z
+    .string()
+    .trim()
+    .min(1, 'Customer is required')
+    .refine((s) => s.startsWith('gid://shopify/Customer/'), {
+      message: 'customerShopifyGid must be a Shopify Customer GID',
+    }),
+  shippingAddress: shopifyOrderCreateMailingSchema,
+  billingAddress: shopifyOrderCreateMailingSchema.optional(),
+  lineItems: z.array(shopifyOrderCreateLineSchema).min(1, 'Add at least one line item'),
+  financialStatus: z.enum(['PENDING', 'PAID']).optional(),
+  note: z.string().max(5000).optional().nullable(),
+});
+
+export type ShopifyOrderCreateBody = z.infer<typeof shopifyOrderCreateBodySchema>;
+
 // ─── Address ─────────────────────────────────────────────────────────────────
 
 export const addressSchema = z.object({

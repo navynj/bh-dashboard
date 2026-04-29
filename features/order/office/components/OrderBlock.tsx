@@ -30,6 +30,10 @@ import { formatVancouverOrderedDetail } from '../utils/vancouver-datetime';
 import { SeparatePoDialog } from './SeparatePoDialog';
 import type { ShopifyOrderEditOperation } from '@/lib/api/schemas';
 import { shopifyMyshopifyAdminOrderUrl } from '../utils/shopify-admin-order-url';
+import {
+  ShopifyProductSearchPanel,
+  type ShopifyProductSearchHit,
+} from '@/components/shopify';
 
 type DraftLine = PrePoLineDraft & {
   localId: string;
@@ -85,17 +89,6 @@ function draftFromOrder(order: ShopifyOrderDraft): DraftLine[] {
   }));
 }
 
-type SearchHit = {
-  productId: string;
-  productTitle: string;
-  variantId: string;
-  variantTitle: string | null;
-  sku: string | null;
-  price: string | null;
-  unitCost?: string | null;
-  imageUrl?: string | null;
-};
-
 export function OrderBlock({
   shopifyAdminStoreHandle,
   order,
@@ -119,9 +112,6 @@ export function OrderBlock({
     new Map(),
   );
   const [addOpen, setAddOpen] = useState(false);
-  const [searchQ, setSearchQ] = useState('');
-  const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [addTab, setAddTab] = useState<'search' | 'custom'>('search');
   const [customTitle, setCustomTitle] = useState('');
   const [customPrice, setCustomPrice] = useState('');
@@ -243,33 +233,7 @@ export function OrderBlock({
     }
   }, [order, purchaseOrderId, buildSavePayload, router]);
 
-  const runSearch = useCallback(async () => {
-    const q = searchQ.trim();
-    if (q.length < 2) {
-      setSearchHits([]);
-      return;
-    }
-    setSearchLoading(true);
-    try {
-      const res = await fetch(
-        `/api/order-office/shopify-products/search?q=${encodeURIComponent(q)}`,
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(typeof data?.error === 'string' ? data.error : 'Search failed');
-        setSearchHits([]);
-        return;
-      }
-      setSearchHits(Array.isArray(data.hits) ? data.hits : []);
-    } catch {
-      toast.error('Search failed');
-      setSearchHits([]);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, [searchQ]);
-
-  const addSearchHit = useCallback((hit: SearchHit) => {
+  const addSearchHit = useCallback((hit: ShopifyProductSearchHit) => {
     const price = hit.price ?? '0';
     setDraftLines((prev) => [
       ...prev,
@@ -291,8 +255,6 @@ export function OrderBlock({
       },
     ]);
     setAddOpen(false);
-    setSearchQ('');
-    setSearchHits([]);
   }, []);
 
   const addCustomLine = useCallback(() => {
@@ -694,45 +656,7 @@ export function OrderBlock({
             </Button>
           </div>
           {addTab === 'search' ? (
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Search products…"
-                  value={searchQ}
-                  onChange={(e) => setSearchQ(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void runSearch();
-                  }}
-                />
-                <Button type="button" size="sm" variant="secondary" onClick={() => void runSearch()}>
-                  {searchLoading ? '…' : 'Search'}
-                </Button>
-              </div>
-              <div className="max-h-56 overflow-y-auto border rounded-md divide-y">
-                {searchHits.length === 0 ? (
-                  <div className="p-3 text-[12px] text-muted-foreground">No results</div>
-                ) : (
-                  searchHits.map((h) => (
-                    <button
-                      key={h.variantId}
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-[12px] hover:bg-muted/50 flex gap-2 items-start"
-                      onClick={() => addSearchHit(h)}
-                    >
-                      <LineItemThumb imageUrl={h.imageUrl} label={h.productTitle} />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium">{h.productTitle}</div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {(h.variantTitle ?? 'Default') +
-                            (h.sku ? ` · ${h.sku}` : '') +
-                            (h.price ? ` · $${h.price}` : '')}
-                        </div>
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
+            <ShopifyProductSearchPanel onSelect={(h) => addSearchHit(h)} />
           ) : (
             <div className="space-y-2">
               <Input

@@ -218,6 +218,7 @@ async function OfficeInboxContent() {
 
   return (
     <OrderManagementView
+      shopifyAdminApiConfigured={isShopifyAdminEnvConfigured()}
       shopifyAdminStoreHandle={shopifyAdminStoreHandle}
       initialStates={inbox.initialStates}
       viewDataMap={inbox.viewDataMap}

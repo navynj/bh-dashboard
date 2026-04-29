@@ -25,9 +25,11 @@ import {
 } from '../types';
 import { formatItemPrice } from '../mappers/map-purchase-order';
 import type { ShopifyOrderEditOperation } from '@/lib/api/schemas';
-import type { OfficeProductSearchVariantHit } from '@/lib/shopify/searchProducts';
+import {
+  ShopifyProductSearchPanel,
+  type ShopifyProductSearchHit,
+} from '@/components/shopify';
 import { ShopifyLineProductCell } from './ShopifyLineProductCell';
-import { LineItemThumb } from './LineItemThumb';
 import {
   Dialog,
   DialogContent,
@@ -201,9 +203,6 @@ export function PoTable({
   const [orderEditError, setOrderEditError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addTab, setAddTab] = useState<'search' | 'custom'>('search');
-  const [searchQ, setSearchQ] = useState('');
-  const [searchHits, setSearchHits] = useState<OfficeProductSearchVariantHit[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [customQty, setCustomQty] = useState('1');
@@ -365,32 +364,6 @@ export function PoTable({
     () => editLines.filter((l) => !l._removed),
     [editLines],
   );
-
-  const runProductSearch = useCallback(async () => {
-    const q = searchQ.trim();
-    if (q.length < 2) {
-      setSearchHits([]);
-      return;
-    }
-    setSearchLoading(true);
-    try {
-      const res = await fetch(
-        `/api/order-office/shopify-products/search?q=${encodeURIComponent(q)}`,
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(typeof data?.error === 'string' ? data.error : 'Search failed');
-        setSearchHits([]);
-        return;
-      }
-      setSearchHits(Array.isArray(data.hits) ? data.hits : []);
-    } catch {
-      toast.error('Search failed');
-      setSearchHits([]);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, [searchQ]);
 
   const saveOrderEdits = useCallback(async () => {
     setSavingOrderEdit(true);
@@ -626,7 +599,7 @@ export function PoTable({
   );
 
   const addSearchHitToPo = useCallback(
-    (hit: OfficeProductSearchVariantHit) => {
+    (hit: ShopifyProductSearchHit) => {
       const key = poLocalKey();
       const ord = linkedOrders.find((o) => o.id === newLineTargetOrderId);
       setEditLines((prev) => [
@@ -658,8 +631,6 @@ export function PoTable({
         },
       ]);
       setAddOpen(false);
-      setSearchQ('');
-      setSearchHits([]);
     },
     [linkedOrders, newLineTargetOrderId, purchaseOrder.id],
   );
@@ -1276,45 +1247,7 @@ export function PoTable({
             </Button>
           </div>
           {addTab === 'search' ? (
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Search products…"
-                  value={searchQ}
-                  onChange={(e) => setSearchQ(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void runProductSearch();
-                  }}
-                />
-                <Button type="button" size="sm" variant="secondary" onClick={() => void runProductSearch()}>
-                  {searchLoading ? '…' : 'Search'}
-                </Button>
-              </div>
-              <div className="max-h-56 overflow-y-auto border rounded-md divide-y">
-                {searchHits.length === 0 ? (
-                  <div className="p-3 text-[12px] text-muted-foreground">No results</div>
-                ) : (
-                  searchHits.map((h) => (
-                    <button
-                      key={h.variantId}
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-[12px] hover:bg-muted/50 flex gap-2 items-start"
-                      onClick={() => addSearchHitToPo(h)}
-                    >
-                      <LineItemThumb imageUrl={h.imageUrl} label={h.productTitle} />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium">{h.productTitle}</div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {(h.variantTitle ?? 'Default') +
-                            (h.sku ? ` · ${h.sku}` : '') +
-                            (h.price ? ` · $${h.price}` : '')}
-                        </div>
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
+            <ShopifyProductSearchPanel onSelect={(h) => addSearchHitToPo(h)} />
           ) : (
             <div className="space-y-2">
               <Input
