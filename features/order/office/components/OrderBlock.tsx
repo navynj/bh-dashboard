@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -39,7 +38,7 @@ type DraftLine = PrePoLineDraft & {
   localId: string;
   removed?: boolean;
   isNew?: boolean;
-  newKind?: 'variant' | 'custom';
+  newKind?: 'variant';
 };
 
 type Props = {
@@ -112,10 +111,6 @@ export function OrderBlock({
     new Map(),
   );
   const [addOpen, setAddOpen] = useState(false);
-  const [addTab, setAddTab] = useState<'search' | 'custom'>('search');
-  const [customTitle, setCustomTitle] = useState('');
-  const [customPrice, setCustomPrice] = useState('');
-  const [customQty, setCustomQty] = useState('1');
 
   useEffect(() => {
     if (!editing) {
@@ -180,13 +175,6 @@ export function OrderBlock({
           allowDuplicates: true,
           unitPriceOverride: unit > 0 ? unit : undefined,
         });
-      } else if (row.isNew && row.newKind === 'custom') {
-        ops.push({
-          type: 'addCustomItem',
-          title: row.productTitle,
-          unitPrice: parseMoney(row.itemPrice),
-          quantity: Math.max(1, row.quantity),
-        });
       }
     }
 
@@ -207,7 +195,7 @@ export function OrderBlock({
         return;
       }
 
-      const hasAppend = ops.some((o) => o.type === 'addVariant' || o.type === 'addCustomItem');
+      const hasAppend = ops.some((o) => o.type === 'addVariant');
 
       const res = await fetch(`/api/order-office/shopify-orders/${order.id}/apply-edit`, {
         method: 'POST',
@@ -256,33 +244,6 @@ export function OrderBlock({
     ]);
     setAddOpen(false);
   }, []);
-
-  const addCustomLine = useCallback(() => {
-    const title = customTitle.trim();
-    if (!title) {
-      toast.error('Title is required');
-      return;
-    }
-    const qty = Math.max(1, parseInt(customQty, 10) || 1);
-    const unit = parseMoney(customPrice);
-    setDraftLines((prev) => [
-      ...prev,
-      {
-        localId: newLocalId(),
-        isNew: true,
-        newKind: 'custom',
-        sku: null,
-        productTitle: title,
-        itemPrice: unit.toFixed(2),
-        quantity: qty,
-        includeInPo: true,
-      },
-    ]);
-    setCustomTitle('');
-    setCustomPrice('');
-    setCustomQty('1');
-    setAddOpen(false);
-  }, [customTitle, customPrice, customQty]);
 
   const visibleDrafts = useMemo(() => draftLines.filter((d) => !d.removed), [draftLines]);
   const costSubtotal = useMemo(() => {
@@ -445,10 +406,7 @@ export function OrderBlock({
             variant="outline"
             size="xs"
             className="text-[10px] rounded-[5px]"
-            onClick={() => {
-              setAddTab('search');
-              setAddOpen(true);
-            }}
+            onClick={() => setAddOpen(true)}
           >
             Add line
           </Button>
@@ -637,55 +595,7 @@ export function OrderBlock({
           <DialogHeader>
             <DialogTitle className="text-sm">Add line</DialogTitle>
           </DialogHeader>
-          <div className="flex gap-2 mb-3">
-            <Button
-              type="button"
-              size="xs"
-              variant={addTab === 'search' ? 'default' : 'outline'}
-              onClick={() => setAddTab('search')}
-            >
-              Search catalog
-            </Button>
-            <Button
-              type="button"
-              size="xs"
-              variant={addTab === 'custom' ? 'default' : 'outline'}
-              onClick={() => setAddTab('custom')}
-            >
-              Custom line
-            </Button>
-          </div>
-          {addTab === 'search' ? (
-            <ShopifyProductSearchPanel onSelect={(h) => addSearchHit(h)} />
-          ) : (
-            <div className="space-y-2">
-              <Input
-                placeholder="Title"
-                value={customTitle}
-                onChange={(e) => setCustomTitle(e.target.value)}
-              />
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Unit price"
-                  value={customPrice}
-                  onChange={(e) => setCustomPrice(e.target.value)}
-                />
-                <Input
-                  placeholder="Qty"
-                  type="number"
-                  min={1}
-                  className="w-20"
-                  value={customQty}
-                  onChange={(e) => setCustomQty(e.target.value)}
-                />
-              </div>
-              <DialogFooter>
-                <Button type="button" onClick={addCustomLine}>
-                  Add
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
+          <ShopifyProductSearchPanel onSelect={(h) => addSearchHit(h)} />
         </DialogContent>
       </Dialog>
     </div>

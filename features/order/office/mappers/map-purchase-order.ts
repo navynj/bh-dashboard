@@ -119,7 +119,11 @@ export function mapPrismaPoToBlock(
     if (qty <= 0) return 'FULFILLED';
     if (qty > 0 && recv >= qty) return 'FULFILLED';
     if (qty > 0 && recv > 0 && recv < qty) return 'PARTIALLY_FULFILLED';
-    if (poConsideredFulfilled && qty > 0) return 'FULFILLED';
+    // Hub-only / custom lines (no FK to shopify_order_line_items): never infer
+    // "fulfilled" from linked Shopify order state — they must be received in-hub.
+    if (poConsideredFulfilled && qty > 0 && li.shopifyOrderLineItemId) {
+      return 'FULFILLED';
+    }
     return 'UNFULFILLED';
   }
 
@@ -269,21 +273,9 @@ export function mapPrismaPoToSlimBlock(
   const orderById = new Map(linkedOrders.map((o) => [o.id, o]));
   void orderById;
 
-  const derivedFromShopify = derivePurchaseOrderStatusFromShopify(
-    linkedOrders.map((o) => ({
-      displayFulfillmentStatus: o.displayFulfillmentStatus,
-    })),
-    po.completedAt,
-  );
-
-  const poConsideredFulfilled =
-    derivedFromShopify === 'fulfilled' ||
-    derivedFromShopify === 'completed' ||
-    storedStatus === 'fulfilled' ||
-    storedStatus === 'completed';
-
   const linesTotal = lineCounts.total;
-  const linesFulfilled = poConsideredFulfilled ? linesTotal : lineCounts.done;
+  /** Pre-computed on the server — includes Shopify-mirror rules for FK’d lines only. */
+  const linesFulfilled = lineCounts.done;
 
   const orderDates = linkedOrders
     .map((o) => o.processedAt ?? o.shopifyCreatedAt)

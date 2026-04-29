@@ -741,6 +741,7 @@ model PurchaseOrder {
   currency              String
   isAuto                Boolean                 @default(false) @map("is_auto")
   displayTaxColumn      Boolean                 @default(false) @map("display_tax_column")
+  /// PO note — office UI, printed PO PDF, outbound PO email attachment.
   comment               String?                 @db.Text
   authorizedBy          String?                 @map("authorized_by")
   unitsOrdered          Int?                    @map("units_ordered")

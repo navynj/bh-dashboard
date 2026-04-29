@@ -213,6 +213,8 @@ export type PoPdfInput = {
   poNumber: string;
   /** Distinct Shopify order names (#…) linked to this PO; shown in title band. */
   linkedShopifyOrderNames: string[];
+  /** Hub-only PO note (`purchase_orders.comment`); shown below title band when set. */
+  poNote: string | null;
   dateCreated: string | null;
   expectedDate: string | null;
   customerHeadline: string | null;
@@ -290,6 +292,26 @@ function buildDoc(input: PoPdfInput): jsPDF {
   }
 
   y += bandH + 6;
+
+  // ── PO note (hub; below title band) ─────────────────────────────────────
+  const noteText = input.poNote?.trim() ?? '';
+  if (noteText) {
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(100, 100, 100);
+    doc.text('PO NOTE', MARGIN, y);
+    y += LH * 0.85;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(0, 0, 0);
+    const noteLines = doc.splitTextToSize(noteText, PAGE_W - 2 * MARGIN) as string[];
+    for (const nl of noteLines) {
+      y = ensurePage(doc, y, LH + 1);
+      doc.text(nl, MARGIN, y);
+      y += LH;
+    }
+    y += 4;
+  }
 
   // ── Ship to (top) → Bill to (below) stacked left; Signature box right ───
   const yAddrStart = y;
@@ -442,6 +464,7 @@ export function buildPoPdfInput(args: {
   return {
     poNumber: block.poNumber,
     linkedShopifyOrderNames,
+    poNote: meta.comment?.trim() ? meta.comment.trim() : null,
     dateCreated: meta.dateCreated,
     expectedDate: meta.expectedDate,
     customerHeadline,

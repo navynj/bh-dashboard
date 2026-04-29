@@ -69,7 +69,7 @@ export type PoPanelMeta = {
   orderedAt: string | null;
   dateCreated: string | null;
   expectedDate: string | null;
-  /** Internal PO note (`purchase_orders.comment`) shown only in office UI. */
+  /** PO note (`purchase_orders.comment`) — office UI + printed / emailed PO PDF. */
   comment: string | null;
   /**
    * Vancouver `YYYY-MM-DD` — earliest allowed expected delivery (latest Shopify order placement

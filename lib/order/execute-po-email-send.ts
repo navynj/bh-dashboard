@@ -114,6 +114,7 @@ export async function executePurchaseOrderOutboundEmailSend(
   const pdfInput: PoPdfInput = {
     poNumber: po.poNumber,
     linkedShopifyOrderNames,
+    poNote: po.comment?.trim() ? po.comment.trim() : null,
     dateCreated: dateToYmd(po.dateCreated),
     expectedDate: dateToYmd(po.expectedDate),
     customerHeadline,

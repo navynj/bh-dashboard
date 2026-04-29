@@ -20,6 +20,8 @@ import type {
   PrismaPoWithRelations,
   PrismaPoSlimWithRelations,
 } from '@/features/order/office/mappers/map-purchase-order';
+import type { PurchaseOrderStatus } from '@/features/order/office/types/purchase-order';
+import { derivePurchaseOrderStatusFromShopify } from '@/lib/order/purchase-order-status-compute';
 import { executeShopifySync } from '@/lib/shopify/sync/run-shopify-sync';
 import { loadVariantOfficeNotesMap } from '@/lib/order/shopify-variant-office-note';
 import { fetchLegacyOrphanPoLinesForInbox } from '@/lib/order/fetch-legacy-orphan-po-lines-for-inbox';
@@ -153,10 +155,15 @@ async function OfficeInboxContent() {
     prisma.shopifyVendorMapping.findMany({
       select: { vendorName: true, supplierId: true },
     }),
-    // Minimal line-item data for fulfillment counts — 3 columns only, no joins
+    // Minimal line-item data for fulfillment counts (FK used for Shopify-mirror rules)
     prisma.purchaseOrderLineItem.findMany({
       where: { purchaseOrder: { archivedAt: null } },
-      select: { purchaseOrderId: true, quantity: true, quantityReceived: true },
+      select: {
+        purchaseOrderId: true,
+        quantity: true,
+        quantityReceived: true,
+        shopifyOrderLineItemId: true,
+      },
     }),
     prisma.shopifyOrder.count(),
     prisma.purchaseOrder.count(),
@@ -164,16 +171,44 @@ async function OfficeInboxContent() {
     fetchPurchaseOrdersForOfficeTableView(0, OFFICE_TABLE_VIEW_FETCH_LIMIT),
   ]);
 
+  const activePurchaseOrders = rawActivePOs as unknown as PrismaPoSlimWithRelations[];
+
+  /** When linked Shopify orders are all fulfilled, FK’d lines mirror FULFILLED in UI (hub recv may lag). */
+  const mirrorFulfilledByPoId = new Map<string, boolean>(
+    activePurchaseOrders.map((po) => {
+      const derived = derivePurchaseOrderStatusFromShopify(
+        po.shopifyOrders.map((o) => ({
+          displayFulfillmentStatus: o.displayFulfillmentStatus,
+        })),
+        po.completedAt,
+      );
+      const s = po.status as PurchaseOrderStatus;
+      const mirror =
+        derived === 'fulfilled' ||
+        derived === 'completed' ||
+        s === 'fulfilled' ||
+        s === 'completed';
+      return [po.id, mirror] as const;
+    }),
+  );
+
   // Build per-PO fulfillment counts from the minimal line query
   const lineCountsByPoId = new Map<string, { total: number; done: number }>();
   for (const li of rawLineCounts) {
     const cur = lineCountsByPoId.get(li.purchaseOrderId) ?? { total: 0, done: 0 };
     cur.total++;
-    if (li.quantity <= 0 || li.quantityReceived >= li.quantity) cur.done++;
+    const qty = li.quantity;
+    const recv = li.quantityReceived;
+    if (qty <= 0 || recv >= qty) {
+      cur.done++;
+    } else if (
+      (mirrorFulfilledByPoId.get(li.purchaseOrderId) ?? false) &&
+      li.shopifyOrderLineItemId
+    ) {
+      cur.done++;
+    }
     lineCountsByPoId.set(li.purchaseOrderId, cur);
   }
-
-  const activePurchaseOrders = rawActivePOs as unknown as PrismaPoSlimWithRelations[];
 
   const archivedPurchaseOrders = rawArchivedPOs.map((po) => ({
     ...po,

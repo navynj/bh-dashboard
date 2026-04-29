@@ -30,22 +30,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-type LineRow =
-  | {
-      key: string;
-      kind: 'variant';
-      variantGid: string;
-      label: string;
-      sku: string | null;
-      quantity: number;
-    }
-  | {
-      key: string;
-      kind: 'custom';
-      title: string;
-      quantity: number;
-      unitPrice: number;
-    };
+type LineRow = {
+  key: string;
+  kind: 'variant';
+  variantGid: string;
+  label: string;
+  sku: string | null;
+  quantity: number;
+};
 
 function newKey(): string {
   return `r_${Math.random().toString(36).slice(2, 11)}`;
@@ -75,7 +67,8 @@ function provinceCodeFromAddr(addr: ShopifyMailingAddress): string {
   const code = addr.provinceCode?.trim();
   if (code) return code;
   const p = (addr.province ?? '').trim();
-  if (p.length >= 2 && p.length <= 4 && /^[A-Za-z]+$/.test(p)) return p.toUpperCase();
+  if (p.length >= 2 && p.length <= 4 && /^[A-Za-z]+$/.test(p))
+    return p.toUpperCase();
   return '';
 }
 
@@ -85,13 +78,18 @@ type Props = {
   onCreated?: () => void;
 };
 
-export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Props) {
+export function CreateShopifyOrderDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: Props) {
   const [customerQuery, setCustomerQuery] = useState('');
-  const [customerHits, setCustomerHits] = useState<ShopifyAdminCustomerNode[]>([]);
-  const [customerLoading, setCustomerLoading] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<ShopifyAdminCustomerNode | null>(
-    null,
+  const [customerHits, setCustomerHits] = useState<ShopifyAdminCustomerNode[]>(
+    [],
   );
+  const [customerLoading, setCustomerLoading] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] =
+    useState<ShopifyAdminCustomerNode | null>(null);
 
   const [addr1, setAddr1] = useState('');
   const [addr2, setAddr2] = useState('');
@@ -114,14 +112,14 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
 
   const [lines, setLines] = useState<LineRow[]>([]);
   const [productPickOpen, setProductPickOpen] = useState(false);
-  const [customTitle, setCustomTitle] = useState('');
-  const [customPrice, setCustomPrice] = useState('');
-  const [customQty, setCustomQty] = useState('1');
-
   const [financialStatus, setFinancialStatus] =
     useState<NonNullable<ShopifyOrderCreateBody['financialStatus']>>('PENDING');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  /** When false, address line 1+2 show as one compact block; inputs when true. */
+  const [shippingAddrLinesEdit, setShippingAddrLinesEdit] = useState(false);
+  const [billingAddrLinesEdit, setBillingAddrLinesEdit] = useState(false);
 
   const resetForm = useCallback(() => {
     setCustomerQuery('');
@@ -145,11 +143,10 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
     setBillZip('');
     setBillCountryCode('CA');
     setLines([]);
-    setCustomTitle('');
-    setCustomPrice('');
-    setCustomQty('1');
     setFinancialStatus('PENDING');
     setNote('');
+    setShippingAddrLinesEdit(false);
+    setBillingAddrLinesEdit(false);
   }, []);
 
   useEffect(() => {
@@ -171,7 +168,11 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(typeof data?.error === 'string' ? data.error : 'Customer search failed');
+        toast.error(
+          typeof data?.error === 'string'
+            ? data.error
+            : 'Customer search failed',
+        );
         setCustomerHits([]);
         return;
       }
@@ -211,6 +212,7 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
       setFirstName((node.firstName ?? '').trim());
       setLastName((node.lastName ?? '').trim());
     }
+    setShippingAddrLinesEdit(!((mail?.address1 ?? '').trim()));
   }, []);
 
   const onProductPick = useCallback((hit: ShopifyProductSearchHit) => {
@@ -228,44 +230,36 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
     ]);
   }, []);
 
-  const parseMoney = (s: string) => {
-    const n = parseFloat(String(s).replace(/[^0-9.-]/g, ''));
-    return Number.isFinite(n) ? n : 0;
-  };
-
-  const addCustomLine = useCallback(() => {
-    const title = customTitle.trim();
-    if (!title) {
-      toast.error('Custom item title is required');
-      return;
-    }
-    const qty = Math.max(1, parseInt(customQty, 10) || 1);
-    const unit = parseMoney(customPrice);
-    setLines((prev) => [
-      ...prev,
-      { key: newKey(), kind: 'custom', title, quantity: qty, unitPrice: unit },
+  const shippingPayload =
+    useMemo((): ShopifyOrderCreateBody['shippingAddress'] => {
+      return {
+        address1: addr1.trim(),
+        address2: addr2.trim(),
+        city: city.trim(),
+        zip: zip.trim(),
+        countryCode: countryCode.trim().toUpperCase(),
+        provinceCode: provinceCode.trim(),
+        company: company.trim(),
+        phone: phone.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+      };
+    }, [
+      addr1,
+      addr2,
+      city,
+      zip,
+      countryCode,
+      provinceCode,
+      company,
+      phone,
+      firstName,
+      lastName,
     ]);
-    setCustomTitle('');
-    setCustomPrice('');
-    setCustomQty('1');
-  }, [customTitle, customPrice, customQty]);
 
-  const shippingPayload = useMemo((): ShopifyOrderCreateBody['shippingAddress'] => {
-    return {
-      address1: addr1.trim(),
-      address2: addr2.trim(),
-      city: city.trim(),
-      zip: zip.trim(),
-      countryCode: countryCode.trim().toUpperCase(),
-      provinceCode: provinceCode.trim(),
-      company: company.trim(),
-      phone: phone.trim(),
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-    };
-  }, [addr1, addr2, city, zip, countryCode, provinceCode, company, phone, firstName, lastName]);
-
-  const billingPayload = useMemo((): ShopifyOrderCreateBody['shippingAddress'] | undefined => {
+  const billingPayload = useMemo(():
+    | ShopifyOrderCreateBody['shippingAddress']
+    | undefined => {
     if (billingSameAsShipping) return undefined;
     return {
       address1: billAddr1.trim(),
@@ -313,16 +307,11 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
       customerShopifyGid: selectedCustomer.id,
       shippingAddress: shippingPayload,
       billingAddress: billingPayload,
-      lineItems: lines.map((row) =>
-        row.kind === 'variant'
-          ? { kind: 'variant', variantGid: row.variantGid, quantity: row.quantity }
-          : {
-              kind: 'custom',
-              title: row.title,
-              quantity: row.quantity,
-              unitPrice: row.unitPrice,
-            },
-      ),
+      lineItems: lines.map((row) => ({
+        kind: 'variant' as const,
+        variantGid: row.variantGid,
+        quantity: row.quantity,
+      })),
       financialStatus,
       note: note.trim() || null,
     };
@@ -336,7 +325,9 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(typeof data?.error === 'string' ? data.error : 'Create order failed');
+        toast.error(
+          typeof data?.error === 'string' ? data.error : 'Create order failed',
+        );
         return;
       }
       toast.success(
@@ -372,14 +363,18 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-base">Create Shopify order</DialogTitle>
+            <DialogTitle className="text-base">
+              Create Shopify order
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-5 text-sm">
             <section className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">Customer</div>
+              <div className="text-xs font-medium text-muted-foreground">
+                Customer
+              </div>
               {!selectedCustomer ? (
                 <div className="space-y-2">
                   <div className="flex gap-2">
@@ -416,10 +411,16 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
                           onClick={() => applyCustomer(c)}
                         >
                           <span className="font-medium">
-                            {c.displayName ?? [c.firstName, c.lastName].filter(Boolean).join(' ') ?? c.email}
+                            {c.displayName ??
+                              [c.firstName, c.lastName]
+                                .filter(Boolean)
+                                .join(' ') ??
+                              c.email}
                           </span>
                           {c.email ? (
-                            <span className="ml-1 text-muted-foreground">{c.email}</span>
+                            <span className="ml-1 text-muted-foreground">
+                              {c.email}
+                            </span>
                           ) : null}
                         </button>
                       ))
@@ -452,19 +453,69 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
             </section>
 
             <section className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">Shipping address</div>
+              <div className="text-xs font-medium text-muted-foreground">
+                Shipping address
+              </div>
               <div className="grid grid-cols-2 gap-2">
-                <div className="col-span-2">
-                  <Label className="text-xs">Address line 1</Label>
-                  <Input className="h-9" value={addr1} onChange={(e) => setAddr1(e.target.value)} />
-                </div>
-                <div className="col-span-2">
-                  <Label className="text-xs">Address line 2</Label>
-                  <Input className="h-9" value={addr2} onChange={(e) => setAddr2(e.target.value)} />
+                <div className="col-span-2 flex flex-col gap-1.5 sm:flex-row sm:items-stretch sm:gap-2">
+                  {!shippingAddrLinesEdit ? (
+                    <button
+                      type="button"
+                      className="min-h-9 flex-1 rounded-md border border-input bg-muted/30 px-2.5 py-1.5 text-left text-xs leading-snug transition-colors hover:bg-muted/50"
+                      onClick={() => setShippingAddrLinesEdit(true)}
+                    >
+                      {addr1.trim() || addr2.trim() ? (
+                        <>
+                          {addr1.trim() ? (
+                            <div className="text-foreground">{addr1.trim()}</div>
+                          ) : null}
+                          {addr2.trim() ? (
+                            <div className="text-muted-foreground">{addr2.trim()}</div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          Street address — click to add
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="flex-1 space-y-2">
+                      <div>
+                        <Label className="text-xs">Address line 1</Label>
+                        <Input
+                          className="h-9"
+                          value={addr1}
+                          onChange={(e) => setAddr1(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Address line 2</Label>
+                        <Input
+                          className="h-9"
+                          value={addr2}
+                          onChange={(e) => setAddr2(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    variant={shippingAddrLinesEdit ? 'secondary' : 'outline'}
+                    size="sm"
+                    className="h-9 shrink-0 text-xs sm:self-start"
+                    onClick={() => setShippingAddrLinesEdit((v) => !v)}
+                  >
+                    {shippingAddrLinesEdit ? 'Done' : 'Edit lines'}
+                  </Button>
                 </div>
                 <div>
                   <Label className="text-xs">City</Label>
-                  <Input className="h-9" value={city} onChange={(e) => setCity(e.target.value)} />
+                  <Input
+                    className="h-9"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                  />
                 </div>
                 <div>
                   <Label className="text-xs">Province / state code</Label>
@@ -477,7 +528,11 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
                 </div>
                 <div>
                   <Label className="text-xs">Postal / ZIP</Label>
-                  <Input className="h-9" value={zip} onChange={(e) => setZip(e.target.value)} />
+                  <Input
+                    className="h-9"
+                    value={zip}
+                    onChange={(e) => setZip(e.target.value)}
+                  />
                 </div>
                 <div>
                   <Label className="text-xs">Country (ISO2)</Label>
@@ -485,47 +540,125 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
                     className="h-9"
                     maxLength={2}
                     value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
+                    onChange={(e) =>
+                      setCountryCode(e.target.value.toUpperCase())
+                    }
                   />
                 </div>
                 <div>
                   <Label className="text-xs">Company</Label>
-                  <Input className="h-9" value={company} onChange={(e) => setCompany(e.target.value)} />
+                  <Input
+                    className="h-9"
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                  />
                 </div>
                 <div>
                   <Label className="text-xs">Phone</Label>
-                  <Input className="h-9" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  <Input
+                    className="h-9"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
                 </div>
                 <div>
                   <Label className="text-xs">First name</Label>
-                  <Input className="h-9" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                  <Input
+                    className="h-9"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                  />
                 </div>
                 <div>
                   <Label className="text-xs">Last name</Label>
-                  <Input className="h-9" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                  <Input
+                    className="h-9"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                  />
                 </div>
               </div>
               <label className="flex items-center gap-2 text-xs">
                 <input
                   type="checkbox"
                   checked={billingSameAsShipping}
-                  onChange={(e) => setBillingSameAsShipping(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setBillingSameAsShipping(checked);
+                    if (!checked) {
+                      setBillingAddrLinesEdit(
+                        !billAddr1.trim() && !billAddr2.trim(),
+                      );
+                    }
+                  }}
                 />
                 Billing same as shipping
               </label>
               {!billingSameAsShipping ? (
                 <div className="grid grid-cols-2 gap-2 rounded-md border p-2">
-                  <div className="col-span-2">
-                    <Label className="text-xs">Billing address 1</Label>
-                    <Input className="h-9" value={billAddr1} onChange={(e) => setBillAddr1(e.target.value)} />
-                  </div>
-                  <div className="col-span-2">
-                    <Label className="text-xs">Billing address 2</Label>
-                    <Input className="h-9" value={billAddr2} onChange={(e) => setBillAddr2(e.target.value)} />
+                  <div className="col-span-2 flex flex-col gap-1.5 sm:flex-row sm:items-stretch sm:gap-2">
+                    {!billingAddrLinesEdit ? (
+                      <button
+                        type="button"
+                        className="min-h-9 flex-1 rounded-md border border-input bg-muted/30 px-2.5 py-1.5 text-left text-xs leading-snug transition-colors hover:bg-muted/50"
+                        onClick={() => setBillingAddrLinesEdit(true)}
+                      >
+                        {billAddr1.trim() || billAddr2.trim() ? (
+                          <>
+                            {billAddr1.trim() ? (
+                              <div className="text-foreground">
+                                {billAddr1.trim()}
+                              </div>
+                            ) : null}
+                            {billAddr2.trim() ? (
+                              <div className="text-muted-foreground">
+                                {billAddr2.trim()}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            Billing street — click to add
+                          </span>
+                        )}
+                      </button>
+                    ) : (
+                      <div className="flex-1 space-y-2">
+                        <div>
+                          <Label className="text-xs">Billing address line 1</Label>
+                          <Input
+                            className="h-9"
+                            value={billAddr1}
+                            onChange={(e) => setBillAddr1(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Billing address line 2</Label>
+                          <Input
+                            className="h-9"
+                            value={billAddr2}
+                            onChange={(e) => setBillAddr2(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <Button
+                      type="button"
+                      variant={billingAddrLinesEdit ? 'secondary' : 'outline'}
+                      size="sm"
+                      className="h-9 shrink-0 text-xs sm:self-start"
+                      onClick={() => setBillingAddrLinesEdit((v) => !v)}
+                    >
+                      {billingAddrLinesEdit ? 'Done' : 'Edit lines'}
+                    </Button>
                   </div>
                   <div>
                     <Label className="text-xs">City</Label>
-                    <Input className="h-9" value={billCity} onChange={(e) => setBillCity(e.target.value)} />
+                    <Input
+                      className="h-9"
+                      value={billCity}
+                      onChange={(e) => setBillCity(e.target.value)}
+                    />
                   </div>
                   <div>
                     <Label className="text-xs">Province code</Label>
@@ -537,7 +670,11 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
                   </div>
                   <div>
                     <Label className="text-xs">Postal / ZIP</Label>
-                    <Input className="h-9" value={billZip} onChange={(e) => setBillZip(e.target.value)} />
+                    <Input
+                      className="h-9"
+                      value={billZip}
+                      onChange={(e) => setBillZip(e.target.value)}
+                    />
                   </div>
                   <div>
                     <Label className="text-xs">Country (ISO2)</Label>
@@ -545,7 +682,9 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
                       className="h-9"
                       maxLength={2}
                       value={billCountryCode}
-                      onChange={(e) => setBillCountryCode(e.target.value.toUpperCase())}
+                      onChange={(e) =>
+                        setBillCountryCode(e.target.value.toUpperCase())
+                      }
                     />
                   </div>
                 </div>
@@ -554,7 +693,9 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
 
             <section className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs font-medium text-muted-foreground">Line items</div>
+                <div className="text-xs font-medium text-muted-foreground">
+                  Line items
+                </div>
                 <Button
                   type="button"
                   variant="outline"
@@ -563,31 +704,6 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
                   onClick={() => setProductPickOpen(true)}
                 >
                   Add catalog item…
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2 rounded-md border p-2">
-                <Input
-                  className="h-8 max-w-xs text-xs"
-                  placeholder="Custom title"
-                  value={customTitle}
-                  onChange={(e) => setCustomTitle(e.target.value)}
-                />
-                <Input
-                  className="h-8 w-24 text-xs"
-                  placeholder="Price"
-                  value={customPrice}
-                  onChange={(e) => setCustomPrice(e.target.value)}
-                />
-                <Input
-                  className="h-8 w-16 text-xs"
-                  type="number"
-                  min={1}
-                  placeholder="Qty"
-                  value={customQty}
-                  onChange={(e) => setCustomQty(e.target.value)}
-                />
-                <Button type="button" size="sm" variant="secondary" className="h-8 text-xs" onClick={addCustomLine}>
-                  Add custom
                 </Button>
               </div>
               <Table>
@@ -601,7 +717,10 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
                 <TableBody>
                   {lines.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-xs text-muted-foreground">
+                      <TableCell
+                        colSpan={3}
+                        className="text-xs text-muted-foreground"
+                      >
                         No lines yet
                       </TableCell>
                     </TableRow>
@@ -609,21 +728,10 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
                     lines.map((row) => (
                       <TableRow key={row.key}>
                         <TableCell className="text-xs">
-                          {row.kind === 'variant' ? (
-                            <>
-                              <div className="font-medium">{row.label}</div>
-                              {row.sku ? (
-                                <div className="text-muted-foreground">{row.sku}</div>
-                              ) : null}
-                            </>
-                          ) : (
-                            <>
-                              <div className="font-medium">{row.title}</div>
-                              <div className="text-muted-foreground">
-                                ${row.unitPrice.toFixed(2)} each
-                              </div>
-                            </>
-                          )}
+                          <div className="font-medium">{row.label}</div>
+                          {row.sku ? (
+                            <div className="text-muted-foreground">{row.sku}</div>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-xs">
                           <Input
@@ -632,9 +740,14 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
                             min={1}
                             value={row.quantity}
                             onChange={(e) => {
-                              const n = Math.max(1, parseInt(e.target.value, 10) || 1);
+                              const n = Math.max(
+                                1,
+                                parseInt(e.target.value, 10) || 1,
+                              );
                               setLines((prev) =>
-                                prev.map((l) => (l.key === row.key ? { ...l, quantity: n } : l)),
+                                prev.map((l) =>
+                                  l.key === row.key ? { ...l, quantity: n } : l,
+                                ),
                               );
                             }}
                           />
@@ -646,7 +759,9 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
                             size="xs"
                             className="h-7 text-[10px] text-destructive"
                             onClick={() =>
-                              setLines((prev) => prev.filter((l) => l.key !== row.key))
+                              setLines((prev) =>
+                                prev.filter((l) => l.key !== row.key),
+                              )
                             }
                           >
                             Remove
@@ -660,7 +775,9 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
             </section>
 
             <section className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">Payment</div>
+              <div className="text-xs font-medium text-muted-foreground">
+                Payment
+              </div>
               <select
                 className="h-9 w-full max-w-xs rounded-md border border-input bg-background px-2 text-xs"
                 value={financialStatus}
@@ -685,10 +802,19 @@ export function CreateShopifyOrderDialog({ open, onOpenChange, onCreated }: Prop
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={submitting}
+            >
               Cancel
             </Button>
-            <Button type="button" onClick={() => void submit()} disabled={submitting}>
+            <Button
+              type="button"
+              onClick={() => void submit()}
+              disabled={submitting}
+            >
               {submitting ? 'Creating…' : 'Create in Shopify & sync'}
             </Button>
           </DialogFooter>

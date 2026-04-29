@@ -503,10 +503,10 @@ function WithoutPoMeta({
               className="h-auto min-h-0 text-[11px] px-1.5 py-[4px] rounded-[5px] md:text-[11px]"
             />
           </FieldInput>
-          <FieldInput label="Notes">
+          <FieldInput label="PO note">
             <Textarea
               name="comment"
-              placeholder="Optional"
+              placeholder="Optional — shown on printed PO"
               className="min-h-11 h-11 resize-none text-[11px] px-1.5 py-[4px] rounded-[5px] md:text-[11px]"
             />
           </FieldInput>
@@ -972,17 +972,33 @@ function WithPoMeta({
         )}
       </Section>
 
-      {editing ? (
-        <Section>
-          <MetaLabel>Notes (internal)</MetaLabel>
+      <Section>
+        <div className="flex items-center justify-between gap-1 mb-0.5">
+          <MetaLabel>PO note</MetaLabel>
+          {!editing && (
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground rounded p-0.5 shrink-0"
+              aria-label="Edit PO note"
+              onClick={handleStartEdit}
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+        {editing ? (
           <Textarea
             value={editComment}
             onChange={(e) => setEditComment(e.target.value)}
-            placeholder="Optional"
+            placeholder="Optional — shown on printed PO"
             className="min-h-11 h-11 resize-none text-[11px] px-1.5 py-[4px] rounded-[5px] md:text-[11px]"
           />
-        </Section>
-      ) : null}
+        ) : (
+          <p className="text-[11px] leading-snug text-foreground whitespace-pre-wrap break-words">
+            {internalNote || '—'}
+          </p>
+        )}
+      </Section>
 
       <Section>
         <MetaLabel>Supplier</MetaLabel>
