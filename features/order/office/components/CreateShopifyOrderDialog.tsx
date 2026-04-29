@@ -119,6 +119,10 @@ export function CreateShopifyOrderDialog({
   const [customerHits, setCustomerHits] = useState<ShopifyAdminCustomerNode[]>(
     [],
   );
+  /** Trimmed query that `customerHits` belong to; only set after a successful Search. */
+  const [lastCustomerSearchQuery, setLastCustomerSearchQuery] = useState<
+    string | null
+  >(null);
   const [customerLoading, setCustomerLoading] = useState(false);
   const [selectedCustomer, setSelectedCustomer] =
     useState<ShopifyAdminCustomerNode | null>(null);
@@ -148,6 +152,11 @@ export function CreateShopifyOrderDialog({
     useState<NonNullable<ShopifyOrderCreateBody['financialStatus']>>('PENDING');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [deliveryMethod, setDeliveryMethod] = useState<
+    NonNullable<ShopifyOrderCreateBody['deliveryMethod']>
+  >('shipping');
+  /** Decimal string in shop currency; only applied when delivery is shipping. */
+  const [shippingFeeInput, setShippingFeeInput] = useState('0');
 
   /** When false, full shipping address is one summary line; all inputs when true. */
   const [shippingAddressEdit, setShippingAddressEdit] = useState(false);
@@ -157,6 +166,7 @@ export function CreateShopifyOrderDialog({
   const resetForm = useCallback(() => {
     setCustomerQuery('');
     setCustomerHits([]);
+    setLastCustomerSearchQuery(null);
     setSelectedCustomer(null);
     setAddr1('');
     setAddr2('');
@@ -178,6 +188,8 @@ export function CreateShopifyOrderDialog({
     setLines([]);
     setFinancialStatus('PENDING');
     setNote('');
+    setDeliveryMethod('shipping');
+    setShippingFeeInput('0');
     setShippingAddressEdit(false);
     setBillingAddressEdit(false);
   }, []);
@@ -192,10 +204,22 @@ export function CreateShopifyOrderDialog({
     setBillingAddressEdit(false);
   }, [open, resetForm]);
 
+  useEffect(() => {
+    const q = customerQuery.trim();
+    if (
+      lastCustomerSearchQuery !== null &&
+      q !== lastCustomerSearchQuery
+    ) {
+      setCustomerHits([]);
+      setLastCustomerSearchQuery(null);
+    }
+  }, [customerQuery, lastCustomerSearchQuery]);
+
   const runCustomerSearch = useCallback(async () => {
     const q = customerQuery.trim();
     if (q.length < 2) {
       setCustomerHits([]);
+      setLastCustomerSearchQuery(null);
       return;
     }
     setCustomerLoading(true);
@@ -211,12 +235,15 @@ export function CreateShopifyOrderDialog({
             : 'Customer search failed',
         );
         setCustomerHits([]);
+        setLastCustomerSearchQuery(null);
         return;
       }
       setCustomerHits(Array.isArray(data.hits) ? data.hits : []);
+      setLastCustomerSearchQuery(q);
     } catch {
       toast.error('Customer search failed');
       setCustomerHits([]);
+      setLastCustomerSearchQuery(null);
     } finally {
       setCustomerLoading(false);
     }
@@ -429,6 +456,13 @@ export function CreateShopifyOrderDialog({
       return;
     }
 
+    const rawFee = shippingFeeInput.trim().replace(',', '.');
+    const parsedFee = parseFloat(rawFee);
+    const shippingFee =
+      deliveryMethod === 'shipping' && Number.isFinite(parsedFee) && parsedFee >= 0
+        ? parsedFee
+        : 0;
+
     const body: ShopifyOrderCreateBody = {
       customerShopifyGid: selectedCustomer.id,
       shippingAddress: shippingPayload,
@@ -438,6 +472,8 @@ export function CreateShopifyOrderDialog({
         variantGid: row.variantGid,
         quantity: row.quantity,
       })),
+      deliveryMethod,
+      shippingFee,
       financialStatus,
       note: note.trim() || null,
     };
@@ -482,9 +518,16 @@ export function CreateShopifyOrderDialog({
     billingPayload,
     financialStatus,
     note,
+    deliveryMethod,
+    shippingFeeInput,
     onOpenChange,
     onCreated,
   ]);
+
+  const customerQueryTrim = customerQuery.trim();
+  const showCustomerHitList =
+    lastCustomerSearchQuery !== null &&
+    customerQueryTrim === lastCustomerSearchQuery;
 
   return (
     <>
@@ -505,12 +548,17 @@ export function CreateShopifyOrderDialog({
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <Input
-                      placeholder="Search customers (name, email)…"
+                      placeholder="Name or email…"
                       value={customerQuery}
                       onChange={(e) => setCustomerQuery(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') void runCustomerSearch();
                       }}
+                      aria-describedby={
+                        !showCustomerHitList
+                          ? 'shopify-customer-search-hint'
+                          : undefined
+                      }
                     />
                     <Button
                       type="button"
@@ -521,37 +569,47 @@ export function CreateShopifyOrderDialog({
                       {customerLoading ? '…' : 'Search'}
                     </Button>
                   </div>
-                  <div className="max-h-40 overflow-y-auto rounded-md border divide-y">
-                    {customerHits.length === 0 ? (
-                      <div className="p-2 text-xs text-muted-foreground">
-                        {customerQuery.trim().length < 2
-                          ? 'Enter at least 2 characters.'
-                          : 'No customers'}
-                      </div>
-                    ) : (
-                      customerHits.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          className="block w-full px-2 py-1.5 text-left text-xs hover:bg-muted/50"
-                          onClick={() => applyCustomer(c)}
-                        >
-                          <span className="font-medium">
-                            {c.displayName ??
-                              [c.firstName, c.lastName]
-                                .filter(Boolean)
-                                .join(' ') ??
-                              c.email}
-                          </span>
-                          {c.email ? (
-                            <span className="ml-1 text-muted-foreground">
-                              {c.email}
+                  {!showCustomerHitList ? (
+                    <p
+                      id="shopify-customer-search-hint"
+                      className="text-xs text-muted-foreground"
+                    >
+                      {customerQueryTrim.length < 2
+                        ? 'Enter at least 2 characters, then press Search or Enter.'
+                        : 'Press Search (or Enter) to load matching customers.'}
+                    </p>
+                  ) : null}
+                  {showCustomerHitList ? (
+                    <div className="max-h-40 overflow-y-auto rounded-md border divide-y">
+                      {customerHits.length === 0 ? (
+                        <div className="p-2 text-xs text-muted-foreground">
+                          No customers match this search.
+                        </div>
+                      ) : (
+                        customerHits.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className="block w-full px-2 py-1.5 text-left text-xs hover:bg-muted/50"
+                            onClick={() => applyCustomer(c)}
+                          >
+                            <span className="font-medium">
+                              {c.displayName ??
+                                [c.firstName, c.lastName]
+                                  .filter(Boolean)
+                                  .join(' ') ??
+                                c.email}
                             </span>
-                          ) : null}
-                        </button>
-                      ))
-                    )}
-                  </div>
+                            {c.email ? (
+                              <span className="ml-1 text-muted-foreground">
+                                {c.email}
+                              </span>
+                            ) : null}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/20 px-2 py-1.5 text-xs">
@@ -570,6 +628,7 @@ export function CreateShopifyOrderDialog({
                     onClick={() => {
                       setSelectedCustomer(null);
                       setCustomerHits([]);
+                      setLastCustomerSearchQuery(null);
                     }}
                   >
                     Change
@@ -809,6 +868,56 @@ export function CreateShopifyOrderDialog({
                   )}
                 </div>
               ) : null}
+            </section>
+
+            <section className="space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">
+                Delivery
+              </div>
+              <div className="flex flex-wrap gap-4 text-xs">
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="shopify-office-delivery"
+                    className="size-3.5 accent-primary"
+                    checked={deliveryMethod === 'shipping'}
+                    onChange={() => setDeliveryMethod('shipping')}
+                  />
+                  Shipping
+                </label>
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="shopify-office-delivery"
+                    className="size-3.5 accent-primary"
+                    checked={deliveryMethod === 'pickup'}
+                    onChange={() => setDeliveryMethod('pickup')}
+                  />
+                  Pick up
+                </label>
+              </div>
+              {deliveryMethod === 'shipping' ? (
+                <div className="max-w-xs space-y-1">
+                  <Label className="text-xs">Shipping fee</Label>
+                  <Input
+                    className="h-9"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={shippingFeeInput}
+                    onChange={(e) => setShippingFeeInput(e.target.value)}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Uses your Shopify store currency (same as the shop&apos;s
+                    catalog prices).
+                  </p>
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  Pick up orders use a $0 &quot;Pick up&quot; delivery line; line
+                  items are marked as not requiring shipment.
+                </p>
+              )}
             </section>
 
             <section className="space-y-2">

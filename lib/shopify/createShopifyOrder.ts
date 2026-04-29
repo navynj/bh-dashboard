@@ -50,6 +50,9 @@ export type CreateShopifyOrderLineInput =
 
 export type CreateShopifyOrderFinancialStatus = 'PENDING' | 'PAID';
 
+/** How the order is fulfilled for Shopify `orderCreate` (line `requiresShipping` + shipping line). */
+export type CreateShopifyOrderDeliveryMethod = 'shipping' | 'pickup';
+
 export type CreateShopifyOrderParams = {
   customerShopifyGid: string;
   shippingAddress: CreateShopifyOrderMailingInput;
@@ -57,6 +60,13 @@ export type CreateShopifyOrderParams = {
   lineItems: CreateShopifyOrderLineInput[];
   financialStatus?: CreateShopifyOrderFinancialStatus;
   note?: string | null;
+  /**
+   * `shipping`: physical lines get `requiresShipping: true` and a priced shipping line (see `shippingFee`).
+   * `pickup`: lines do not require shipping; a $0 "Pick up" shipping line is added for a clear delivery method.
+   */
+  deliveryMethod?: CreateShopifyOrderDeliveryMethod;
+  /** Shop currency; only used when `deliveryMethod` is `shipping`. Defaults to 0. */
+  shippingFee?: number;
 };
 
 function mailingToGraphqlInput(addr: CreateShopifyOrderMailingInput): Record<string, unknown> {
@@ -121,11 +131,15 @@ export async function createShopifyOrder(
   const billing =
     params.billingAddress ?? params.shippingAddress;
 
+  const deliveryMethod = params.deliveryMethod ?? 'shipping';
+  const requiresShipping = deliveryMethod === 'shipping';
+
   const graphqlLineItems = params.lineItems.map((li) => {
     if (li.kind === 'variant') {
       return {
         variantId: li.variantGid,
         quantity: li.quantity,
+        requiresShipping,
       };
     }
     const amount = formatDecimalMoney(li.unitPrice);
@@ -135,8 +149,40 @@ export async function createShopifyOrder(
       priceSet: {
         shopMoney: { amount, currencyCode },
       },
+      requiresShipping,
     };
   });
+
+  const shippingFee = Math.max(
+    0,
+    Number.isFinite(params.shippingFee ?? 0) ? (params.shippingFee ?? 0) : 0,
+  );
+  const shippingLines =
+    deliveryMethod === 'shipping'
+      ? [
+          {
+            title: 'Shipping',
+            code: 'bh-hub-shipping',
+            priceSet: {
+              shopMoney: {
+                amount: formatDecimalMoney(shippingFee),
+                currencyCode,
+              },
+            },
+          },
+        ]
+      : [
+          {
+            title: 'Pick up',
+            code: 'bh-hub-pickup',
+            priceSet: {
+              shopMoney: {
+                amount: '0.00',
+                currencyCode,
+              },
+            },
+          },
+        ];
 
   const order: Record<string, unknown> = {
     lineItems: graphqlLineItems,
@@ -145,6 +191,7 @@ export async function createShopifyOrder(
     },
     shippingAddress: mailingToGraphqlInput(params.shippingAddress),
     billingAddress: mailingToGraphqlInput(billing),
+    shippingLines,
     financialStatus: params.financialStatus ?? 'PENDING',
     sourceName: 'bh-hub',
   };

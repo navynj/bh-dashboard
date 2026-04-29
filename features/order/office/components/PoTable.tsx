@@ -664,7 +664,7 @@ export function PoTable({
         <div className="flex items-center justify-between px-3.5 py-2 border-b bg-muted/40">
           <div className="text-[12px] font-medium">{purchaseOrder.title}</div>
         </div>
-        {lineItemsLoading !== false ? (
+        {lineItemsLoading ? (
           <div className="flex items-center justify-center gap-2 py-6 text-[12px] text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
             Loading items…

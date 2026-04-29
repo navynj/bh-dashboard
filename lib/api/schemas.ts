@@ -580,6 +580,10 @@ export const shopifyOrderCreateBodySchema = z.object({
   shippingAddress: shopifyOrderCreateMailingSchema,
   billingAddress: shopifyOrderCreateMailingSchema.optional(),
   lineItems: z.array(shopifyOrderCreateLineSchema).min(1, 'Add at least one line item'),
+  /** Default `shipping` so API-created orders are not marked "Shipping not required" for physical lines. */
+  deliveryMethod: z.enum(['shipping', 'pickup']).optional().default('shipping'),
+  /** Shop currency; ignored when `deliveryMethod` is `pickup`. */
+  shippingFee: z.number().nonnegative().optional().default(0),
   financialStatus: z.enum(['PENDING', 'PAID']).optional(),
   note: z.string().max(5000).optional().nullable(),
 });

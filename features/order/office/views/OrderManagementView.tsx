@@ -93,6 +93,12 @@ function supplierRefFromSku(sku: string | null | undefined): string | null {
 /** Sidebar (non-Inbox): expected-date sections per “page” of dates. */
 const EXPECTED_DATE_SIDEBAR_PAGE_SIZE = 5;
 
+/**
+ * Safety cap for lazy line-item fetch (slim `/line-items` API — not the full PO).
+ * Prevents an indefinite spinner if the connection stalls; normal loads stay well under this.
+ */
+const LAZY_PO_LINE_ITEMS_FETCH_MS = 12_000;
+
 /** Vancouver `YYYY-MM-DD` from each without-PO draft (period chips vs `latestOrderedAt`). */
 function shopifyDraftOrderedDaysForKey(
   supplierKey: SupplierKey,
@@ -308,6 +314,9 @@ export function OrderManagementView({
   const [lazyPoLineItems, setLazyPoLineItems] = useState<
     Record<string, PoLineItemView[]>
   >({});
+  const [lazyPoLineItemsFetchFailed, setLazyPoLineItemsFetchFailed] = useState<
+    Record<string, true>
+  >({});
   const fetchedPoIdsRef = useRef(new Set<string>());
   const [lineItemRetryCount, setLineItemRetryCount] = useState(0);
 
@@ -320,6 +329,7 @@ export function OrderManagementView({
     setOptimisticEmailWaivedClearPoIds({});
     setOptimisticDeletedPurchaseOrderIds(new Set());
     setLazyPoLineItems({});
+    setLazyPoLineItemsFetchFailed({});
     fetchedPoIdsRef.current.clear();
   }, [viewDataMap]);
 
@@ -453,30 +463,80 @@ export function OrderManagementView({
     fetchedPoIdsRef.current.add(selectedPoBlockId);
     const poIdToFetch = selectedPoBlockId;
 
-    fetch(`/api/purchase-orders/${poIdToFetch}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((data: { officeBlock?: OfficePurchaseOrderBlock }) => {
-        if (data.officeBlock?.lineItems) {
+    setLazyPoLineItemsFetchFailed((prev) => {
+      const next = { ...prev };
+      delete next[poIdToFetch];
+      return next;
+    });
+
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), LAZY_PO_LINE_ITEMS_FETCH_MS);
+    let cancelled = false;
+
+    fetch(`/api/purchase-orders/${poIdToFetch}/line-items`, { signal: ac.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((data: { lineItems?: PoLineItemView[] }) => {
+        if (cancelled) return;
+        const lines = data.lineItems;
+        if (Array.isArray(lines)) {
           setLazyPoLineItems((prev) => ({
             ...prev,
-            [poIdToFetch]: data.officeBlock!.lineItems,
+            [poIdToFetch]: lines,
+          }));
+          setLazyPoLineItemsFetchFailed((prev) => {
+            const next = { ...prev };
+            delete next[poIdToFetch];
+            return next;
+          });
+        } else {
+          fetchedPoIdsRef.current.delete(poIdToFetch);
+          setLazyPoLineItemsFetchFailed((prev) => ({
+            ...prev,
+            [poIdToFetch]: true,
           }));
         }
       })
       .catch(() => {
+        if (cancelled) return;
         fetchedPoIdsRef.current.delete(poIdToFetch);
+        setLazyPoLineItemsFetchFailed((prev) => ({
+          ...prev,
+          [poIdToFetch]: true,
+        }));
+      })
+      .finally(() => {
+        clearTimeout(t);
       });
-  }, [selectedPoBlockId, activeKey, lineItemRetryCount]);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+      ac.abort();
+      fetchedPoIdsRef.current.delete(poIdToFetch);
+    };
+    // Re-run when server `viewDataMap` refreshes (reset clears lazy state) or when
+    // `lazyPoLineItems` changes so we do not skip refetch after a clear vs stale ref.
+  }, [
+    viewDataMap,
+    selectedPoBlockId,
+    activeKey,
+    lineItemRetryCount,
+    lazyPoLineItems,
+  ]);
 
   const handleReplyReceivedChange = useCallback(() => {
     router.refresh();
   }, [router]);
 
   const handleRetryLineItemFetch = useCallback(() => {
-    if (selectedPoBlockId) {
-      fetchedPoIdsRef.current.delete(selectedPoBlockId);
-      setLineItemRetryCount((c) => c + 1);
-    }
+    if (!selectedPoBlockId) return;
+    fetchedPoIdsRef.current.delete(selectedPoBlockId);
+    setLazyPoLineItemsFetchFailed((prev) => {
+      const next = { ...prev };
+      delete next[selectedPoBlockId];
+      return next;
+    });
+    setLineItemRetryCount((c) => c + 1);
   }, [selectedPoBlockId]);
 
   const handleOptimisticPoEmailSent = useCallback((poId: string) => {
@@ -2217,13 +2277,18 @@ export function OrderManagementView({
     [activeKey, customerGroups, states],
   );
 
-  const lineItemsLoading =
+  const lineItemsNeedsLazyFetch =
     !!selectedPoBlockId &&
     selectedPoBlockId !== '__drafts__' &&
     selectedPoBlockId !== 'new' &&
     selectedPoPrintBlock !== null &&
     (selectedPoPrintBlock?.lineItems.length ?? 0) === 0 &&
     (selectedPoPrintBlock?.panelMeta?.fulfillTotalCount ?? 0) > 0;
+
+  const lineItemsLazyFetchFailed =
+    !!selectedPoBlockId && Boolean(lazyPoLineItemsFetchFailed[selectedPoBlockId]);
+
+  const lineItemsLoading = lineItemsNeedsLazyFetch && !lineItemsLazyFetchFailed;
 
   const orderCenterAndMetaPanel = entry ? (
     <div className="flex min-w-0 flex-1 flex-col">

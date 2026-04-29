@@ -3,9 +3,86 @@ import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
 import { parseBody, purchaseOrderLineItemsNotePatchSchema } from '@/lib/api/schemas';
 import { toApiErrorResponse } from '@/lib/core/errors';
-import { mapPrismaPoToBlock } from '@/features/order/office/mappers/map-purchase-order';
+import {
+  mapPrismaPayloadToPoLineItemViews,
+  mapPrismaPoToBlock,
+} from '@/features/order/office/mappers/map-purchase-order';
 
 type RouteContext = { params: Promise<{ id: string }> };
+
+/** Slim read for office lazy line table — avoids supplier, customers, emailDeliveries. */
+export async function GET(
+  _request: NextRequest,
+  context: RouteContext,
+) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 },
+      );
+    }
+
+    const { id } = await context.params;
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        completedAt: true,
+        lineItems: {
+          orderBy: { sequence: 'asc' },
+          include: { shopifyOrderLineItem: true },
+        },
+        shopifyOrders: {
+          select: {
+            id: true,
+            name: true,
+            displayFulfillmentStatus: true,
+          },
+        },
+      },
+    });
+
+    if (!po) {
+      return NextResponse.json(
+        { error: 'Purchase order not found' },
+        { status: 404 },
+      );
+    }
+
+    const unlinkedVariantGids = po.lineItems
+      .filter((li) => !li.shopifyOrderLineItem && li.shopifyVariantGid)
+      .map((li) => li.shopifyVariantGid!);
+
+    const variantImageFallback = new Map<string, string | null>();
+    if (unlinkedVariantGids.length > 0) {
+      const rows = await prisma.shopifyOrderLineItem.findMany({
+        where: { variantGid: { in: unlinkedVariantGids }, imageUrl: { not: null } },
+        select: { variantGid: true, imageUrl: true },
+        distinct: ['variantGid'],
+      });
+      for (const r of rows) {
+        if (r.variantGid) variantImageFallback.set(r.variantGid, r.imageUrl);
+      }
+    }
+
+    const lineItems = mapPrismaPayloadToPoLineItemViews(
+      {
+        status: po.status,
+        completedAt: po.completedAt,
+        lineItems: po.lineItems,
+        shopifyOrders: po.shopifyOrders,
+      },
+      variantImageFallback,
+    );
+
+    return NextResponse.json({ ok: true, lineItems });
+  } catch (err: unknown) {
+    return toApiErrorResponse(err, 'GET /api/purchase-orders/[id]/line-items');
+  }
+}
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {

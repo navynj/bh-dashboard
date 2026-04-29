@@ -9,6 +9,7 @@ import type { Prisma } from '@prisma/client';
 import type { ShopifyOrderDisplayFulfillmentStatus } from '@/types/shopify';
 import type {
   OfficePurchaseOrderBlock,
+  PoLineItemView,
   PoPanelMeta,
   PurchaseOrderStatus,
   LinkedShopifyOrder,
@@ -66,36 +67,34 @@ function dateToIso(d: Date | null | undefined): string | null {
 
 export const derivePurchaseOrderStatus = derivePurchaseOrderStatusFromShopify;
 
-// ─── PO → OfficePurchaseOrderBlock ────────────────────────────────────────────
+/** Minimal PO payload for mapping `lineItems` the same way as `mapPrismaPoToBlock`. */
+export type PrismaPayloadForPoLineItemViews = {
+  status: string;
+  completedAt: Date | null;
+  lineItems: Prisma.PurchaseOrderLineItemGetPayload<{
+    include: { shopifyOrderLineItem: true };
+  }>[];
+  shopifyOrders: {
+    id: string;
+    name: string;
+    displayFulfillmentStatus: string | null;
+  }[];
+};
 
-export function mapPrismaPoToBlock(
-  po: PrismaPoWithRelations,
+/**
+ * Maps PO line rows for the office UI (same rules as `mapPrismaPoToBlock` lineItems).
+ * Used by the slim PO list + lazy `GET …/line-items` so we avoid loading supplier,
+ * emailDeliveries, and full customer graphs.
+ */
+export function mapPrismaPayloadToPoLineItemViews(
+  po: PrismaPayloadForPoLineItemViews,
   variantImageFallback?: Map<string, string | null>,
-): OfficePurchaseOrderBlock {
+): PoLineItemView[] {
   const storedStatus = po.status as PurchaseOrderStatus;
   const linkedOrders = po.shopifyOrders;
   const firstOrder = linkedOrders[0];
   const firstOrderName = firstOrder?.name ?? '—';
 
-  const supplierChannel = legacyFallbackOrderChannel({
-    orderChannelType: po.supplier.orderChannelType,
-    orderChannelPayload: po.supplier.orderChannelPayload,
-    contactEmails: po.supplier.contactEmails,
-    contactName: po.supplier.contactName,
-    link: po.supplier.link,
-    notes: po.supplier.notes,
-  });
-  const supplierOrderChannelType = supplierChannel.type;
-  const emailDeliveryOutstanding = computeEmailDeliveryOutstanding({
-    supplierOrderChannelType,
-    emailSentAt: po.emailSentAt,
-    archivedAt: po.archivedAt,
-    legacyExternalId: po.legacyExternalId,
-    emailDeliveryWaivedAt: po.emailDeliveryWaivedAt,
-  });
-
-  // Build orderId→order map so we can resolve each lineItem's source order
-  // without a 3-depth nested include (shopifyOrderLineItem→order).
   const orderById = new Map(linkedOrders.map((o) => [o.id, o]));
 
   const derivedFromShopify = derivePurchaseOrderStatusFromShopify(
@@ -127,12 +126,12 @@ export function mapPrismaPoToBlock(
     return 'UNFULFILLED';
   }
 
-  const lineItems = sortPoLineItemsByProductTitleAsc(
+  return sortPoLineItemsByProductTitleAsc(
     po.lineItems.map((li) => {
       const soli = li.shopifyOrderLineItem;
-      /** Must match the Shopify order that owns this line (for `/apply-edit` routing). */
       const owningOrder = soli
-        ? orderById.get(soli.orderId) ?? linkedOrders.find((o) => o.id === soli.orderId)
+        ? orderById.get(soli.orderId) ??
+          linkedOrders.find((o) => o.id === soli.orderId)
         : undefined;
       return {
         id: li.id,
@@ -144,7 +143,11 @@ export function mapPrismaPoToBlock(
         sku: li.sku,
         variantTitle: li.variantTitle,
         productTitle: li.productTitle,
-        imageUrl: soli?.imageUrl ?? (li.shopifyVariantGid ? (variantImageFallback?.get(li.shopifyVariantGid) ?? null) : null),
+        imageUrl:
+          soli?.imageUrl ??
+          (li.shopifyVariantGid
+            ? (variantImageFallback?.get(li.shopifyVariantGid) ?? null)
+            : null),
         isCustom: li.isCustom,
         itemPrice: decimalToString(li.itemPrice),
         itemCost: decimalToString(soli?.unitCost ?? null),
@@ -158,6 +161,47 @@ export function mapPrismaPoToBlock(
         note: li.note?.trim() ? li.note.trim() : null,
       };
     }),
+  );
+}
+
+// ─── PO → OfficePurchaseOrderBlock ────────────────────────────────────────────
+
+export function mapPrismaPoToBlock(
+  po: PrismaPoWithRelations,
+  variantImageFallback?: Map<string, string | null>,
+): OfficePurchaseOrderBlock {
+  const storedStatus = po.status as PurchaseOrderStatus;
+  const linkedOrders = po.shopifyOrders;
+
+  const supplierChannel = legacyFallbackOrderChannel({
+    orderChannelType: po.supplier.orderChannelType,
+    orderChannelPayload: po.supplier.orderChannelPayload,
+    contactEmails: po.supplier.contactEmails,
+    contactName: po.supplier.contactName,
+    link: po.supplier.link,
+    notes: po.supplier.notes,
+  });
+  const supplierOrderChannelType = supplierChannel.type;
+  const emailDeliveryOutstanding = computeEmailDeliveryOutstanding({
+    supplierOrderChannelType,
+    emailSentAt: po.emailSentAt,
+    archivedAt: po.archivedAt,
+    legacyExternalId: po.legacyExternalId,
+    emailDeliveryWaivedAt: po.emailDeliveryWaivedAt,
+  });
+
+  const lineItems = mapPrismaPayloadToPoLineItemViews(
+    {
+      status: po.status,
+      completedAt: po.completedAt,
+      lineItems: po.lineItems,
+      shopifyOrders: po.shopifyOrders.map((o) => ({
+        id: o.id,
+        name: o.name,
+        displayFulfillmentStatus: o.displayFulfillmentStatus,
+      })),
+    },
+    variantImageFallback,
   );
 
   const orderDates = linkedOrders

@@ -77,6 +77,8 @@ export async function POST(request: NextRequest) {
               unitPrice: li.unitPrice,
             },
       ),
+      deliveryMethod: body.deliveryMethod,
+      shippingFee: body.shippingFee,
       financialStatus: body.financialStatus,
       note: body.note ?? null,
     };

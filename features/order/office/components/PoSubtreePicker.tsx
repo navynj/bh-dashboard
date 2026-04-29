@@ -69,7 +69,9 @@ export function PoSubtreePicker({
         )}
       </div>
 
-      {selected && <PoTable purchaseOrder={selected} />}
+      {selected && (
+        <PoTable purchaseOrder={selected} lineItemsLoading={false} />
+      )}
     </div>
   );
 }
