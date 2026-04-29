@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, type ReactNode } from 'react';
+import { ArrowUpRight } from 'lucide-react';
 import { LineItemThumb } from './LineItemThumb';
 import { cn } from '@/lib/utils/cn';
 import { buildShopifyAdminProductVariantEditUrl } from '@/lib/shopify/admin-product-variant-edit-url';
@@ -92,6 +93,70 @@ export function ShopifyLineProductCell({
       onAuxClick={(e) => e.stopPropagation()}
     >
       {body}
+    </a>
+  );
+}
+
+type ArrowLinkProps = {
+  shopifyAdminStoreHandle?: string | null;
+  shopifyProductGid?: string | null;
+  shopifyVariantGid?: string | null;
+  className?: string;
+};
+
+/** Narrow control: open product/variant in Shopify Admin (PO tables — product cell stays non-link). */
+export function ShopifyProductAdminArrowLink({
+  shopifyAdminStoreHandle,
+  shopifyProductGid,
+  shopifyVariantGid,
+  className,
+}: ArrowLinkProps) {
+  const href = useMemo(
+    () =>
+      buildShopifyAdminProductVariantEditUrl({
+        storeHandle: shopifyAdminStoreHandle?.trim() ?? '',
+        productGid: shopifyProductGid,
+        variantGid: shopifyVariantGid,
+      }),
+    [shopifyAdminStoreHandle, shopifyProductGid, shopifyVariantGid],
+  );
+
+  if (!href) {
+    return (
+      <span
+        className={cn(
+          'inline-flex h-7 w-7 items-center justify-center text-muted-foreground',
+          className,
+        )}
+        title={
+          !shopifyAdminStoreHandle?.trim()
+            ? 'Set SHOPIFY_SHOP_DOMAIN (myshopify) or SHOPIFY_ADMIN_STORE_HANDLE for Admin links'
+            : !shopifyProductGid?.trim()
+              ? 'Product Admin link needs a synced Shopify product id'
+              : undefined
+        }
+      >
+        —
+      </span>
+    );
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open in Shopify Admin (new tab)"
+      className={cn(
+        'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        className,
+      )}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onAuxClick={(e) => e.stopPropagation()}
+    >
+      <ArrowUpRight className="h-4 w-4" aria-hidden />
+      <span className="sr-only">Open product in Shopify</span>
     </a>
   );
 }

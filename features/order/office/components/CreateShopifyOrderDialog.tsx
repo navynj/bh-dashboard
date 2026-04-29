@@ -54,12 +54,16 @@ function splitName(name: string | null | undefined): {
   return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
 }
 
+function hasStreetLine(addr: ShopifyMailingAddress | null | undefined): boolean {
+  return Boolean((addr?.address1 ?? '').trim() || (addr?.address2 ?? '').trim());
+}
+
 function pickCustomerAddress(
   node: ShopifyAdminCustomerNode,
 ): ShopifyMailingAddress | null {
-  if (node.defaultAddress?.address1) return node.defaultAddress;
+  if (hasStreetLine(node.defaultAddress)) return node.defaultAddress;
   const first = node.addressesV2?.edges?.[0]?.node;
-  if (first?.address1) return first;
+  if (hasStreetLine(first)) return first ?? null;
   return null;
 }
 
@@ -70,6 +74,34 @@ function provinceCodeFromAddr(addr: ShopifyMailingAddress): string {
   if (p.length >= 2 && p.length <= 4 && /^[A-Za-z]+$/.test(p))
     return p.toUpperCase();
   return '';
+}
+
+/** Single-line summary for compact address display (name · company · street · city, ST zip · CC · phone). */
+function formatAddressSummaryLine(p: {
+  firstName: string;
+  lastName: string;
+  company: string;
+  addr1: string;
+  addr2: string;
+  city: string;
+  provinceCode: string;
+  zip: string;
+  countryCode: string;
+  phone: string;
+}): string | null {
+  const segs: string[] = [];
+  const name = [p.firstName.trim(), p.lastName.trim()].filter(Boolean).join(' ');
+  if (name) segs.push(name);
+  if (p.company.trim()) segs.push(p.company.trim());
+  const street = [p.addr1.trim(), p.addr2.trim()].filter(Boolean).join(', ');
+  if (street) segs.push(street);
+  const provZip = [p.provinceCode.trim(), p.zip.trim()].filter(Boolean).join(' ');
+  const cityPart = [p.city.trim(), provZip].filter(Boolean).join(', ');
+  if (cityPart) segs.push(cityPart);
+  const cc = p.countryCode.trim().toUpperCase();
+  if (cc) segs.push(cc);
+  if (p.phone.trim()) segs.push(p.phone.trim());
+  return segs.length ? segs.join(' · ') : null;
 }
 
 type Props = {
@@ -117,9 +149,10 @@ export function CreateShopifyOrderDialog({
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  /** When false, address line 1+2 show as one compact block; inputs when true. */
-  const [shippingAddrLinesEdit, setShippingAddrLinesEdit] = useState(false);
-  const [billingAddrLinesEdit, setBillingAddrLinesEdit] = useState(false);
+  /** When false, full shipping address is one summary line; all inputs when true. */
+  const [shippingAddressEdit, setShippingAddressEdit] = useState(false);
+  /** When false, full billing address is one summary line; all inputs when true. */
+  const [billingAddressEdit, setBillingAddressEdit] = useState(false);
 
   const resetForm = useCallback(() => {
     setCustomerQuery('');
@@ -145,14 +178,18 @@ export function CreateShopifyOrderDialog({
     setLines([]);
     setFinancialStatus('PENDING');
     setNote('');
-    setShippingAddrLinesEdit(false);
-    setBillingAddrLinesEdit(false);
+    setShippingAddressEdit(false);
+    setBillingAddressEdit(false);
   }, []);
 
   useEffect(() => {
     if (!open) {
       resetForm();
+      return;
     }
+    // Opening: addresses start in compact summary mode (use "Edit address" for inputs).
+    setShippingAddressEdit(false);
+    setBillingAddressEdit(false);
   }, [open, resetForm]);
 
   const runCustomerSearch = useCallback(async () => {
@@ -188,18 +225,38 @@ export function CreateShopifyOrderDialog({
   const applyCustomer = useCallback((node: ShopifyAdminCustomerNode) => {
     setSelectedCustomer(node);
     const mail = pickCustomerAddress(node);
+    let line1 = '';
+    let line2 = '';
+    let cityV = '';
+    let provV = '';
+    let zipV = '';
+    let countryV = 'CA';
+    let companyV = '';
+    let phoneV = '';
+    let fn = '';
+    let ln = '';
     if (mail) {
-      setAddr1((mail.address1 ?? '').trim());
-      setAddr2((mail.address2 ?? '').trim());
-      setCity((mail.city ?? '').trim());
-      setProvinceCode(provinceCodeFromAddr(mail));
-      setZip((mail.zip ?? '').trim());
-      setCountryCode(toIso3166Alpha2CountryCode(mail.country, 'CA'));
-      setCompany((mail.company ?? '').trim());
-      setPhone((mail.phone ?? node.phone ?? '').trim());
+      line1 = (mail.address1 ?? '').trim();
+      line2 = (mail.address2 ?? '').trim();
+      cityV = (mail.city ?? '').trim();
+      provV = provinceCodeFromAddr(mail);
+      zipV = (mail.zip ?? '').trim();
+      countryV = toIso3166Alpha2CountryCode(mail.country, 'CA');
+      companyV = (mail.company ?? '').trim();
+      phoneV = (mail.phone ?? node.phone ?? '').trim();
       const nm = splitName(mail.name);
-      setFirstName(nm.firstName ?? (node.firstName ?? '').trim());
-      setLastName(nm.lastName ?? (node.lastName ?? '').trim());
+      fn = nm.firstName ?? (node.firstName ?? '').trim();
+      ln = nm.lastName ?? (node.lastName ?? '').trim();
+      setAddr1(line1);
+      setAddr2(line2);
+      setCity(cityV);
+      setProvinceCode(provV);
+      setZip(zipV);
+      setCountryCode(countryV);
+      setCompany(companyV);
+      setPhone(phoneV);
+      setFirstName(fn);
+      setLastName(ln);
     } else {
       setAddr1('');
       setAddr2('');
@@ -208,11 +265,28 @@ export function CreateShopifyOrderDialog({
       setZip('');
       setCountryCode('CA');
       setCompany('');
-      setPhone((node.phone ?? '').trim());
-      setFirstName((node.firstName ?? '').trim());
-      setLastName((node.lastName ?? '').trim());
+      phoneV = (node.phone ?? '').trim();
+      setPhone(phoneV);
+      fn = (node.firstName ?? '').trim();
+      ln = (node.lastName ?? '').trim();
+      setFirstName(fn);
+      setLastName(ln);
+      countryV = 'CA';
     }
-    setShippingAddrLinesEdit(!((mail?.address1 ?? '').trim()));
+    setShippingAddressEdit(
+      !formatAddressSummaryLine({
+        firstName: fn,
+        lastName: ln,
+        company: companyV,
+        addr1: line1,
+        addr2: line2,
+        city: cityV,
+        provinceCode: provV,
+        zip: zipV,
+        countryCode: countryV,
+        phone: phoneV,
+      }),
+    );
   }, []);
 
   const onProductPick = useCallback((hit: ShopifyProductSearchHit) => {
@@ -282,6 +356,58 @@ export function CreateShopifyOrderDialog({
     billCountryCode,
     billProvinceCode,
   ]);
+
+  const shippingSummaryLine = useMemo(
+    () =>
+      formatAddressSummaryLine({
+        firstName,
+        lastName,
+        company,
+        addr1,
+        addr2,
+        city,
+        provinceCode,
+        zip,
+        countryCode,
+        phone,
+      }),
+    [
+      firstName,
+      lastName,
+      company,
+      addr1,
+      addr2,
+      city,
+      provinceCode,
+      zip,
+      countryCode,
+      phone,
+    ],
+  );
+
+  const billingSummaryLine = useMemo(
+    () =>
+      formatAddressSummaryLine({
+        firstName: '',
+        lastName: '',
+        company: '',
+        addr1: billAddr1,
+        addr2: billAddr2,
+        city: billCity,
+        provinceCode: billProvinceCode,
+        zip: billZip,
+        countryCode: billCountryCode,
+        phone: '',
+      }),
+    [
+      billAddr1,
+      billAddr2,
+      billCity,
+      billProvinceCode,
+      billZip,
+      billCountryCode,
+    ],
+  );
 
   const submit = useCallback(async () => {
     if (!selectedCustomer?.id) {
@@ -453,131 +579,122 @@ export function CreateShopifyOrderDialog({
             </section>
 
             <section className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">
-                Shipping address
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-medium text-muted-foreground">
+                  Shipping address
+                </div>
+                <Button
+                  type="button"
+                  variant={shippingAddressEdit ? 'secondary' : 'outline'}
+                  size="sm"
+                  className="h-8 shrink-0 text-xs"
+                  onClick={() => setShippingAddressEdit((v) => !v)}
+                >
+                  {shippingAddressEdit ? 'Done' : 'Edit address'}
+                </Button>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="col-span-2 flex flex-col gap-1.5 sm:flex-row sm:items-stretch sm:gap-2">
-                  {!shippingAddrLinesEdit ? (
-                    <button
-                      type="button"
-                      className="min-h-9 flex-1 rounded-md border border-input bg-muted/30 px-2.5 py-1.5 text-left text-xs leading-snug transition-colors hover:bg-muted/50"
-                      onClick={() => setShippingAddrLinesEdit(true)}
-                    >
-                      {addr1.trim() || addr2.trim() ? (
-                        <>
-                          {addr1.trim() ? (
-                            <div className="text-foreground">{addr1.trim()}</div>
-                          ) : null}
-                          {addr2.trim() ? (
-                            <div className="text-muted-foreground">{addr2.trim()}</div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          Street address — click to add
-                        </span>
-                      )}
-                    </button>
+              {!shippingAddressEdit ? (
+                <button
+                  type="button"
+                  className="w-full min-h-9 rounded-md border border-input bg-muted/30 px-2.5 py-2 text-left text-xs leading-snug text-foreground transition-colors hover:bg-muted/50"
+                  onClick={() => setShippingAddressEdit(true)}
+                >
+                  {shippingSummaryLine ? (
+                    <span className="break-words">{shippingSummaryLine}</span>
                   ) : (
-                    <div className="flex-1 space-y-2">
-                      <div>
-                        <Label className="text-xs">Address line 1</Label>
-                        <Input
-                          className="h-9"
-                          value={addr1}
-                          onChange={(e) => setAddr1(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-xs">Address line 2</Label>
-                        <Input
-                          className="h-9"
-                          value={addr2}
-                          onChange={(e) => setAddr2(e.target.value)}
-                        />
-                      </div>
-                    </div>
+                    <span className="text-muted-foreground">
+                      No shipping address — click to edit
+                    </span>
                   )}
-                  <Button
-                    type="button"
-                    variant={shippingAddrLinesEdit ? 'secondary' : 'outline'}
-                    size="sm"
-                    className="h-9 shrink-0 text-xs sm:self-start"
-                    onClick={() => setShippingAddrLinesEdit((v) => !v)}
-                  >
-                    {shippingAddrLinesEdit ? 'Done' : 'Edit lines'}
-                  </Button>
+                </button>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="col-span-2">
+                    <Label className="text-xs">Address line 1</Label>
+                    <Input
+                      className="h-9"
+                      value={addr1}
+                      onChange={(e) => setAddr1(e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">Address line 2</Label>
+                    <Input
+                      className="h-9"
+                      value={addr2}
+                      onChange={(e) => setAddr2(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">City</Label>
+                    <Input
+                      className="h-9"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Province / state code</Label>
+                    <Input
+                      className="h-9"
+                      placeholder="BC, ON, QC…"
+                      value={provinceCode}
+                      onChange={(e) => setProvinceCode(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Postal / ZIP</Label>
+                    <Input
+                      className="h-9"
+                      value={zip}
+                      onChange={(e) => setZip(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Country (ISO2)</Label>
+                    <Input
+                      className="h-9"
+                      maxLength={2}
+                      value={countryCode}
+                      onChange={(e) =>
+                        setCountryCode(e.target.value.toUpperCase())
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Company</Label>
+                    <Input
+                      className="h-9"
+                      value={company}
+                      onChange={(e) => setCompany(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Phone</Label>
+                    <Input
+                      className="h-9"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">First name</Label>
+                    <Input
+                      className="h-9"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Last name</Label>
+                    <Input
+                      className="h-9"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-xs">City</Label>
-                  <Input
-                    className="h-9"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Province / state code</Label>
-                  <Input
-                    className="h-9"
-                    placeholder="BC, ON, QC…"
-                    value={provinceCode}
-                    onChange={(e) => setProvinceCode(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Postal / ZIP</Label>
-                  <Input
-                    className="h-9"
-                    value={zip}
-                    onChange={(e) => setZip(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Country (ISO2)</Label>
-                  <Input
-                    className="h-9"
-                    maxLength={2}
-                    value={countryCode}
-                    onChange={(e) =>
-                      setCountryCode(e.target.value.toUpperCase())
-                    }
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Company</Label>
-                  <Input
-                    className="h-9"
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Phone</Label>
-                  <Input
-                    className="h-9"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">First name</Label>
-                  <Input
-                    className="h-9"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Last name</Label>
-                  <Input
-                    className="h-9"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                  />
-                </div>
-              </div>
+              )}
               <label className="flex items-center gap-2 text-xs">
                 <input
                   type="checkbox"
@@ -586,8 +703,19 @@ export function CreateShopifyOrderDialog({
                     const checked = e.target.checked;
                     setBillingSameAsShipping(checked);
                     if (!checked) {
-                      setBillingAddrLinesEdit(
-                        !billAddr1.trim() && !billAddr2.trim(),
+                      setBillingAddressEdit(
+                        !formatAddressSummaryLine({
+                          firstName: '',
+                          lastName: '',
+                          company: '',
+                          addr1: billAddr1,
+                          addr2: billAddr2,
+                          city: billCity,
+                          provinceCode: billProvinceCode,
+                          zip: billZip,
+                          countryCode: billCountryCode,
+                          phone: '',
+                        }),
                       );
                     }
                   }}
@@ -595,98 +723,90 @@ export function CreateShopifyOrderDialog({
                 Billing same as shipping
               </label>
               {!billingSameAsShipping ? (
-                <div className="grid grid-cols-2 gap-2 rounded-md border p-2">
-                  <div className="col-span-2 flex flex-col gap-1.5 sm:flex-row sm:items-stretch sm:gap-2">
-                    {!billingAddrLinesEdit ? (
-                      <button
-                        type="button"
-                        className="min-h-9 flex-1 rounded-md border border-input bg-muted/30 px-2.5 py-1.5 text-left text-xs leading-snug transition-colors hover:bg-muted/50"
-                        onClick={() => setBillingAddrLinesEdit(true)}
-                      >
-                        {billAddr1.trim() || billAddr2.trim() ? (
-                          <>
-                            {billAddr1.trim() ? (
-                              <div className="text-foreground">
-                                {billAddr1.trim()}
-                              </div>
-                            ) : null}
-                            {billAddr2.trim() ? (
-                              <div className="text-muted-foreground">
-                                {billAddr2.trim()}
-                              </div>
-                            ) : null}
-                          </>
-                        ) : (
-                          <span className="text-muted-foreground">
-                            Billing street — click to add
-                          </span>
-                        )}
-                      </button>
-                    ) : (
-                      <div className="flex-1 space-y-2">
-                        <div>
-                          <Label className="text-xs">Billing address line 1</Label>
-                          <Input
-                            className="h-9"
-                            value={billAddr1}
-                            onChange={(e) => setBillAddr1(e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs">Billing address line 2</Label>
-                          <Input
-                            className="h-9"
-                            value={billAddr2}
-                            onChange={(e) => setBillAddr2(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    )}
+                <div className="space-y-2 rounded-md border p-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs font-medium text-muted-foreground">
+                      Billing address
+                    </div>
                     <Button
                       type="button"
-                      variant={billingAddrLinesEdit ? 'secondary' : 'outline'}
+                      variant={billingAddressEdit ? 'secondary' : 'outline'}
                       size="sm"
-                      className="h-9 shrink-0 text-xs sm:self-start"
-                      onClick={() => setBillingAddrLinesEdit((v) => !v)}
+                      className="h-8 shrink-0 text-xs"
+                      onClick={() => setBillingAddressEdit((v) => !v)}
                     >
-                      {billingAddrLinesEdit ? 'Done' : 'Edit lines'}
+                      {billingAddressEdit ? 'Done' : 'Edit address'}
                     </Button>
                   </div>
-                  <div>
-                    <Label className="text-xs">City</Label>
-                    <Input
-                      className="h-9"
-                      value={billCity}
-                      onChange={(e) => setBillCity(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Province code</Label>
-                    <Input
-                      className="h-9"
-                      value={billProvinceCode}
-                      onChange={(e) => setBillProvinceCode(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Postal / ZIP</Label>
-                    <Input
-                      className="h-9"
-                      value={billZip}
-                      onChange={(e) => setBillZip(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs">Country (ISO2)</Label>
-                    <Input
-                      className="h-9"
-                      maxLength={2}
-                      value={billCountryCode}
-                      onChange={(e) =>
-                        setBillCountryCode(e.target.value.toUpperCase())
-                      }
-                    />
-                  </div>
+                  {!billingAddressEdit ? (
+                    <button
+                      type="button"
+                      className="w-full min-h-9 rounded-md border border-input bg-muted/30 px-2.5 py-2 text-left text-xs leading-snug text-foreground transition-colors hover:bg-muted/50"
+                      onClick={() => setBillingAddressEdit(true)}
+                    >
+                      {billingSummaryLine ? (
+                        <span className="break-words">{billingSummaryLine}</span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          No billing address — click to edit
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="col-span-2">
+                        <Label className="text-xs">Billing address line 1</Label>
+                        <Input
+                          className="h-9"
+                          value={billAddr1}
+                          onChange={(e) => setBillAddr1(e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <Label className="text-xs">Billing address line 2</Label>
+                        <Input
+                          className="h-9"
+                          value={billAddr2}
+                          onChange={(e) => setBillAddr2(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">City</Label>
+                        <Input
+                          className="h-9"
+                          value={billCity}
+                          onChange={(e) => setBillCity(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Province code</Label>
+                        <Input
+                          className="h-9"
+                          value={billProvinceCode}
+                          onChange={(e) => setBillProvinceCode(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Postal / ZIP</Label>
+                        <Input
+                          className="h-9"
+                          value={billZip}
+                          onChange={(e) => setBillZip(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Country (ISO2)</Label>
+                        <Input
+                          className="h-9"
+                          maxLength={2}
+                          value={billCountryCode}
+                          onChange={(e) =>
+                            setBillCountryCode(e.target.value.toUpperCase())
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : null}
             </section>

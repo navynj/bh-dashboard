@@ -29,7 +29,10 @@ import {
   ShopifyProductSearchPanel,
   type ShopifyProductSearchHit,
 } from '@/components/shopify';
-import { ShopifyLineProductCell } from './ShopifyLineProductCell';
+import {
+  ShopifyLineProductCell,
+  ShopifyProductAdminArrowLink,
+} from './ShopifyLineProductCell';
 import {
   Dialog,
   DialogContent,
@@ -605,8 +608,8 @@ export function PoTable({
   ]);
 
   // ── Columns layout ─────────────────────────────────────────────────────────
-  // Normal:   checkbox(0) | shopify# | product | ref | price | qty | recv | status
-  // Fulfill:  checkbox(5%) | shopify# | product | ref | price | qty | recv | status
+  // Normal:   checkbox(0) | shopify# | product | ref | cost | qty | recv | status
+  // Fulfill:  checkbox(5%) | shopify# | product | ref | cost | qty | recv | status
 
   const tableRows = orderEditMode ? visibleEditLines : items;
   const costSubtotal = useMemo(
@@ -874,14 +877,15 @@ export function PoTable({
             style={{
               width:
                 fulfillMode && orderEditMode
-                  ? '20%'
+                  ? '18%'
                   : fulfillMode
-                    ? '22%'
+                    ? '20%'
                     : orderEditMode
-                      ? '24%'
-                      : '26%',
+                      ? '22%'
+                      : '24%',
             }}
           />
+          <col style={{ width: '2.25rem' }} />
           <col style={{ width: '9%' }} />
           <col style={{ width: '8%' }} />
           <col
@@ -898,21 +902,33 @@ export function PoTable({
 
         <thead>
           <TableRow className="border-0 hover:bg-transparent">
-            {[
-              'Shopify #',
-              'Product',
-              'Ref.',
-              'Price',
-              'Qty',
-              'Received',
-              'Note',
-              'Status',
-            ].map((h) => (
+            {(
+              [
+                ['num', 'Shopify #', 'left'],
+                ['product', 'Product', 'left'],
+                ['admin', '', 'center'],
+                ['ref', 'Ref.', 'left'],
+                [
+                  'cost',
+                  orderEditMode ? 'Shopify price' : 'Cost',
+                  'left',
+                ],
+                ['qty', 'Qty', 'left'],
+                ['recv', 'Received', 'left'],
+                ['note', 'Note', 'left'],
+                ['status', 'Status', 'left'],
+              ] as const
+            ).map(([id, label, align]) => (
               <TableHead
-                key={h}
-                className="text-[9px] font-medium text-muted-foreground px-3 py-[5px] border-b text-left uppercase tracking-wide h-auto"
+                key={id}
+                className={cn(
+                  'text-[9px] font-medium text-muted-foreground py-[5px] border-b uppercase tracking-wide h-auto',
+                  align === 'center'
+                    ? 'w-10 px-1 text-center'
+                    : 'px-3 text-left',
+                )}
               >
-                {h}
+                {label}
               </TableHead>
             ))}
             {orderEditMode && (
@@ -966,6 +982,7 @@ export function PoTable({
                 {/* Product */}
                 <TableCell className="px-3 py-[7px]">
                   <ShopifyLineProductCell
+                    linkMode="none"
                     shopifyAdminStoreHandle={shopifyAdminStoreHandle}
                     shopifyProductGid={item.shopifyProductGid}
                     shopifyVariantGid={item.shopifyVariantGid}
@@ -980,12 +997,20 @@ export function PoTable({
                   />
                 </TableCell>
 
+                <TableCell className="w-10 px-1 py-[7px] text-center align-middle">
+                  <ShopifyProductAdminArrowLink
+                    shopifyAdminStoreHandle={shopifyAdminStoreHandle}
+                    shopifyProductGid={item.shopifyProductGid}
+                    shopifyVariantGid={item.shopifyVariantGid}
+                  />
+                </TableCell>
+
                 {/* Ref */}
                 <TableCell className="px-3 py-[7px] text-[9px] font-mono text-muted-foreground">
                   {item.supplierRef ?? '—'}
                 </TableCell>
 
-                {/* Price */}
+                {/* Cost (view) / Shopify unit price when editing order lines */}
                 <TableCell className="px-3 py-[7px] text-[11px]">
                   {editable ? (
                     <Input
@@ -1001,7 +1026,7 @@ export function PoTable({
                       }}
                     />
                   ) : (
-                    formatItemPrice(item.itemPrice, purchaseOrder.currency)
+                    formatItemPrice(item.itemCost ?? null, purchaseOrder.currency)
                   )}
                 </TableCell>
 

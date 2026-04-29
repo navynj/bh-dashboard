@@ -22,8 +22,10 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils/cn';
 import type { PrePoLineDraft, SeparatePoPayload, ShopifyOrderDraft } from '../types';
-import { ShopifyLineProductCell } from './ShopifyLineProductCell';
-import { LineItemThumb } from './LineItemThumb';
+import {
+  ShopifyLineProductCell,
+  ShopifyProductAdminArrowLink,
+} from './ShopifyLineProductCell';
 import { formatItemPrice } from '../mappers/map-purchase-order';
 import { formatVancouverOrderedDetail } from '../utils/vancouver-datetime';
 import { SeparatePoDialog } from './SeparatePoDialog';
@@ -421,7 +423,8 @@ export function OrderBlock({
         style={{ tableLayout: 'fixed' }}
       >
         <colgroup>
-          <col style={{ width: editing ? '26%' : showLinePoNotes ? '28%' : '36%' }} />
+          <col style={{ width: editing ? '24%' : showLinePoNotes ? '25%' : '32%' }} />
+          <col style={{ width: '2.25rem' }} />
           <col style={{ width: '11%' }} />
           <col style={{ width: '10%' }} />
           <col style={{ width: editing ? '9%' : '10%' }} />
@@ -434,20 +437,27 @@ export function OrderBlock({
           <TableRow className="border-0 hover:bg-transparent">
             {(
               [
-                ['Product', 'left'],
-                ['SKU', 'left'],
-                ['Price', 'left'],
-                ['Cost', 'left'],
-                ['Qty', 'left'],
-                ...(showLinePoNotes ? [['PO line note', 'left'] as const] : []),
-                ...(editing ? [['', 'right'] as const] : [['Include', 'right'] as const]),
+                ['product', 'Product', 'left'] as const,
+                ['shopify', '', 'center'] as const,
+                ['sku', 'SKU', 'left'] as const,
+                ['price', 'Price', 'left'] as const,
+                ['cost', 'Cost', 'left'] as const,
+                ['qty', 'Qty', 'left'] as const,
+                ...(showLinePoNotes ? [['po-note', 'PO line note', 'left'] as const] : []),
+                ...(editing
+                  ? [['edit-actions', '', 'right'] as const]
+                  : [['include', 'Include', 'right'] as const]),
               ] as const
-            ).map(([h, align]) => (
+            ).map(([id, h, align]) => (
               <TableHead
-                key={h || 'actions'}
+                key={id}
                 className={cn(
                   'text-[9px] font-medium text-muted-foreground px-3 py-[5px] border-b uppercase tracking-wide h-auto',
-                  align === 'right' ? 'text-right' : 'text-left',
+                  align === 'right'
+                    ? 'text-right'
+                    : align === 'center'
+                      ? 'text-center w-10 px-1'
+                      : 'text-left',
                 )}
               >
                 {h}
@@ -472,12 +482,20 @@ export function OrderBlock({
               >
                 <TableCell className="px-3 py-[7px]">
                   <ShopifyLineProductCell
+                    linkMode="none"
                     shopifyAdminStoreHandle={shopifyAdminStoreHandle}
                     shopifyProductGid={(row as PrePoLineDraft).shopifyProductGid}
                     shopifyVariantGid={(row as PrePoLineDraft).shopifyVariantGid}
                     imageUrl={row.imageUrl}
                     label={row.productTitle}
                     sku={row.sku}
+                  />
+                </TableCell>
+                <TableCell className="w-10 px-1 py-[7px] text-center align-middle">
+                  <ShopifyProductAdminArrowLink
+                    shopifyAdminStoreHandle={shopifyAdminStoreHandle}
+                    shopifyProductGid={(row as PrePoLineDraft).shopifyProductGid}
+                    shopifyVariantGid={(row as PrePoLineDraft).shopifyVariantGid}
                   />
                 </TableCell>
                 <TableCell className="px-3 py-[7px] text-[9px] font-mono text-muted-foreground">

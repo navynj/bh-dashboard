@@ -629,7 +629,7 @@ function ExpectedDateSupplierFirstPanel({
   bucket,
   activeKey,
   selectedPoBlockId,
-  selectionExpectedDateKey: _selectionExpectedDateKey,
+  selectionExpectedDateKey,
   states,
   viewDataMap,
   hideIndicators,
@@ -662,7 +662,18 @@ function ExpectedDateSupplierFirstPanel({
 
   const [pickedSupId, setPickedSupId] = useState<string | null>(null);
 
+  const selectionInThisBucket =
+    selectionExpectedDateKey != null &&
+    selectionExpectedDateKey === bucket.expectedDateKey;
+
   useEffect(() => {
+    if (!selectionInThisBucket) {
+      setPickedSupId(null);
+    }
+  }, [selectionInThisBucket]);
+
+  useEffect(() => {
+    if (!selectionInThisBucket) return;
     const idFromActive = supplierDatabaseIdFromEntryKey(activeKey);
     const hit = bucket.customerGroups
       .flatMap((cg) => cg.suppliers.map((s) => ({ cg, s })))
@@ -675,10 +686,6 @@ function ExpectedDateSupplierFirstPanel({
       );
     if (hit && supplierDbIdsInBucket.includes(idFromActive)) {
       setPickedSupId(idFromActive);
-      return;
-    }
-    if (supplierDbIdsInBucket.includes(idFromActive)) {
-      setPickedSupId(idFromActive);
     }
   }, [
     bucket.expectedDateKey,
@@ -686,24 +693,26 @@ function ExpectedDateSupplierFirstPanel({
     activeKey,
     selectedPoBlockId,
     supplierDbIdsInBucket,
+    selectionExpectedDateKey,
+    selectionInThisBucket,
   ]);
-
-  useEffect(() => {
-    if (pickedSupId != null && supplierDbIdsInBucket.includes(pickedSupId))
-      return;
-    setPickedSupId(supplierDbIdsInBucket[0] ?? null);
-  }, [supplierDbIdsInBucket, pickedSupId]);
 
   const refs = useMemo(
     () =>
-      pickedSupId
+      pickedSupId && selectionInThisBucket
         ? collectPoRefsForSupplierIdInBucket(
             bucket,
             pickedSupId,
             viewDataMap,
           )
         : [],
-    [bucket.customerGroups, bucket.expectedDateKey, pickedSupId, viewDataMap],
+    [
+      bucket.customerGroups,
+      bucket.expectedDateKey,
+      pickedSupId,
+      selectionInThisBucket,
+      viewDataMap,
+    ],
   );
 
   const distinctCustomerCount = useMemo(() => {
@@ -726,7 +735,7 @@ function ExpectedDateSupplierFirstPanel({
             states,
             supId,
           );
-          const isOn = pickedSupId === supId;
+          const isOn = selectionInThisBucket && pickedSupId === supId;
           const nag =
             emphasizePoEmailNag &&
             supplierHasPoEmailAlertAnyKeyForDbId(
@@ -783,10 +792,10 @@ function ExpectedDateSupplierFirstPanel({
       </div>
 
       <div className="w-1/2 min-w-0 overflow-y-auto">
-        {!pickedSupId ? (
+        {!selectionInThisBucket || !pickedSupId ? (
           <div className="flex min-h-[48px] items-center justify-center px-2">
             <span className="text-center text-[10px] italic text-muted-foreground/50">
-              Select supplier
+              Supplier not selected
             </span>
           </div>
         ) : refs.length === 0 ? (
@@ -805,6 +814,7 @@ function ExpectedDateSupplierFirstPanel({
             if (!po) return null;
             const meta = po.panelMeta;
             const isOn =
+              selectionInThisBucket &&
               activeKey === ref.supplierKey &&
               selectedPoBlockId !== '__drafts__' &&
               selectedPoBlockId === ref.poId;
