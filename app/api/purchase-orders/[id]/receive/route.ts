@@ -18,7 +18,10 @@ import {
   getShopifyAdminEnv,
   isShopifyAdminEnvConfigured,
 } from '@/lib/shopify/env';
-import { createShopifyFulfillment } from '@/lib/shopify/createFulfillment';
+import {
+  createShopifyAdminGraphqlClient,
+  createShopifyFulfillment,
+} from '@/lib/shopify/createFulfillment';
 import { recomputePurchaseOrderStatusById } from '@/lib/order/purchase-order-status';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -79,17 +82,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Batch-update quantityReceived
-    await prisma.$transaction(
-      existingItems.map((item) =>
-        prisma.purchaseOrderLineItem.update({
-          where: { id: item.id },
-          data: { quantityReceived: itemMap.get(item.id)! },
-        }),
-      ),
+    // Parallel line updates + status recompute in one transaction (fewer round trips
+    // than sequential batch updates followed by a separate read/write).
+    const newStatus = await prisma.$transaction(
+      async (tx) => {
+        await Promise.all(
+          existingItems.map((item) =>
+            tx.purchaseOrderLineItem.update({
+              where: { id: item.id },
+              data: { quantityReceived: itemMap.get(item.id)! },
+            }),
+          ),
+        );
+        return recomputePurchaseOrderStatusById(purchaseOrderId, tx);
+      },
+      { maxWait: 5_000, timeout: 15_000 },
     );
 
-    const newStatus = await recomputePurchaseOrderStatusById(purchaseOrderId);
     if (newStatus == null) {
       return NextResponse.json(
         { error: 'Purchase order not found' },
@@ -141,12 +150,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
       if (byOrder.size > 0) {
         const creds = getShopifyAdminEnv();
+        const adminClient = createShopifyAdminGraphqlClient(creds);
         await Promise.allSettled(
           [...byOrder.entries()].map(async ([orderGid, lineItems]) => {
             const result = await createShopifyFulfillment(
               creds,
               orderGid,
               lineItems,
+              { adminClient },
             );
             if (!result.ok) {
               shopifyErrors.push(...result.errors);

@@ -7,8 +7,24 @@
  *  3. Call `fulfillmentCreateV2` mutation
  */
 
-import { createAdminApiClient } from '@shopify/admin-api-client';
+import {
+  createAdminApiClient,
+  type AdminApiClient,
+} from '@shopify/admin-api-client';
 import type { ShopifyAdminCredentials } from '@/types/shopify';
+
+/** Reuse one client per server request when fulfilling multiple orders (connection reuse). */
+export function createShopifyAdminGraphqlClient(
+  creds: ShopifyAdminCredentials,
+): AdminApiClient {
+  return createAdminApiClient({
+    storeDomain: creds.shopDomain
+      .replace(/^https?:\/\//, '')
+      .replace(/\/$/, ''),
+    apiVersion: creds.apiVersion,
+    accessToken: creds.accessToken,
+  });
+}
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -94,15 +110,10 @@ export async function createShopifyFulfillment(
   creds: ShopifyAdminCredentials,
   shopifyOrderGid: string,
   lineItems: ShopifyLineItemToFulfill[],
-  options?: { notifyCustomer?: boolean },
+  options?: { notifyCustomer?: boolean; adminClient?: AdminApiClient },
 ): Promise<CreateFulfillmentResult> {
-  const client = createAdminApiClient({
-    storeDomain: creds.shopDomain
-      .replace(/^https?:\/\//, '')
-      .replace(/\/$/, ''),
-    apiVersion: creds.apiVersion,
-    accessToken: creds.accessToken,
-  });
+  const client =
+    options?.adminClient ?? createShopifyAdminGraphqlClient(creds);
 
   // Step 1: Get fulfillment orders
   const { data: foData, errors: foErrors } =
