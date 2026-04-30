@@ -95,8 +95,11 @@ import { filterInboxDraftsForDisplay } from '../utils/filter-inbox-drafts-for-di
 import { buildPoPdfInput, openPoPdfPrint } from '../utils/purchase-order-pdf';
 import { CreateShopifyOrderDialog } from '../components/CreateShopifyOrderDialog';
 
-/** PO Created tab: max expected-date chips in the bar; older dates go to “More”. */
-const MAX_EXPECTED_DATE_CHIPS = 10;
+/**
+ * PO Created tab: max expected-date preset chips beside “All” in the bar (4).
+ * With “All” + “More…” the row shows at most 6 buttons; older dates go to More.
+ */
+const MAX_EXPECTED_DATE_CHIPS = 4;
 
 /** When creating a PO from office drafts, default supplier ref from the line SKU. */
 function supplierRefFromSku(sku: string | null | undefined): string | null {
