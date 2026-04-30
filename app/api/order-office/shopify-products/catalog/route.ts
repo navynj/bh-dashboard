@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { toApiErrorResponse } from '@/lib/core/errors';
 import { getShopifyAdminEnv, isShopifyAdminEnvConfigured } from '@/lib/shopify/env';
-import { fetchProductsCatalogPage } from '@/lib/shopify/listProductsCatalog';
+import {
+  fetchDraftProductCountForCatalogFilters,
+  fetchProductsCatalogPage,
+  type OfficeCatalogStatusScope,
+} from '@/lib/shopify/listProductsCatalog';
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,24 +32,39 @@ export async function GET(request: NextRequest) {
       sp.get('title')?.trim() ||
       sp.get('q')?.trim() ||
       null;
+    const includeDraft =
+      sp.get('includeDraft') === '1' ||
+      sp.get('includeDraft') === 'true' ||
+      sp.get('includeDrafts') === '1' ||
+      sp.get('includeDrafts') === 'true';
     const firstRaw = sp.get('first');
     const first = Math.min(
       50,
       Math.max(1, firstRaw ? parseInt(firstRaw, 10) || 25 : 25),
     );
 
-    const page = await fetchProductsCatalogPage(getShopifyAdminEnv(), {
-      first,
-      after,
-      vendorFilter: vendor,
-      titleSearch: title,
-    });
+    const creds = getShopifyAdminEnv();
+    const statusScope: OfficeCatalogStatusScope = includeDraft
+      ? 'active_and_draft'
+      : 'active_only';
+
+    const filterArgs = { vendorFilter: vendor, titleSearch: title };
+    const [page, draftProductCount] = await Promise.all([
+      fetchProductsCatalogPage(creds, {
+        first,
+        after,
+        ...filterArgs,
+        statusScope,
+      }),
+      fetchDraftProductCountForCatalogFilters(creds, filterArgs),
+    ]);
 
     return NextResponse.json({
       ok: true,
       rows: page.rows,
       endCursor: page.endCursor,
       hasNextPage: page.hasNextPage,
+      draftProductCount,
     });
   } catch (err: unknown) {
     return toApiErrorResponse(err, 'GET /api/order-office/shopify-products/catalog');

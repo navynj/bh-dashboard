@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
@@ -13,7 +15,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import type { OfficeCatalogVariantRow } from '@/lib/shopify/listProductsCatalog';
+import type {
+  OfficeCatalogProductStatus,
+  OfficeCatalogVariantRow,
+} from '@/lib/shopify/listProductsCatalog';
+import { cn } from '@/lib/utils/cn';
 import { LineItemThumb } from './LineItemThumb';
 import { Spinner } from '@/components/ui/spinner';
 import { RefreshCwIcon } from 'lucide-react';
@@ -28,8 +34,30 @@ type CatalogResponse = {
   rows?: OfficeCatalogVariantRow[];
   endCursor?: string | null;
   hasNextPage?: boolean;
+  draftProductCount?: number;
   error?: string;
 };
+
+function CatalogProductStatusBadge({ status }: { status: OfficeCatalogProductStatus }) {
+  const label =
+    status === 'ACTIVE' ? 'Active' : status === 'DRAFT' ? 'Draft' : 'Archived';
+  const cls =
+    status === 'ACTIVE'
+      ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100'
+      : status === 'DRAFT'
+        ? 'border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100'
+        : 'border-border/60 bg-muted/40 text-muted-foreground';
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide',
+        cls,
+      )}
+    >
+      {label}
+    </span>
+  );
+}
 
 type NotesResponse = {
   ok?: boolean;
@@ -55,6 +83,8 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
   const [hasNext, setHasNext] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [includeShopifyDrafts, setIncludeShopifyDrafts] = useState(false);
+  const [draftProductCount, setDraftProductCount] = useState<number | null>(null);
 
   const [notesByVariant, setNotesByVariant] = useState<Record<string, string>>(
     {},
@@ -97,6 +127,7 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
       if (cursor) qs.set('after', cursor);
       if (vendor.trim()) qs.set('vendor', vendor.trim());
       if (titleApplied.trim()) qs.set('title', titleApplied.trim());
+      if (includeShopifyDrafts) qs.set('includeDraft', '1');
       const res = await fetch(
         `/api/order-office/shopify-products/catalog?${qs.toString()}`,
       );
@@ -108,6 +139,10 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
       setEndCursor(data.endCursor ?? null);
       setHasNext(Boolean(data.hasNextPage));
       setRows((prev) => (append ? [...prev, ...nextRows] : nextRows));
+      const dc = data.draftProductCount;
+      setDraftProductCount(
+        typeof dc === 'number' && Number.isFinite(dc) ? dc : null,
+      );
 
       const notes = notesRef.current;
       setDrafts((prev) => {
@@ -127,7 +162,7 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
         return out;
       });
     },
-    [vendor, titleApplied],
+    [vendor, titleApplied, includeShopifyDrafts],
   );
 
   const reloadCatalog = useCallback(async () => {
@@ -141,6 +176,7 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
       setRows([]);
       setHasNext(false);
       setEndCursor(null);
+      setDraftProductCount(null);
     } finally {
       setLoading(false);
     }
@@ -295,6 +331,28 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
               </button>
             </div>
           ) : null}
+
+          <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/50 bg-background/80 px-2 py-1.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <Switch
+                id="office-catalog-include-shopify-drafts"
+                size="sm"
+                checked={includeShopifyDrafts}
+                onCheckedChange={(v) => setIncludeShopifyDrafts(Boolean(v))}
+              />
+              <Label
+                htmlFor="office-catalog-include-shopify-drafts"
+                className="text-[11px] font-normal leading-snug cursor-pointer"
+              >
+                Show draft products in results
+              </Label>
+            </div>
+            <div className="text-[10px] text-muted-foreground whitespace-nowrap">
+              {draftProductCount === null
+                ? '…'
+                : `${draftProductCount} draft product${draftProductCount === 1 ? '' : 's'} match filters`}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -302,13 +360,16 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
         <Table className="text-[11px]">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="w-[36%] text-[10px] uppercase text-muted-foreground">
+              <TableHead className="w-[32%] text-[10px] uppercase text-muted-foreground">
                 Product
               </TableHead>
-              <TableHead className="w-[14%] text-[10px] uppercase text-muted-foreground">
+              <TableHead className="w-[8%] text-[10px] uppercase text-muted-foreground">
+                Status
+              </TableHead>
+              <TableHead className="w-[12%] text-[10px] uppercase text-muted-foreground">
                 Vendor
               </TableHead>
-              <TableHead className="w-[40%] text-[10px] uppercase text-muted-foreground">
+              <TableHead className="w-[36%] text-[10px] uppercase text-muted-foreground">
                 Default note (PO / PDF)
               </TableHead>
               <TableHead className="w-[12%] text-right text-[10px] uppercase text-muted-foreground">
@@ -320,7 +381,7 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
             {loading && rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={5}
                   className="text-muted-foreground py-8 text-center"
                 >
                   Loading catalog…
@@ -329,7 +390,7 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={5}
                   className="text-muted-foreground py-8 text-center"
                 >
                   No variants in this page. Try another vendor or use Reload.
@@ -361,6 +422,9 @@ export function ItemSettingsClient({ vendors, shopifyConfigured }: Props) {
                           </div>
                         </div>
                       </div>
+                    </TableCell>
+                    <TableCell className="align-top py-2">
+                      <CatalogProductStatusBadge status={r.productStatus} />
                     </TableCell>
                     <TableCell className="align-top py-2 text-[11px] text-muted-foreground">
                       {r.vendor?.trim() || '—'}

@@ -3,9 +3,13 @@
  * Matches `GET /api/order-office/shopify-products/search` → `{ hits[] }`.
  */
 
+/** Shopify Admin `Product.status` (office search / catalog). */
+export type ShopifyProductSearchStatus = 'ACTIVE' | 'DRAFT' | 'ARCHIVED';
+
 export type ShopifyProductSearchHit = {
   productId: string;
   productTitle: string;
+  productStatus: ShopifyProductSearchStatus;
   variantId: string;
   variantTitle: string | null;
   sku: string | null;

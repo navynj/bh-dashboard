@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { toApiErrorResponse } from '@/lib/core/errors';
-import { isShopifyAdminEnvConfigured } from '@/lib/shopify/env';
-import { searchProductsForOfficeFromEnv } from '@/lib/shopify/searchProducts';
+import { getShopifyAdminEnv, isShopifyAdminEnvConfigured } from '@/lib/shopify/env';
+import {
+  fetchDraftProductCountForOfficeSearch,
+  searchProductsForOfficeFromEnv,
+} from '@/lib/shopify/searchProducts';
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,8 +32,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const hits = await searchProductsForOfficeFromEnv(q, 12);
-    return NextResponse.json({ ok: true, hits });
+    const sp = request.nextUrl.searchParams;
+    const includeDraft =
+      sp.get('includeDraft') === '1' ||
+      sp.get('includeDraft') === 'true' ||
+      sp.get('includeDrafts') === '1' ||
+      sp.get('includeDrafts') === 'true';
+
+    const creds = getShopifyAdminEnv();
+    const [hits, draftProductCount] = await Promise.all([
+      searchProductsForOfficeFromEnv(q, 12, { includeDrafts: includeDraft }),
+      fetchDraftProductCountForOfficeSearch(creds, q),
+    ]);
+    return NextResponse.json({ ok: true, hits, draftProductCount });
   } catch (err: unknown) {
     return toApiErrorResponse(err, 'GET /api/order-office/shopify-products/search');
   }
