@@ -716,11 +716,18 @@ export function PoTable({
               </Button>
               <Button
                 size="xs"
-                className="text-[10px] rounded-[5px]"
+                className="text-[10px] rounded-[5px] gap-1"
                 onClick={() => void saveOrderEdits()}
                 disabled={savingOrderEdit}
               >
-                {savingOrderEdit ? 'Saving…' : 'Save'}
+                {savingOrderEdit ? (
+                  <>
+                    <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  'Save'
+                )}
               </Button>
             </>
           ) : (

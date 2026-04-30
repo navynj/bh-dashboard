@@ -223,44 +223,46 @@ export async function upsertShopifyOrder(
   const lineItems = order.lineItems.edges.map((e) => e.node);
   const gids = lineItems.map((li) => li.id);
 
-  for (const li of lineItems) {
-    const imageUrl = lineItemImageUrlFromShopifyNode(li);
-    const qty = effectiveAdminGraphqlLineItemQuantity(li);
-    const productGid =
-      li.variant?.product?.id?.trim() ||
-      li.product?.id?.trim() ||
-      null;
-    await prisma.shopifyOrderLineItem.upsert({
-      where: { shopifyGid: li.id },
-      create: {
-        shopifyGid: li.id,
-        orderId: shopifyOrder.id,
-        title: li.title,
-        sku: li.sku ?? li.variant?.sku ?? null,
-        variantTitle: li.variant?.title ?? null,
-        productGid,
-        variantGid: li.variant?.id ?? null,
-        imageUrl,
-        vendor: li.vendor ?? null,
-        quantity: qty,
-        price: toDecimalOrNull(li.discountedUnitPriceSet?.shopMoney?.amount),
-        unitCost: toDecimalOrNull(li.variant?.inventoryItem?.unitCost?.amount),
-      },
-      update: {
-        orderId: shopifyOrder.id,
-        title: li.title,
-        sku: li.sku ?? li.variant?.sku ?? null,
-        variantTitle: li.variant?.title ?? null,
-        productGid,
-        variantGid: li.variant?.id ?? null,
-        imageUrl,
-        vendor: li.vendor ?? null,
-        quantity: qty,
-        price: toDecimalOrNull(li.discountedUnitPriceSet?.shopMoney?.amount),
-        unitCost: toDecimalOrNull(li.variant?.inventoryItem?.unitCost?.amount),
-      },
-    });
-  }
+  await Promise.all(
+    lineItems.map((li) => {
+      const imageUrl = lineItemImageUrlFromShopifyNode(li);
+      const qty = effectiveAdminGraphqlLineItemQuantity(li);
+      const productGid =
+        li.variant?.product?.id?.trim() ||
+        li.product?.id?.trim() ||
+        null;
+      return prisma.shopifyOrderLineItem.upsert({
+        where: { shopifyGid: li.id },
+        create: {
+          shopifyGid: li.id,
+          orderId: shopifyOrder.id,
+          title: li.title,
+          sku: li.sku ?? li.variant?.sku ?? null,
+          variantTitle: li.variant?.title ?? null,
+          productGid,
+          variantGid: li.variant?.id ?? null,
+          imageUrl,
+          vendor: li.vendor ?? null,
+          quantity: qty,
+          price: toDecimalOrNull(li.discountedUnitPriceSet?.shopMoney?.amount),
+          unitCost: toDecimalOrNull(li.variant?.inventoryItem?.unitCost?.amount),
+        },
+        update: {
+          orderId: shopifyOrder.id,
+          title: li.title,
+          sku: li.sku ?? li.variant?.sku ?? null,
+          variantTitle: li.variant?.title ?? null,
+          productGid,
+          variantGid: li.variant?.id ?? null,
+          imageUrl,
+          vendor: li.vendor ?? null,
+          quantity: qty,
+          price: toDecimalOrNull(li.discountedUnitPriceSet?.shopMoney?.amount),
+          unitCost: toDecimalOrNull(li.variant?.inventoryItem?.unitCost?.amount),
+        },
+      });
+    }),
+  );
 
   const removeWhere =
     gids.length > 0
@@ -291,9 +293,9 @@ export async function upsertShopifyOrder(
     order.displayFulfillmentStatus,
     order.displayFinancialStatus,
   );
-  for (const poId of touchedPoIds) {
-    await recomputePurchaseOrderStatusById(poId);
-  }
+  await Promise.all(
+    touchedPoIds.map((poId) => recomputePurchaseOrderStatusById(poId)),
+  );
 
   await recomputePurchaseOrderStatusesForShopifyOrderId(shopifyOrder.id);
 

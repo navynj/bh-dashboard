@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -313,11 +314,18 @@ export function OrderBlock({
               </Button>
               <Button
                 size="xs"
-                className="text-[10px] rounded-[5px]"
+                className="text-[10px] rounded-[5px] gap-1"
                 onClick={() => void saveEdit()}
                 disabled={saving}
               >
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? (
+                  <>
+                    <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  'Save'
+                )}
               </Button>
             </>
           ) : showArchived ? (

@@ -47,18 +47,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { notifyCustomer: false },
     );
 
-    if (data.variantCatalogUpdates?.length) {
-      await applyVariantCatalogPriceUpdates(creds, data.variantCatalogUpdates);
-    }
+    const variantCatalogUpdates = data.variantCatalogUpdates;
+    const hasVariantUpdates = Boolean(variantCatalogUpdates?.length);
+    const syncOutcome = (async (): Promise<boolean> => {
+      const node = await fetchShopifyOrderNodeByGid(creds, order.shopifyGid, {
+        lineItems: 'sync',
+      });
+      if (!node) return false;
+      await syncOneOrder(node);
+      return true;
+    })();
 
-    const node = await fetchShopifyOrderNodeByGid(creds, order.shopifyGid);
-    if (!node) {
+    const [, ok] = await Promise.all([
+      hasVariantUpdates && variantCatalogUpdates
+        ? applyVariantCatalogPriceUpdates(creds, variantCatalogUpdates)
+        : Promise.resolve(),
+      syncOutcome,
+    ]);
+
+    if (!ok) {
       return NextResponse.json(
         { error: 'Could not reload order from Shopify after edit.' },
         { status: 502 },
       );
     }
-    await syncOneOrder(node);
 
     if (data.purchaseOrderId && !data.deferPurchaseOrderResync) {
       await resyncPurchaseOrderLineItemsFromShopify({

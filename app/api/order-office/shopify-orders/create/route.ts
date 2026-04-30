@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
-import { prisma } from '@/lib/core/prisma';
 import {
   parseBody,
   shopifyOrderCreateBodySchema,
@@ -85,7 +84,9 @@ export async function POST(request: NextRequest) {
 
     const { orderGid } = await createShopifyOrder(creds, params);
 
-    const node = await fetchShopifyOrderNodeByGid(creds, orderGid);
+    const node = await fetchShopifyOrderNodeByGid(creds, orderGid, {
+      lineItems: 'sync',
+    });
     if (!node) {
       return NextResponse.json(
         {
@@ -97,16 +98,12 @@ export async function POST(request: NextRequest) {
     }
 
     const synced = await syncOneOrder(node);
-    const row = await prisma.shopifyOrder.findUnique({
-      where: { id: synced.id },
-      select: { id: true, shopifyGid: true, name: true },
-    });
 
     return NextResponse.json({
       ok: true,
-      shopifyOrderId: row?.id ?? synced.id,
-      shopifyGid: row?.shopifyGid ?? synced.shopifyGid,
-      name: row?.name ?? node.name ?? null,
+      shopifyOrderId: synced.id,
+      shopifyGid: synced.shopifyGid,
+      name: node.name ?? null,
     });
   } catch (err: unknown) {
     return toApiErrorResponse(err, 'POST /api/order-office/shopify-orders/create');

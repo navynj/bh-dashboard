@@ -826,38 +826,40 @@ export async function applyVariantCatalogPriceUpdates(
     byProduct.set(u.productGid, list);
   }
 
-  for (const [productId, list] of byProduct) {
-    const { data, errors } = await client.request<BulkVariantPayload>(PRODUCT_VARIANTS_BULK_UPDATE, {
-      variables: {
-        productId,
-        variants: list.map((v) => ({
-          id: v.variantGid,
-          price: v.price,
-        })),
-      },
-    });
-    const gqlMsg = graphqlErrorsMessage(errors);
-    if (gqlMsg) {
-      throw new AppError(
-        `productVariantsBulkUpdate: ${gqlMsg}`,
-        'SHOPIFY_GRAPHQL_ERROR',
-        { productId },
-        502,
-        gqlMsg,
-      );
-    }
-    const uErr = data?.productVariantsBulkUpdate?.userErrors ?? [];
-    if (uErr.length > 0) {
-      const msg = uErr.map((e) => e.message).join('; ');
-      throw new AppError(
-        `productVariantsBulkUpdate: ${msg}`,
-        'SHOPIFY_VARIANT_UPDATE',
-        { productId, userErrors: uErr },
-        422,
-        msg,
-      );
-    }
-  }
+  await Promise.all(
+    [...byProduct.entries()].map(async ([productId, list]) => {
+      const { data, errors } = await client.request<BulkVariantPayload>(PRODUCT_VARIANTS_BULK_UPDATE, {
+        variables: {
+          productId,
+          variants: list.map((v) => ({
+            id: v.variantGid,
+            price: v.price,
+          })),
+        },
+      });
+      const gqlMsg = graphqlErrorsMessage(errors);
+      if (gqlMsg) {
+        throw new AppError(
+          `productVariantsBulkUpdate: ${gqlMsg}`,
+          'SHOPIFY_GRAPHQL_ERROR',
+          { productId },
+          502,
+          gqlMsg,
+        );
+      }
+      const uErr = data?.productVariantsBulkUpdate?.userErrors ?? [];
+      if (uErr.length > 0) {
+        const msg = uErr.map((e) => e.message).join('; ');
+        throw new AppError(
+          `productVariantsBulkUpdate: ${msg}`,
+          'SHOPIFY_VARIANT_UPDATE',
+          { productId, userErrors: uErr },
+          422,
+          msg,
+        );
+      }
+    }),
+  );
 }
 
 export function applyOrderEditAndCommitFromEnv(

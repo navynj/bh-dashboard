@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,7 +57,7 @@ export function ShopifyProductSearchPanel({
   onSelect,
   searchPath = DEFAULT_SHOPIFY_PRODUCT_SEARCH_PATH,
   minQueryLength = 2,
-  debounceMs = 350,
+  debounceMs = 280,
   searchPlaceholder = 'Search products…',
   className,
   resultsMaxHeightClassName = 'max-h-56',
@@ -66,6 +66,8 @@ export function ShopifyProductSearchPanel({
   const [debouncedQ, setDebouncedQ] = useState('');
   const [hits, setHits] = useState<ShopifyProductSearchHit[]>([]);
   const [loading, setLoading] = useState(false);
+  const searchSeqRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(q.trim()), debounceMs);
@@ -75,18 +77,27 @@ export function ShopifyProductSearchPanel({
   const runSearch = useCallback(async () => {
     const query = debouncedQ.trim();
     if (query.length < minQueryLength) {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      searchSeqRef.current += 1;
       setHits([]);
+      setLoading(false);
       return;
     }
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const seq = ++searchSeqRef.current;
     setLoading(true);
     try {
       const url = `${searchPath}?q=${encodeURIComponent(query)}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: ac.signal });
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         hits?: ShopifyProductSearchHit[];
         error?: string;
       };
+      if (seq !== searchSeqRef.current) return;
       if (!res.ok) {
         toast.error(
           typeof data?.error === 'string' ? data.error : 'Product search failed',
@@ -95,16 +106,23 @@ export function ShopifyProductSearchPanel({
         return;
       }
       setHits(Array.isArray(data.hits) ? data.hits : []);
-    } catch {
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if (seq !== searchSeqRef.current) return;
       toast.error('Product search failed');
       setHits([]);
     } finally {
-      setLoading(false);
+      if (seq === searchSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, [debouncedQ, minQueryLength, searchPath]);
 
   useEffect(() => {
     void runSearch();
+    return () => {
+      abortRef.current?.abort();
+    };
   }, [runSearch]);
 
   const manualSearch = useCallback(() => {

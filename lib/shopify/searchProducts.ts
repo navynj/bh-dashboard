@@ -17,7 +17,7 @@ const PRODUCTS_SEARCH = `query OfficeProductsSearch($first: Int!, $query: String
         featuredImage {
           url
         }
-        variants(first: 50) {
+        variants(first: 25) {
           edges {
             node {
               id
@@ -26,11 +26,6 @@ const PRODUCTS_SEARCH = `query OfficeProductsSearch($first: Int!, $query: String
               price
               image {
                 url
-              }
-              inventoryItem {
-                unitCost {
-                  amount
-                }
               }
             }
           }
@@ -69,9 +64,6 @@ export type OfficeProductSearchData = {
               sku: string | null;
               price?: unknown;
               image?: { url: string | null } | null;
-              inventoryItem?: {
-                unitCost?: { amount: string } | null;
-              } | null;
             };
           }>;
         };
@@ -120,9 +112,7 @@ export async function searchProductsForOffice(
         variantTitle: v.title,
         sku: v.sku,
         price: shopifyMoneyAmountToDecimalString(v.price),
-        unitCost: v.inventoryItem?.unitCost?.amount?.trim()
-          ? v.inventoryItem.unitCost.amount
-          : null,
+        unitCost: null,
         imageUrl,
       });
     }

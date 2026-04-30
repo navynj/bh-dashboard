@@ -198,7 +198,7 @@ ${ORDER_LINE_ITEM_SELECTION_SYNC}
   }
 }`;
 
-/** Single order by GID — same shape as list `orders` nodes (for re-sync after edits). */
+/** Single order by GID — rich line-item media (heavier GraphQL cost). */
 const ORDER_NODE_QUERY = `query OrderNode($id: ID!) {
   node(id: $id) {
     ... on Order {
@@ -272,13 +272,96 @@ ${ORDER_LINE_ITEM_SELECTION_DETAIL}
   }
 }`;
 
+/** Same order shell as `ORDER_NODE_QUERY` but shallow line items (matches bulk sync — faster after create/edit). */
+const ORDER_NODE_QUERY_SYNC = `query OrderNodeSync($id: ID!) {
+  node(id: $id) {
+    ... on Order {
+      id
+      name
+      email
+      note
+      customer {
+        id
+        displayName
+        firstName
+        lastName
+        email
+        phone
+        defaultAddress {
+          address1
+          address2
+          city
+          province
+          provinceCode
+          country
+          zip
+          company
+          name
+          phone
+        }
+      }
+      processedAt
+      createdAt
+      displayFinancialStatus
+      displayFulfillmentStatus
+      currencyCode
+      totalPriceSet {
+        shopMoney {
+          amount
+          currencyCode
+        }
+      }
+      billingAddress {
+        address1
+        address2
+        city
+        province
+        provinceCode
+        country
+        zip
+        company
+        name
+        phone
+      }
+      shippingAddress {
+        address1
+        address2
+        city
+        province
+        provinceCode
+        country
+        zip
+        company
+        name
+        phone
+      }
+      lineItems(first: 250) {
+        edges {
+          node {
+${ORDER_LINE_ITEM_SELECTION_SYNC}
+          }
+        }
+      }
+    }
+  }
+}`;
+
 export type OrderNodeQueryData = {
   node: ShopifyOrderNode | null;
+};
+
+export type FetchShopifyOrderNodeByGidOptions = {
+  /**
+   * `sync`: shallow line items (same as list/bulk sync) — lower GraphQL cost, enough for `syncOneOrder`.
+   * `detail`: deeper product/variant media (default) — use when the office UI needs richer thumbnails.
+   */
+  lineItems?: 'sync' | 'detail';
 };
 
 export async function fetchShopifyOrderNodeByGid(
   creds: ShopifyAdminCredentials,
   orderGid: string,
+  options?: FetchShopifyOrderNodeByGidOptions,
 ): Promise<ShopifyOrderNode | null> {
   const client = createAdminApiClient({
     storeDomain: creds.shopDomain.replace(/^https?:\/\//, '').replace(/\/$/, ''),
@@ -286,7 +369,10 @@ export async function fetchShopifyOrderNodeByGid(
     accessToken: creds.accessToken,
   });
 
-  const { data, errors } = await client.request<OrderNodeQueryData>(ORDER_NODE_QUERY, {
+  const lineItems = options?.lineItems ?? 'detail';
+  const query = lineItems === 'sync' ? ORDER_NODE_QUERY_SYNC : ORDER_NODE_QUERY;
+
+  const { data, errors } = await client.request<OrderNodeQueryData>(query, {
     variables: { id: orderGid },
   });
 

@@ -47,31 +47,38 @@ export async function detachPoLinesForFulfilledFinanciallyCanceledShopifyOrder(
   if (polis.length === 0) return [];
 
   const touchedPoIds = new Set<string>();
-  for (const row of polis) {
-    const removed = await deletePurchaseOrderLineItemIfNoFinalizedFulfillments(
-      row.id,
-    );
-    if (removed) touchedPoIds.add(row.purchaseOrderId);
+  const removalFlags = await Promise.all(
+    polis.map((row) =>
+      deletePurchaseOrderLineItemIfNoFinalizedFulfillments(row.id).then((removed) => ({
+        removed,
+        purchaseOrderId: row.purchaseOrderId,
+      })),
+    ),
+  );
+  for (const { removed, purchaseOrderId } of removalFlags) {
+    if (removed) touchedPoIds.add(purchaseOrderId);
   }
 
   const candidatePoIds = [...new Set(polis.map((p) => p.purchaseOrderId))];
-  for (const poId of candidatePoIds) {
-    const remaining = await prisma.purchaseOrderLineItem.count({
-      where: {
-        purchaseOrderId: poId,
-        shopifyOrderLineItem: { orderId: shopifyOrderId },
-      },
-    });
-    if (remaining === 0) {
-      await prisma.purchaseOrder.update({
-        where: { id: poId },
-        data: {
-          shopifyOrders: { disconnect: { id: shopifyOrderId } },
+  await Promise.all(
+    candidatePoIds.map(async (poId) => {
+      const remaining = await prisma.purchaseOrderLineItem.count({
+        where: {
+          purchaseOrderId: poId,
+          shopifyOrderLineItem: { orderId: shopifyOrderId },
         },
       });
-      touchedPoIds.add(poId);
-    }
-  }
+      if (remaining === 0) {
+        await prisma.purchaseOrder.update({
+          where: { id: poId },
+          data: {
+            shopifyOrders: { disconnect: { id: shopifyOrderId } },
+          },
+        });
+        touchedPoIds.add(poId);
+      }
+    }),
+  );
 
   return [...touchedPoIds];
 }

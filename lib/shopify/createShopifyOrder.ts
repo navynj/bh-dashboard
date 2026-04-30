@@ -10,6 +10,30 @@ import type { ShopifyAdminCredentials } from '@/types/shopify';
 
 const SHOP_CURRENCY_QUERY = `query OfficeShopCurrency { shop { currencyCode } }`;
 
+/** In-process cache: shop currency rarely changes; skips an extra Admin round-trip per order. */
+const shopCurrencyCache = new Map<string, { code: string; fetchedAt: number }>();
+const SHOP_CURRENCY_TTL_MS = 60 * 60 * 1000;
+
+function normalizeStoreDomain(shopDomain: string): string {
+  return shopDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+}
+
+function getCachedShopCurrency(storeKey: string): string | null {
+  const row = shopCurrencyCache.get(storeKey);
+  if (!row) return null;
+  if (Date.now() - row.fetchedAt > SHOP_CURRENCY_TTL_MS) {
+    shopCurrencyCache.delete(storeKey);
+    return null;
+  }
+  return row.code;
+}
+
+function setCachedShopCurrency(storeKey: string, code: string) {
+  shopCurrencyCache.set(storeKey, { code, fetchedAt: Date.now() });
+}
+
+type ShopifyAdminApiClient = ReturnType<typeof createAdminApiClient>;
+
 const ORDER_CREATE = `mutation OfficeOrderCreate($order: OrderCreateOrderInput!) {
   orderCreate(order: $order) {
     order {
@@ -87,12 +111,9 @@ function mailingToGraphqlInput(addr: CreateShopifyOrderMailingInput): Record<str
   return out;
 }
 
-async function fetchShopCurrencyCode(creds: ShopifyAdminCredentials): Promise<string> {
-  const client = createAdminApiClient({
-    storeDomain: creds.shopDomain.replace(/^https?:\/\//, '').replace(/\/$/, ''),
-    apiVersion: creds.apiVersion,
-    accessToken: creds.accessToken,
-  });
+async function fetchShopCurrencyCodeWithClient(
+  client: ShopifyAdminApiClient,
+): Promise<string> {
   const { data, errors } = await client.request<ShopCurrencyData>(SHOP_CURRENCY_QUERY);
   const errText = formatShopifyAdminClientErrors(errors);
   if (errText) {
@@ -121,12 +142,18 @@ export async function createShopifyOrder(
     throw new Error('At least one line item is required');
   }
 
-  const currencyCode = await fetchShopCurrencyCode(creds);
+  const storeKey = normalizeStoreDomain(creds.shopDomain);
   const client = createAdminApiClient({
-    storeDomain: creds.shopDomain.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+    storeDomain: storeKey,
     apiVersion: creds.apiVersion,
     accessToken: creds.accessToken,
   });
+
+  let currencyCode = getCachedShopCurrency(storeKey);
+  if (!currencyCode) {
+    currencyCode = await fetchShopCurrencyCodeWithClient(client);
+    setCachedShopCurrency(storeKey, currencyCode);
+  }
 
   const billing =
     params.billingAddress ?? params.shippingAddress;

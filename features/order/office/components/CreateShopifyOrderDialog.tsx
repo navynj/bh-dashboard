@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -110,6 +111,8 @@ type Props = {
   onCreated?: () => void;
 };
 
+const CUSTOMER_SEARCH_DEBOUNCE_MS = 320;
+
 export function CreateShopifyOrderDialog({
   open,
   onOpenChange,
@@ -124,6 +127,8 @@ export function CreateShopifyOrderDialog({
     string | null
   >(null);
   const [customerLoading, setCustomerLoading] = useState(false);
+  const [debouncedCustomerQuery, setDebouncedCustomerQuery] = useState('');
+  const customerSearchSeqRef = useRef(0);
   const [selectedCustomer, setSelectedCustomer] =
     useState<ShopifyAdminCustomerNode | null>(null);
 
@@ -167,6 +172,7 @@ export function CreateShopifyOrderDialog({
     setCustomerQuery('');
     setCustomerHits([]);
     setLastCustomerSearchQuery(null);
+    setDebouncedCustomerQuery('');
     setSelectedCustomer(null);
     setAddr1('');
     setAddr2('');
@@ -215,19 +221,28 @@ export function CreateShopifyOrderDialog({
     }
   }, [customerQuery, lastCustomerSearchQuery]);
 
-  const runCustomerSearch = useCallback(async () => {
-    const q = customerQuery.trim();
+  useEffect(() => {
+    const t = setTimeout(
+      () => setDebouncedCustomerQuery(customerQuery.trim()),
+      CUSTOMER_SEARCH_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(t);
+  }, [customerQuery]);
+
+  const runCustomerSearchForQuery = useCallback(async (q: string) => {
     if (q.length < 2) {
       setCustomerHits([]);
       setLastCustomerSearchQuery(null);
       return;
     }
+    const seq = ++customerSearchSeqRef.current;
     setCustomerLoading(true);
     try {
       const res = await fetch(
         `/api/order-office/shopify-customers/search?q=${encodeURIComponent(q)}`,
       );
       const data = await res.json().catch(() => ({}));
+      if (seq !== customerSearchSeqRef.current) return;
       if (!res.ok) {
         toast.error(
           typeof data?.error === 'string'
@@ -241,15 +256,42 @@ export function CreateShopifyOrderDialog({
       setCustomerHits(Array.isArray(data.hits) ? data.hits : []);
       setLastCustomerSearchQuery(q);
     } catch {
+      if (seq !== customerSearchSeqRef.current) return;
       toast.error('Customer search failed');
       setCustomerHits([]);
       setLastCustomerSearchQuery(null);
     } finally {
-      setCustomerLoading(false);
+      if (seq === customerSearchSeqRef.current) {
+        setCustomerLoading(false);
+      }
     }
-  }, [customerQuery]);
+  }, []);
+
+  useEffect(() => {
+    if (!open || selectedCustomer) return;
+    const q = debouncedCustomerQuery;
+    if (q.length < 2) {
+      customerSearchSeqRef.current += 1;
+      setCustomerLoading(false);
+      setCustomerHits([]);
+      setLastCustomerSearchQuery(null);
+      return;
+    }
+    void runCustomerSearchForQuery(q);
+  }, [
+    open,
+    debouncedCustomerQuery,
+    selectedCustomer,
+    runCustomerSearchForQuery,
+  ]);
+
+  const runCustomerSearch = useCallback(() => {
+    void runCustomerSearchForQuery(customerQuery.trim());
+  }, [customerQuery, runCustomerSearchForQuery]);
 
   const applyCustomer = useCallback((node: ShopifyAdminCustomerNode) => {
+    customerSearchSeqRef.current += 1;
+    setCustomerLoading(false);
     setSelectedCustomer(node);
     const mail = pickCustomerAddress(node);
     let line1 = '';
@@ -575,8 +617,8 @@ export function CreateShopifyOrderDialog({
                       className="text-xs text-muted-foreground"
                     >
                       {customerQueryTrim.length < 2
-                        ? 'Enter at least 2 characters, then press Search or Enter.'
-                        : 'Press Search (or Enter) to load matching customers.'}
+                        ? 'Enter at least 2 characters to search.'
+                        : 'Results update shortly after you stop typing. Use Search or Enter to run immediately.'}
                     </p>
                   ) : null}
                   {showCustomerHitList ? (
@@ -1041,10 +1083,18 @@ export function CreateShopifyOrderDialog({
             </Button>
             <Button
               type="button"
+              className="gap-2"
               onClick={() => void submit()}
               disabled={submitting}
             >
-              {submitting ? 'Creating…' : 'Create in Shopify & sync'}
+              {submitting ? (
+                <>
+                  <Loader2 className="size-4 shrink-0 animate-spin" />
+                  Creating…
+                </>
+              ) : (
+                'Create in Shopify & sync'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1055,6 +1105,7 @@ export function CreateShopifyOrderDialog({
         onOpenChange={setProductPickOpen}
         onSelect={onProductPick}
         title="Add catalog line"
+        debounceMs={280}
       />
     </>
   );

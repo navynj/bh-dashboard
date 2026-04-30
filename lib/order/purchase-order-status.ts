@@ -69,7 +69,5 @@ export async function recomputePurchaseOrderStatusesForShopifyOrderId(
     where: { shopifyOrders: { some: { id: shopifyOrderId } } },
     select: { id: true },
   });
-  for (const p of pos) {
-    await recomputePurchaseOrderStatusById(p.id, db);
-  }
+  await Promise.all(pos.map((p) => recomputePurchaseOrderStatusById(p.id, db)));
 }

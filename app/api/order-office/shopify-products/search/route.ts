@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const hits = await searchProductsForOfficeFromEnv(q, 20);
+    const hits = await searchProductsForOfficeFromEnv(q, 12);
     return NextResponse.json({ ok: true, hits });
   } catch (err: unknown) {
     return toApiErrorResponse(err, 'GET /api/order-office/shopify-products/search');

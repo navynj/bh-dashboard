@@ -48,17 +48,21 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
   if (!poInitial) return;
 
   const touchedByDetach = new Set<string>();
-  for (const o of poInitial.shopifyOrders) {
-    const ids = await detachPoLinesForFulfilledFinanciallyCanceledShopifyOrder(
-      o.id,
-      o.displayFulfillmentStatus,
-      o.displayFinancialStatus,
-    );
+  const detachResults = await Promise.all(
+    poInitial.shopifyOrders.map((o) =>
+      detachPoLinesForFulfilledFinanciallyCanceledShopifyOrder(
+        o.id,
+        o.displayFulfillmentStatus,
+        o.displayFinancialStatus,
+      ),
+    ),
+  );
+  for (const ids of detachResults) {
     for (const id of ids) touchedByDetach.add(id);
   }
-  for (const id of touchedByDetach) {
-    await recomputePurchaseOrderStatusById(id);
-  }
+  await Promise.all(
+    [...touchedByDetach].map((id) => recomputePurchaseOrderStatusById(id)),
+  );
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: purchaseOrderId },
@@ -84,36 +88,38 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
       : [];
   const soliById = new Map(soliRows.map((s) => [s.id, s]));
 
-  for (const poli of po.lineItems) {
-    if (!poli.shopifyOrderLineItemId) continue;
-    const soli = soliById.get(poli.shopifyOrderLineItemId) ?? null;
-    if (!soli) {
-      await deletePurchaseOrderLineItemIfNoFinalizedFulfillments(poli.id);
-      continue;
-    }
-    if (!linkedOrderIds.has(soli.orderId)) {
-      continue;
-    }
+  await Promise.all(
+    po.lineItems.map(async (poli) => {
+      if (!poli.shopifyOrderLineItemId) return;
+      const soli = soliById.get(poli.shopifyOrderLineItemId) ?? null;
+      if (!soli) {
+        await deletePurchaseOrderLineItemIfNoFinalizedFulfillments(poli.id);
+        return;
+      }
+      if (!linkedOrderIds.has(soli.orderId)) {
+        return;
+      }
 
-    const price = soli.price;
-    const qty = soli.quantity;
-    const subtotal =
-      price != null ? new Prisma.Decimal(price).mul(qty) : null;
+      const price = soli.price;
+      const qty = soli.quantity;
+      const subtotal =
+        price != null ? new Prisma.Decimal(price).mul(qty) : null;
 
-    await prisma.purchaseOrderLineItem.update({
-      where: { id: poli.id },
-      data: {
-        quantity: qty,
-        sku: soli.sku,
-        variantTitle: soli.variantTitle,
-        productTitle: soli.title,
-        itemPrice: price,
-        lineSubtotalPrice: subtotal,
-        shopifyVariantGid: soli.variantGid,
-        isCustom: !soli.variantGid,
-      },
-    });
-  }
+      await prisma.purchaseOrderLineItem.update({
+        where: { id: poli.id },
+        data: {
+          quantity: qty,
+          sku: soli.sku,
+          variantTitle: soli.variantTitle,
+          productTitle: soli.title,
+          itemPrice: price,
+          lineSubtotalPrice: subtotal,
+          shopifyVariantGid: soli.variantGid,
+          isCustom: !soli.variantGid,
+        },
+      });
+    }),
+  );
 
   if (!appendFromShopifyOrderId || !linkedOrderIds.has(appendFromShopifyOrderId)) {
     await recomputePurchaseOrderStatusById(purchaseOrderId);
@@ -154,7 +160,7 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
     return;
   }
 
-  let maxSeq = refreshed.lineItems.reduce((m, l) => Math.max(m, l.sequence), 0);
+  const baseSeq = refreshed.lineItems.reduce((m, l) => Math.max(m, l.sequence), 0);
 
   const appendCandidates = orderWithLines.lineItems.filter((li) => {
     if (li.quantity <= 0) return false;
@@ -170,32 +176,30 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
     .filter((g): g is string => Boolean(g));
   const noteByVariant = await loadVariantOfficeNotesMap(prisma, appendVariantGids);
 
-  for (const li of appendCandidates) {
-    maxSeq += 1;
+  const appendRows = appendCandidates.map((li, idx) => {
     const price = li.price;
     const subtotal =
       price != null ? new Prisma.Decimal(price).mul(li.quantity) : null;
     const vg = li.variantGid?.trim() ?? null;
     const defaultNote = vg ? noteByVariant.get(vg) ?? null : null;
-
-    await prisma.purchaseOrderLineItem.create({
-      data: {
-        purchaseOrderId,
-        sequence: maxSeq,
-        quantity: li.quantity,
-        quantityReceived: 0,
-        sku: li.sku,
-        variantTitle: li.variantTitle,
-        productTitle: li.title ?? '(untitled)',
-        shopifyOrderLineItemId: li.id,
-        shopifyVariantGid: li.variantGid,
-        isCustom: !li.variantGid,
-        itemPrice: toDecimal(price),
-        lineSubtotalPrice: subtotal,
-        note: defaultNote,
-      },
-    });
-    usedShopifyLineIds.add(li.id);
+    return {
+      purchaseOrderId,
+      sequence: baseSeq + idx + 1,
+      quantity: li.quantity,
+      quantityReceived: 0,
+      sku: li.sku,
+      variantTitle: li.variantTitle,
+      productTitle: li.title ?? '(untitled)',
+      shopifyOrderLineItemId: li.id,
+      shopifyVariantGid: li.variantGid,
+      isCustom: !li.variantGid,
+      itemPrice: toDecimal(price),
+      lineSubtotalPrice: subtotal,
+      note: defaultNote,
+    };
+  });
+  if (appendRows.length > 0) {
+    await prisma.purchaseOrderLineItem.createMany({ data: appendRows });
   }
 
   await recomputePurchaseOrderStatusById(purchaseOrderId);
