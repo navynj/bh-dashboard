@@ -6,6 +6,7 @@ import { toApiErrorResponse } from '@/lib/core/errors';
 import {
   mapPrismaPayloadToPoLineItemViews,
   mapPrismaPoToBlock,
+  prismaPoCreatedByInclude,
 } from '@/features/order/office/mappers/map-purchase-order';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -140,6 +141,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         shopifyOrders: { include: { customer: true } },
         supplier: true,
         emailDeliveries: { orderBy: { sentAt: 'desc' } },
+        createdBy: prismaPoCreatedByInclude,
+        deliveryLocationPreset: {
+          include: {
+            locations: {
+              select: { id: true, code: true, name: true },
+              orderBy: { code: 'asc' },
+            },
+          },
+        },
       },
     });
 

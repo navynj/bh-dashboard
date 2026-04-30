@@ -61,7 +61,14 @@ export type SupplierEntry = {
   officePoSupplierCode: string | null;
 };
 
-export type StatusTab = 'inbox' | 'without_po' | 'po_created' | 'fulfilled' | 'completed' | 'archived';
+export type StatusTab =
+  | 'inbox'
+  | 'without_po'
+  | 'po_pending'
+  | 'po_created'
+  | 'fulfilled'
+  | 'completed'
+  | 'archived';
 
 export type PoPill = { label: string; id: string };
 

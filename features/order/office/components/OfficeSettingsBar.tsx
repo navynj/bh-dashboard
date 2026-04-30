@@ -13,6 +13,7 @@ const SETTINGS_PREFIXES = [
   `${OFFICE_BASE}/customer-settings`,
   `${OFFICE_BASE}/contact-settings`,
   `${OFFICE_BASE}/item-settings`,
+  `${OFFICE_BASE}/delivery-location-presets`,
   `${OFFICE_BASE}/settings`,
 ];
 
@@ -59,6 +60,9 @@ export function OfficeSettingsBar() {
   const isCustomers = pathname.startsWith(`${OFFICE_BASE}/customer-settings`);
   const isContact = pathname.startsWith(`${OFFICE_BASE}/contact-settings`);
   const isItemSettings = pathname.startsWith(`${OFFICE_BASE}/item-settings`);
+  const isDeliveryPresets = pathname.startsWith(
+    `${OFFICE_BASE}/delivery-location-presets`,
+  );
   const isDataSync = pathname.startsWith(`${OFFICE_BASE}/settings`);
   const isSettingsPage = SETTINGS_PREFIXES.some((p) => pathname.startsWith(p));
 
@@ -224,6 +228,21 @@ export function OfficeSettingsBar() {
           )}
         >
           Item settings
+        </Link>
+        <Link
+          href={`${OFFICE_BASE}/delivery-location-presets`}
+          prefetch={false}
+          scroll={false}
+          className={cn(
+            buttonVariants({
+              variant: isDeliveryPresets ? 'default' : 'outline',
+              size: 'xs',
+            }),
+            'text-[11px] rounded-[5px]',
+            !isDeliveryPresets && 'text-muted-foreground',
+          )}
+        >
+          Delivery locations
         </Link>
         <Link
           href={`${OFFICE_BASE}/settings`}

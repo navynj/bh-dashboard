@@ -639,7 +639,22 @@ export const purchaseOrderCreateSchema = z.object({
   shippingAddress: addressSchema.optional().nullable(),
   billingAddress: addressSchema.optional().nullable(),
   billingSameAsShipping: z.boolean().optional().default(true),
+  /** `public.delivery_location_presets.id` when ship-to came from a preset. */
+  deliveryLocationPresetId: z.union([z.string().trim().min(1), z.null()]).optional(),
+  /**
+   * When true, creates the PO with hub `status = pending` (PO Pending tab / on hold),
+   * same as marking an existing PO pending after lines are linked.
+   */
+  hubPending: z.boolean().optional().default(false),
 });
+
+const purchaseOrderStatusUpdateSchema = z.enum([
+  'pending',
+  'unfulfilled',
+  'partially_fulfilled',
+  'fulfilled',
+  'completed',
+]);
 
 export const purchaseOrderUpdateSchema = z.object({
   poNumber: z.string().min(1).transform((s) => s.trim()).optional(),
@@ -648,15 +663,56 @@ export const purchaseOrderUpdateSchema = z.object({
   expectedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD').optional().nullable(),
   comment: z.string().trim().optional().nullable(),
   completedAt: z.string().datetime().optional().nullable(),
+  /** Hub workflow / line fulfillment status (`order.purchase_orders.status`). */
+  status: purchaseOrderStatusUpdateSchema.optional(),
   shippingAddress: addressSchema.optional().nullable(),
   billingAddress: addressSchema.optional().nullable(),
   billingSameAsShipping: z.boolean().optional(),
   /** When true, sets `emailDeliveryWaivedAt` to now; when false, clears it. */
   emailDeliveryWaived: z.boolean().optional(),
+  deliveryLocationPresetId: z.union([z.string().trim().min(1), z.null()]).optional(),
 });
 
 export type PurchaseOrderCreateBody = z.infer<typeof purchaseOrderCreateSchema>;
 export type PurchaseOrderUpdateBody = z.infer<typeof purchaseOrderUpdateSchema>;
+
+// ─── Delivery location presets (many `locations` may share one preset) ─────
+
+export const deliveryLocationPresetCreateSchema = z.object({
+  /** `public.locations.id` values that should point at this preset (optional). */
+  locationIds: z.array(z.string().trim().min(1)).max(500).optional().default([]),
+  name: z.string().trim().min(1, 'Name is required').max(200),
+  company: z.string().trim().optional().nullable(),
+  address1: z.string().trim().min(1),
+  address2: z.string().trim().optional().nullable(),
+  city: z.string().trim().min(1),
+  province: z.string().trim().min(1),
+  postalCode: z.string().trim().min(1),
+  country: z.string().trim().optional().default('CA'),
+  lat: z.number().finite().optional().nullable(),
+  lng: z.number().finite().optional().nullable(),
+});
+
+export const deliveryLocationPresetPatchSchema = z.object({
+  locationIds: z.array(z.string().trim().min(1)).max(500).optional(),
+  name: z.string().trim().min(1, 'Name is required').max(200).optional(),
+  company: z.string().trim().optional().nullable(),
+  address1: z.string().trim().min(1).optional(),
+  address2: z.string().trim().optional().nullable(),
+  city: z.string().trim().min(1).optional(),
+  province: z.string().trim().min(1).optional(),
+  postalCode: z.string().trim().min(1).optional(),
+  country: z.string().trim().optional().nullable(),
+  lat: z.number().finite().optional().nullable(),
+  lng: z.number().finite().optional().nullable(),
+});
+
+export type DeliveryLocationPresetCreateBody = z.infer<
+  typeof deliveryLocationPresetCreateSchema
+>;
+export type DeliveryLocationPresetPatchBody = z.infer<
+  typeof deliveryLocationPresetPatchSchema
+>;
 
 // ─── Receive (fulfill) line items ─────────────────────────────────────────────
 
@@ -696,6 +752,16 @@ export const shopifyVariantOfficeNotePutSchema = z.object({
 });
 
 export type ShopifyVariantOfficeNotePutBody = z.infer<typeof shopifyVariantOfficeNotePutSchema>;
+
+/** POST /api/order-office/shopify-orders/office-pending — inbox “on hold” flag on hub `shopify_orders`. */
+export const shopifyOrdersOfficePendingPostSchema = z.object({
+  shopifyOrderIds: z.array(z.string().trim().min(1)).min(1),
+  pending: z.boolean(),
+});
+
+export type ShopifyOrdersOfficePendingPostBody = z.infer<
+  typeof shopifyOrdersOfficePendingPostSchema
+>;
 
 // ─── parseBody ────────────────────────────────────────────────────────────────
 

@@ -43,6 +43,7 @@ export function mergeViewDataWithOptimisticEmailWaived(
         archivedAt: undefined,
         legacyExternalId: po.legacyExternalId,
         emailDeliveryWaivedAt: nextWaivedIso ? new Date(nextWaivedIso) : null,
+        purchaseOrderStatus: po.status,
       });
 
       touched = true;

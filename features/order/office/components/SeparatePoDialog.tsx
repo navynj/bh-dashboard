@@ -32,6 +32,7 @@ import {
   toVancouverYmdFromIso,
 } from '../utils/vancouver-datetime';
 import { LineItemThumb } from './LineItemThumb';
+import { DeliveryLocationPresetPicker } from './DeliveryLocationPresetPicker';
 
 type Props = {
   order: ShopifyOrderDraft;
@@ -58,6 +59,7 @@ type Props = {
       note?: string | null;
     }[];
     shippingAddress: PoAddress | null;
+    deliveryLocationPresetId?: string | null;
   }) => void;
   /** Inbox draft notes (parallel to `order.lineItems`); snapshotted when dialog opens. */
   lineItemNotes?: string[];
@@ -78,6 +80,10 @@ export function SeparatePoDialog({
 
   const [expectedDate, setExpectedDate] = useState(defaultExpectedYmd);
   const [shipTo, setShipTo] = useState('');
+  const [separatePresetId, setSeparatePresetId] = useState<string | null>(null);
+  const [separateFromPreset, setSeparateFromPreset] = useState<PoAddress | null>(
+    null,
+  );
   const [comment, setComment] = useState('');
   const initialShipToLabelRef = useRef('');
   const [included, setIncluded] = useState<boolean[]>(() =>
@@ -108,6 +114,8 @@ export function SeparatePoDialog({
 
   useEffect(() => {
     if (!open) return;
+    setSeparatePresetId(null);
+    setSeparateFromPreset(null);
     const label = formatDefaultShipToLine(order);
     initialShipToLabelRef.current = label;
     const minY = order.orderedAt
@@ -166,17 +174,23 @@ export function SeparatePoDialog({
       ];
     });
 
+    const shippingAddress =
+      separateFromPreset && separatePresetId
+        ? separateFromPreset
+        : resolveSeparatePoShippingAddress(
+            shipTo,
+            order,
+            initialShipToLabelRef.current,
+          );
+
     onCreatePo({
       poNumber: poNumber.trim(),
       expectedDate: expectedDate || null,
       comment: comment || null,
       shopifyOrderNumber: order.orderNumber,
       lineItems,
-      shippingAddress: resolveSeparatePoShippingAddress(
-        shipTo,
-        order,
-        initialShipToLabelRef.current,
-      ),
+      shippingAddress,
+      deliveryLocationPresetId: separatePresetId,
     });
   }
 
@@ -367,16 +381,45 @@ export function SeparatePoDialog({
                 className="h-8 text-sm"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Ship to</Label>
-              <Input
-                type="text"
-                value={shipTo}
-                onChange={(e) => setShipTo(e.target.value)}
-                placeholder="Address"
-                className="h-8 text-sm"
-              />
-            </div>
+          </div>
+          <div className="space-y-1.5">
+            <DeliveryLocationPresetPicker
+              selectedPresetId={separatePresetId}
+              onApply={({ presetId, poAddress }) => {
+                setSeparatePresetId(presetId);
+                setSeparateFromPreset(poAddress);
+                setShipTo(
+                  [
+                    poAddress.address1,
+                    poAddress.address2,
+                    poAddress.city,
+                    poAddress.province,
+                    poAddress.postalCode,
+                  ]
+                    .filter(Boolean)
+                    .join(', '),
+                );
+              }}
+              onClear={() => {
+                setSeparatePresetId(null);
+                setSeparateFromPreset(null);
+                const label = formatDefaultShipToLine(order);
+                initialShipToLabelRef.current = label;
+                setShipTo(label);
+              }}
+            />
+            <Label className="text-xs font-medium">Ship to</Label>
+            <Input
+              type="text"
+              value={shipTo}
+              onChange={(e) => {
+                setSeparatePresetId(null);
+                setSeparateFromPreset(null);
+                setShipTo(e.target.value);
+              }}
+              placeholder="Address"
+              className="h-8 text-sm"
+            />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Notes</Label>

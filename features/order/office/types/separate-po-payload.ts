@@ -25,5 +25,7 @@ export type SeparatePoPayload = {
   poNumber: string;
   /** Parsed from Shopify order shipping when complete; null if unknown / cleared. */
   shippingAddress: PoAddress | null;
+  /** When ship-to was filled from a saved preset (`public.delivery_location_presets`). */
+  deliveryLocationPresetId?: string | null;
   lineItems: SeparatePoLinePayload[];
 };

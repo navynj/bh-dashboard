@@ -22,7 +22,9 @@ import {
   type LineFulfillmentStatus,
   type OfficePurchaseOrderBlock,
   type PoLineItemView,
+  type PurchaseOrderStatus,
 } from '../types';
+import type { EditPoFields, EditPoResult } from './MetaPanel';
 import { formatItemPrice } from '../mappers/map-purchase-order';
 import type { ShopifyOrderEditOperation } from '@/lib/api/schemas';
 import {
@@ -45,6 +47,11 @@ type Props = {
   purchaseOrder: OfficePurchaseOrderBlock;
   lineItemsLoading?: boolean;
   onRetryLineItems?: () => void;
+  /** Toggle hub PO pending (same as meta panel) — shown on the PO table header. */
+  onEditPo?: (
+    poId: string,
+    fields: EditPoFields,
+  ) => Promise<EditPoResult>;
 };
 
 const badgeCompact = 'rounded px-1.5 text-[10px]';
@@ -153,8 +160,10 @@ export function PoTable({
   purchaseOrder,
   lineItemsLoading,
   onRetryLineItems,
+  onEditPo,
 }: Props) {
   const router = useRouter();
+  const [pendingStatusSaving, setPendingStatusSaving] = useState(false);
   const [optimisticLineItems, setOptimisticLineItems] = useState<
     PoLineItemView[] | null
   >(null);
@@ -229,6 +238,20 @@ export function PoTable({
     setRecvValues({});
     setSaveError(null);
   }, []);
+
+  const handleTogglePoHubPending = useCallback(() => {
+    if (!onEditPo || purchaseOrder.id === 'new') return;
+    const next: PurchaseOrderStatus =
+      purchaseOrder.status === 'pending' ? 'unfulfilled' : 'pending';
+    setPendingStatusSaving(true);
+    void (async () => {
+      try {
+        await onEditPo(purchaseOrder.id, { status: next });
+      } finally {
+        setPendingStatusSaving(false);
+      }
+    })();
+  }, [onEditPo, purchaseOrder.id, purchaseOrder.status]);
 
   const toggleItem = useCallback((id: string) => {
     setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -663,6 +686,24 @@ export function PoTable({
       <div className="bg-background border border-border rounded-[10px] overflow-hidden mb-2.5">
         <div className="flex items-center justify-between px-3.5 py-2 border-b bg-muted/40">
           <div className="text-[12px] font-medium">{purchaseOrder.title}</div>
+          {onEditPo && purchaseOrder.id !== 'new' && (
+            <Button
+              type="button"
+              variant={
+                purchaseOrder.status === 'pending' ? 'default' : 'outline'
+              }
+              size="xs"
+              className="text-[10px] rounded-[5px] shrink-0"
+              disabled={pendingStatusSaving}
+              onClick={() => void handleTogglePoHubPending()}
+            >
+              {pendingStatusSaving
+                ? 'Saving…'
+                : purchaseOrder.status === 'pending'
+                  ? 'Clear pending'
+                  : 'Mark PO pending'}
+            </Button>
+          )}
         </div>
         {lineItemsLoading ? (
           <div className="flex items-center justify-center gap-2 py-6 text-[12px] text-muted-foreground">
@@ -731,15 +772,35 @@ export function PoTable({
               </Button>
             </>
           ) : (
-            <Button
-              variant="outline"
-              size="xs"
-              className="text-[10px] rounded-[5px]"
-              disabled={fulfillMode}
-              onClick={enterOrderEditMode}
-            >
-              Edit order lines
-            </Button>
+            <>
+              {onEditPo && purchaseOrder.id !== 'new' && (
+                <Button
+                  type="button"
+                  variant={
+                    purchaseOrder.status === 'pending' ? 'default' : 'outline'
+                  }
+                  size="xs"
+                  className="text-[10px] rounded-[5px] shrink-0"
+                  disabled={pendingStatusSaving || fulfillMode}
+                  onClick={() => void handleTogglePoHubPending()}
+                >
+                  {pendingStatusSaving
+                    ? 'Saving…'
+                    : purchaseOrder.status === 'pending'
+                      ? 'Clear pending'
+                      : 'Mark PO pending'}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="xs"
+                className="text-[10px] rounded-[5px]"
+                disabled={fulfillMode}
+                onClick={enterOrderEditMode}
+              >
+                Edit order lines
+              </Button>
+            </>
           )}
         </div>
       </div>

@@ -34,6 +34,7 @@ import type {
   OfficeTableViewShopifyRow,
 } from '../types/office-table-view';
 import { OfficeOrderLineItemsDialog } from './OfficeOrderLineItemsDialog';
+import { PoEmailSentProgress } from './PoEmailSentProgress';
 import { ShopifyOrderMemoPopover } from './ShopifyOrderMemoPopover';
 
 type TableTab = 'shopify' | 'po';
@@ -1179,12 +1180,14 @@ export function OfficeTableSplitView({
         ) : (
           <table className="w-full border-collapse table-fixed">
             <colgroup>
-              <col className="w-[32%]" />
-              <col className="w-[14%]" />
-              <col className="w-[9%]" />
-              <col className="w-[17%]" />
+              <col className="w-[22%]" />
+              <col className="w-[11%]" />
+              <col className="w-[7%]" />
+              <col className="w-[11%]" />
               <col className="w-[12%]" />
               <col className="w-[8%]" />
+              <col className="w-[13%]" />
+              <col className="w-[7%]" />
               <col className="w-[8%]" />
             </colgroup>
             <thead className="sticky top-0 z-[1]">
@@ -1193,7 +1196,9 @@ export function OfficeTableSplitView({
                 <th className={th}>Supplier</th>
                 <th className={th}>Status</th>
                 <th className={th}>Created</th>
+                <th className={th}>Created by</th>
                 <th className={th}>Expected</th>
+                <th className={th}>Email delivered</th>
                 <th className={th}>Lines</th>
                 <th className={th}>Orders</th>
               </tr>
@@ -1231,8 +1236,36 @@ export function OfficeTableSplitView({
                   <td className={`${td} whitespace-nowrap`}>
                     {formatDateTime(r.createdAt)}
                   </td>
+                  <td className={`${td} break-words text-xs`}>
+                    {r.createdByLabel}
+                  </td>
                   <td className={`${td} whitespace-nowrap`}>
                     {formatDateOnly(r.expectedDate)}
+                  </td>
+                  <td className={`${td} whitespace-nowrap text-xs`}>
+                    {!r.poEmailTracked ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : r.emailDeliveryWaivedAt ? (
+                      <span className="text-muted-foreground">Waived</span>
+                    ) : (
+                      <div className="flex flex-col gap-0.5">
+                        <PoEmailSentProgress
+                          tracked
+                          deliveryCount={r.emailDeliveryCount}
+                          expectedRecipientCount={r.expectedPoEmailRecipients}
+                          emailSentAt={r.emailSentAt}
+                          emailReplyReceivedAt={r.emailReplyReceivedAt}
+                          emphasizePending={r.emailDeliveryOutstanding}
+                          className="mt-0"
+                        />
+                        {(r.emailSentAt || r.emailDeliveryCount > 0) &&
+                        r.emailSentAt ? (
+                          <span className="text-[10px] text-muted-foreground">
+                            {formatDateTime(r.emailSentAt)}
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
                   </td>
                   <td className={td} onClick={(e) => e.stopPropagation()}>
                     {r.lineItemCount > 0 ? (
@@ -1259,7 +1292,7 @@ export function OfficeTableSplitView({
               {poGap ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={9}
                     className="py-12 text-center align-middle text-muted-foreground"
                   >
                     <Spinner className="mx-auto size-6" />

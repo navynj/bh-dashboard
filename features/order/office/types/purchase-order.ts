@@ -2,6 +2,7 @@ import type { ShopifyOrderDisplayFulfillmentStatus } from '@/types/shopify';
 import type { SupplierOrderChannelType } from '@/lib/order/supplier-order-channel';
 
 export type PurchaseOrderStatus =
+  | 'pending'
   | 'unfulfilled'
   | 'partially_fulfilled'
   | 'fulfilled'
@@ -62,6 +63,14 @@ export type PoEmailDeliveryItem = {
   sentAt: string;
 };
 
+/** Linked `public.delivery_location_presets` row when PO ship-to was chosen from a preset. */
+export type PoDeliveryLocationPresetSummary = {
+  id: string;
+  name: string;
+  /** `Location.code` values for locations that reference this preset (may be many). */
+  locationCodes: string[];
+};
+
 export type PoPanelMeta = {
   poNumber: string;
   status: PurchaseOrderStatus;
@@ -84,7 +93,10 @@ export type PoPanelMeta = {
   shippingAddress: PoAddress | null;
   billingAddress: PoAddress | null;
   billingSameAsShipping: boolean;
+  deliveryLocationPreset: PoDeliveryLocationPresetSummary | null;
   authorizedBy: string | null;
+  /** Hub user who created this PO; null for legacy CSV import or missing data. */
+  createdBy: { id: string; name: string | null; email: string | null } | null;
   emailSentAt: string | null;
   emailReplyReceivedAt: string | null;
   /** ISO — user chose not to send hub email; reminders suppressed until cleared or send logged. */

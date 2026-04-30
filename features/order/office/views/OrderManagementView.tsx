@@ -11,11 +11,16 @@ import { PostPoView } from '../components/PostPoView';
 import { MetaPanel } from '../components/MetaPanel';
 import { OrderProcessingBlock } from '../components/OrderProcessingBlock';
 import { PoEmailDeliveryAlertsStrip } from '../components/PoEmailDeliveryAlertsStrip';
+import { OfficePendingOrdersAlertsStrip } from '../components/OfficePendingOrdersAlertsStrip';
 import {
   collectPoEmailDeliveryAlerts,
   pickStatusTabForEmailAlertPo,
   type PoEmailDeliveryAlertItem,
 } from '../utils/collect-po-email-delivery-alerts';
+import {
+  collectOfficePendingOrderAlerts,
+  type OfficePendingOrderAlertItem,
+} from '../utils/collect-office-pending-order-alerts';
 import { useRouter } from 'next/navigation';
 import { formatOfficeDateChip } from '../utils/format-date-label';
 import {
@@ -53,8 +58,9 @@ import type {
   SidebarCustomerGroup,
   Period,
   ShopifyOrderDraft,
+  PurchaseOrderStatus,
 } from '../types';
-import type { CreatePoPayload } from '../components/MetaPanel';
+import type { CreatePoPayload, EditPoFields } from '../components/MetaPanel';
 import type { SeparatePoPayload } from '../types';
 import {
   buildExpectedDateBuckets,
@@ -64,10 +70,12 @@ import {
 } from '../utils/sidebar-by-expected-date';
 import { buildSupplierFirstGroups } from '../utils/build-supplier-first-sidebar';
 import {
+  expectedDateKeysForPoPendingTab,
   expectedDateKeysForPoTab,
   isOfficePoDeliveryDone,
   supplierRowHasFulfilledListPo,
   supplierRowHasOpenDeliveryPo,
+  supplierRowHasPendingPo,
 } from '../utils/po-fulfillment-for-tab';
 import {
   mergeViewDataWithOptimisticPoCreates,
@@ -77,6 +85,12 @@ import {
 } from '../utils/merge-optimistic-po-create';
 import { mergeViewDataWithOptimisticEmailSent } from '../utils/merge-view-data-optimistic-email-sent';
 import { mergeViewDataWithOptimisticEmailWaived } from '../utils/merge-view-data-optimistic-email-waived';
+import { mergeViewDataWithOptimisticPoHubStatus } from '../utils/merge-view-data-optimistic-po-hub-status';
+import {
+  mergeViewDataWithOptimisticPoPanelEdits,
+  panelPatchFromEditPoFields,
+  type OptimisticPoPanelEditPatch,
+} from '../utils/merge-view-data-optimistic-po-panel-edit';
 import { filterInboxDraftsForDisplay } from '../utils/filter-inbox-drafts-for-display';
 import { buildPoPdfInput, openPoPdfPrint } from '../utils/purchase-order-pdf';
 import { CreateShopifyOrderDialog } from '../components/CreateShopifyOrderDialog';
@@ -306,6 +320,14 @@ export function OrderManagementView({
   const [optimisticEmailWaivedClearPoIds, setOptimisticEmailWaivedClearPoIds] =
     useState<Record<string, true>>({});
 
+  /** Hub PO status (`pending` / `unfulfilled`) until PUT completes and data refreshes. */
+  const [optimisticPoHubStatusByPoId, setOptimisticPoHubStatusByPoId] =
+    useState<Record<string, PurchaseOrderStatus>>({});
+
+  /** `panelMeta` fields saved via MetaPanel PUT until server props refresh. */
+  const [optimisticPoPanelEditByPoId, setOptimisticPoPanelEditByPoId] =
+    useState<Record<string, OptimisticPoPanelEditPatch>>({});
+
   const [
     optimisticDeletedPurchaseOrderIds,
     setOptimisticDeletedPurchaseOrderIds,
@@ -327,6 +349,8 @@ export function OrderManagementView({
     setOptimisticEmailSentAtByPoId({});
     setOptimisticEmailWaivedAtByPoId({});
     setOptimisticEmailWaivedClearPoIds({});
+    setOptimisticPoHubStatusByPoId({});
+    setOptimisticPoPanelEditByPoId({});
     setOptimisticDeletedPurchaseOrderIds(new Set());
     setLazyPoLineItems({});
     setLazyPoLineItemsFetchFailed({});
@@ -394,7 +418,15 @@ export function OrderManagementView({
       optimisticEmailWaivedAtByPoId,
       waivedClearSet,
     );
-    return mergeViewDataWithLazyLineItems(afterEmailWaived, lazyPoLineItems);
+    const afterPoHubStatus = mergeViewDataWithOptimisticPoHubStatus(
+      afterEmailWaived,
+      optimisticPoHubStatusByPoId,
+    );
+    const afterPoPanelEdit = mergeViewDataWithOptimisticPoPanelEdits(
+      afterPoHubStatus,
+      optimisticPoPanelEditByPoId,
+    );
+    return mergeViewDataWithLazyLineItems(afterPoPanelEdit, lazyPoLineItems);
   }, [
     viewDataAfterDraftArchive,
     optimisticPoPatchSets,
@@ -403,6 +435,8 @@ export function OrderManagementView({
     optimisticEmailSentAtByPoId,
     optimisticEmailWaivedAtByPoId,
     optimisticEmailWaivedClearPoIds,
+    optimisticPoHubStatusByPoId,
+    optimisticPoPanelEditByPoId,
     lazyPoLineItems,
   ]);
 
@@ -681,6 +715,7 @@ export function OrderManagementView({
   const computedCounts = useMemo(() => {
     const counts = {
       without_po: 0,
+      po_pending: 0,
       po_created: 0,
       fulfilled: 0,
       completed: 0,
@@ -693,6 +728,7 @@ export function OrderManagementView({
       }
       if (e.withoutPoDraftCount > 0) counts.without_po++;
       const vd = patchedViewDataMap[key];
+      if (supplierRowHasPendingPo(vd)) counts.po_pending++;
       if (e.poCreated && supplierRowHasOpenDeliveryPo(vd)) counts.po_created++;
       if (e.poCreated && supplierRowHasFulfilledListPo(vd) && !e.allCompleted) {
         counts.fulfilled++;
@@ -702,13 +738,19 @@ export function OrderManagementView({
     return counts;
   }, [states, patchedViewDataMap]);
 
-  const statusTabs: { id: StatusTab; label: string; count: number }[] = [
-    { id: 'without_po', label: 'Inbox', count: computedCounts.without_po },
-    { id: 'po_created', label: 'PO created', count: computedCounts.po_created },
-    { id: 'fulfilled', label: 'Fulfilled', count: computedCounts.fulfilled },
-    // Completed tab not in use for now
-    // { id: 'completed', label: 'Completed', count: computedCounts.completed },
-  ];
+  const statusTabs = useMemo(() => {
+    const all: { id: StatusTab; label: string; count: number }[] = [
+      { id: 'without_po', label: 'Inbox', count: computedCounts.without_po },
+      {
+        id: 'po_pending',
+        label: 'PO pending',
+        count: computedCounts.po_pending,
+      },
+      { id: 'po_created', label: 'PO created', count: computedCounts.po_created },
+      { id: 'fulfilled', label: 'Fulfilled', count: computedCounts.fulfilled },
+    ];
+    return all.filter((t) => t.id !== 'po_pending' || t.count > 0);
+  }, [computedCounts]);
 
   const currentDrafts = useMemo(() => {
     const raw = patchedViewDataMap[activeKey];
@@ -725,6 +767,11 @@ export function OrderManagementView({
     const pos = raw.type === 'post' ? raw.purchaseOrders : undefined;
     return filterInboxDraftsForDisplay(open, pos);
   }, [patchedViewDataMap, activeKey, showArchived, activeStatusTab, states]);
+
+  const metaInboxShopifyOrderIds = useMemo(
+    () => currentDrafts.filter((d) => !d.archivedAt).map((d) => d.id),
+    [currentDrafts],
+  );
 
   useEffect(() => {
     const inc: Record<string, boolean[]> = {};
@@ -900,6 +947,9 @@ export function OrderManagementView({
             shippingAddress: payload?.shippingAddress ?? null,
             billingAddress: payload?.billingAddress ?? null,
             billingSameAsShipping: payload?.billingSameAsShipping ?? true,
+            deliveryLocationPresetId:
+              payload?.deliveryLocationPresetId ?? undefined,
+            hubPending: payload?.hubPending === true,
           }),
         });
 
@@ -910,10 +960,6 @@ export function OrderManagementView({
           const officeBlock = body?.officeBlock?.id ? body.officeBlock : null;
           if (officeBlock) {
             const removedDraftIds = includedDrafts.map((d) => d.id);
-            pendingNewPoForPoCreatedTabRef.current = {
-              supplierKey: key,
-              poId: officeBlock.id,
-            };
             setOptimisticPoPatchesByKey((prev) => ({
               ...prev,
               [key]: { newBlock: officeBlock, removedDraftIds },
@@ -932,7 +978,25 @@ export function OrderManagementView({
               };
             });
             setSelectedPoBlockId(officeBlock.id);
-            showPoCreatedFollowUpToast(officeBlock, entry, key);
+            if (payload?.hubPending === true) {
+              pendingPoNavigationRef.current = {
+                supplierKey: key,
+                poId: officeBlock.id,
+              };
+              setMainPanel('grouped');
+              setShowArchived(false);
+              setActivePeriod('all');
+              setActiveStatusTab('po_pending');
+              toast.success(
+                `PO #${officeBlock.poNumber} created as pending — listed under PO Pending.`,
+              );
+            } else {
+              pendingNewPoForPoCreatedTabRef.current = {
+                supplierKey: key,
+                poId: officeBlock.id,
+              };
+              showPoCreatedFollowUpToast(officeBlock, entry, key);
+            }
           }
           router.refresh();
           return { ok: true };
@@ -1025,6 +1089,8 @@ export function OrderManagementView({
             shopifyOrderRefs: [{ orderNumber: payload.shopifyOrderNumber }],
             shippingAddress: payload.shippingAddress ?? undefined,
             billingSameAsShipping: true,
+            deliveryLocationPresetId:
+              payload.deliveryLocationPresetId ?? undefined,
           }),
         });
 
@@ -1089,37 +1155,122 @@ export function OrderManagementView({
   const handleEditPo = useCallback(
     async (
       poId: string,
-      fields: {
-        expectedDate?: string | null;
-        comment?: string | null;
-        poNumber?: string;
-      },
+      fields: EditPoFields,
     ): Promise<
       { ok: true } | { ok: false; reason: 'duplicate_po_number' | 'unknown' }
     > => {
+      const definedFieldKeys = (
+        Object.keys(fields) as (keyof EditPoFields)[]
+      ).filter((k) => fields[k] !== undefined);
+      const isHubStatusOnlyPut =
+        definedFieldKeys.length === 1 &&
+        definedFieldKeys[0] === 'status' &&
+        fields.status != null;
+      const nextHubStatus = isHubStatusOnlyPut ? fields.status! : null;
+
+      if (isHubStatusOnlyPut && nextHubStatus) {
+        setOptimisticPoHubStatusByPoId((prev) => ({
+          ...prev,
+          [poId]: nextHubStatus,
+        }));
+      }
+
+      const panelPatch = isHubStatusOnlyPut
+        ? null
+        : panelPatchFromEditPoFields(fields);
+      if (panelPatch) {
+        setOptimisticPoPanelEditByPoId((prev) => ({
+          ...prev,
+          [poId]: { ...(prev[poId] ?? {}), ...panelPatch },
+        }));
+      }
+
+      const rollbackHubStatusOptimistic = () => {
+        if (!isHubStatusOnlyPut) return;
+        setOptimisticPoHubStatusByPoId((prev) => {
+          const { [poId]: _, ...rest } = prev;
+          return rest;
+        });
+      };
+
+      const rollbackPanelEditOptimistic = () => {
+        if (!panelPatch) return;
+        setOptimisticPoPanelEditByPoId((prev) => {
+          const { [poId]: _, ...rest } = prev;
+          return rest;
+        });
+      };
+
       try {
         const res = await fetch(`/api/purchase-orders/${poId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(fields),
         });
+        const body = await res.json().catch(() => null);
+
         if (res.ok) {
+          if (isHubStatusOnlyPut && nextHubStatus) {
+            toast.success(
+              nextHubStatus === 'pending'
+                ? 'PO marked as pending'
+                : 'PO pending cleared',
+            );
+            if (nextHubStatus === 'pending') {
+              const supplierKey = findSupplierKeyForPurchaseOrderId(
+                patchedViewDataMap,
+                poId,
+              );
+              if (supplierKey) {
+                pendingPoNavigationRef.current = {
+                  supplierKey,
+                  poId,
+                };
+              }
+              setActiveStatusTab((tab) =>
+                tab === 'without_po' ||
+                tab === 'inbox' ||
+                tab === 'po_created'
+                  ? 'po_pending'
+                  : tab,
+              );
+              setActivePeriod('all');
+            }
+          }
           router.refresh();
           return { ok: true };
         }
-        const body = await res.json().catch(() => null);
+
+        rollbackHubStatusOptimistic();
+        rollbackPanelEditOptimistic();
+
         console.error('Edit PO failed:', body?.error ?? res.statusText);
         if (res.status === 409 && body?.code === 'PO_NUMBER_TAKEN') {
           return { ok: false, reason: 'duplicate_po_number' };
         }
-        if (body?.error) toast.error(String(body.error));
+
+        if (isHubStatusOnlyPut) {
+          toast.error(
+            typeof body?.error === 'string'
+              ? body.error
+              : 'Could not update PO status',
+          );
+        } else if (body?.error) {
+          toast.error(String(body.error));
+        }
+
         return { ok: false, reason: 'unknown' };
       } catch (err) {
+        rollbackHubStatusOptimistic();
+        rollbackPanelEditOptimistic();
         console.error('Edit PO error:', err);
+        if (isHubStatusOnlyPut) {
+          toast.error('Could not update PO status');
+        }
         return { ok: false, reason: 'unknown' };
       }
     },
-    [router],
+    [router, patchedViewDataMap],
   );
 
   const handleDeletePo = useCallback(
@@ -1286,6 +1437,96 @@ export function OrderManagementView({
     [states, router, viewDataMap],
   );
 
+  const handleArchiveSupplierRow = useCallback(
+    async (key: SupplierKey) => {
+      const e = states[key];
+      if (!e) return;
+      const confirmed = window.confirm(
+        'Archive this supplier row? Linked Shopify orders and POs are hidden until you turn on “Show archived”.',
+      );
+      if (!confirmed) return;
+
+      const snapshot = { ...e };
+      const shopifyIds = [...e.archiveShopifyOrderIds];
+      const poIds = [...e.archivePurchaseOrderIds];
+
+      setOptimisticArchivedOrderIds((prev) => {
+        const next = new Set(prev);
+        for (const id of shopifyIds) next.add(id);
+        return next;
+      });
+      setOptimisticUnarchivedOrderIds((prev) => {
+        const next = new Set(prev);
+        for (const id of shopifyIds) next.delete(id);
+        return next;
+      });
+
+      setStates((prev) => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          isArchived: true,
+          withoutPoDraftCount: 0,
+        },
+      }));
+
+      try {
+        const res = await fetch('/api/archive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            purchaseOrderIds: poIds.length > 0 ? poIds : undefined,
+            shopifyOrderIds: shopifyIds.length > 0 ? shopifyIds : undefined,
+            archive: true,
+          }),
+        });
+        if (!res.ok)
+          throw new Error(await res.text().catch(() => res.statusText));
+        router.refresh();
+      } catch (err) {
+        setStates((prev) => ({ ...prev, [key]: snapshot }));
+        setOptimisticArchivedOrderIds((prev) => {
+          const next = new Set(prev);
+          for (const id of shopifyIds) next.delete(id);
+          return next;
+        });
+        console.error('Archive supplier row error:', err);
+        toast.error('Could not archive');
+      }
+    },
+    [states, router],
+  );
+
+  const handleArchivePurchaseOrder = useCallback(
+    async (poId: string) => {
+      if (!poId || poId === '__drafts__' || poId === 'new') return;
+      const confirmed = window.confirm(
+        'Archive this PO? It is hidden from open lists until you show archived items.',
+      );
+      if (!confirmed) return;
+      try {
+        const res = await fetch('/api/archive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            purchaseOrderIds: [poId],
+            archive: true,
+          }),
+        });
+        if (!res.ok) {
+          toast.error('Could not archive PO');
+          return;
+        }
+        setSelectedPoBlockId((sel) => (sel === poId ? null : sel));
+        router.refresh();
+      } catch (err) {
+        console.error('Archive PO error:', err);
+        toast.error('Could not archive PO');
+      }
+    },
+    [router],
+  );
+
   const handleUnarchiveShopifyOrder = useCallback(
     async (shopifyOrderDbId: string) => {
       const key = activeKey;
@@ -1398,6 +1639,7 @@ export function OrderManagementView({
     }
 
     if (
+      activeStatusTab === 'po_pending' ||
       activeStatusTab === 'po_created' ||
       activeStatusTab === 'fulfilled' ||
       activeStatusTab === 'completed'
@@ -1408,6 +1650,9 @@ export function OrderManagementView({
         const vd = patchedViewDataMap[key];
         let inTab = false;
         switch (activeStatusTab) {
+          case 'po_pending':
+            inTab = supplierRowHasPendingPo(vd);
+            break;
           case 'po_created':
             inTab = entry.poCreated && supplierRowHasOpenDeliveryPo(vd);
             break;
@@ -1426,6 +1671,10 @@ export function OrderManagementView({
         if (!inTab) continue;
         if (activeStatusTab === 'completed') {
           for (const d of entry.expectedDates) {
+            if (d) dateSet.add(d);
+          }
+        } else if (activeStatusTab === 'po_pending') {
+          for (const d of expectedDateKeysForPoPendingTab(vd)) {
             if (d) dateSet.add(d);
           }
         } else {
@@ -1501,6 +1750,8 @@ export function OrderManagementView({
         case 'inbox':
         case 'without_po':
           return e.withoutPoDraftCount > 0;
+        case 'po_pending':
+          return supplierRowHasPendingPo(vd);
         case 'po_created':
           return e.poCreated && supplierRowHasOpenDeliveryPo(vd);
         case 'fulfilled':
@@ -1522,6 +1773,7 @@ export function OrderManagementView({
         case 'inbox':
         case 'without_po':
           return e.latestOrderedAt;
+        case 'po_pending':
         case 'po_created':
           return e.expectedDate;
         case 'fulfilled':
@@ -1572,6 +1824,27 @@ export function OrderManagementView({
     [states, patchedViewDataMap],
   );
 
+  const handleOfficePendingOrderStripNavigate = useCallback(
+    (it: OfficePendingOrderAlertItem) => {
+      setMainPanel('grouped');
+      setShowArchived(false);
+      setActivePeriod('all');
+      setActiveStatusTab('po_pending');
+      pendingPoNavigationRef.current = {
+        supplierKey: it.supplierKey,
+        poId: it.purchaseOrderId,
+      };
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (activeStatusTab !== 'po_pending') return;
+    if (computedCounts.po_pending > 0) return;
+    setActiveStatusTab('without_po');
+    setActivePeriod('all');
+  }, [activeStatusTab, computedCounts.po_pending]);
+
   const matchesPeriod = useCallback(
     (
       supplierKey: SupplierKey,
@@ -1607,6 +1880,11 @@ export function OrderManagementView({
 
       if (period.startsWith('expected_')) {
         const target = period.replace('expected_', '');
+        if (activeStatusTab === 'po_pending') {
+          return expectedDateKeysForPoPendingTab(
+            patchedViewDataMap[supplierKey],
+          ).includes(target);
+        }
         if (activeStatusTab === 'po_created') {
           return expectedDateKeysForPoTab(
             patchedViewDataMap[supplierKey],
@@ -1653,6 +1931,7 @@ export function OrderManagementView({
           });
         }
         if (
+          activeStatusTab === 'po_pending' ||
           activeStatusTab === 'po_created' ||
           activeStatusTab === 'fulfilled' ||
           activeStatusTab === 'completed'
@@ -1660,10 +1939,14 @@ export function OrderManagementView({
           const dateKeys =
             activeStatusTab === 'completed'
               ? e.expectedDates
-              : expectedDateKeysForPoTab(
-                  patchedViewDataMap[supplierKey],
-                  activeStatusTab === 'po_created' ? 'po_created' : 'fulfilled',
-                );
+              : activeStatusTab === 'po_pending'
+                ? expectedDateKeysForPoPendingTab(
+                    patchedViewDataMap[supplierKey],
+                  )
+                : expectedDateKeysForPoTab(
+                    patchedViewDataMap[supplierKey],
+                    activeStatusTab === 'po_created' ? 'po_created' : 'fulfilled',
+                  );
           return dateKeys.some(
             (ed) =>
               !!ed &&
@@ -1718,6 +2001,10 @@ export function OrderManagementView({
   const expectedDateBucketPoFilter = useMemo(():
     | ((po: OfficePurchaseOrderBlock) => boolean)
     | undefined => {
+    if (activeStatusTab === 'po_pending') {
+      return (po) =>
+        po.id !== 'new' && !po.archivedAt && po.status === 'pending';
+    }
     if (activeStatusTab === 'po_created') {
       return (po) => po.id !== 'new' && !isOfficePoDeliveryDone(po);
     }
@@ -2128,6 +2415,7 @@ export function OrderManagementView({
     const draftCount = draftList.filter((d) => !d.archivedAt).length;
 
     if (
+      activeStatusTab !== 'po_pending' &&
       draftCount > 0 &&
       (activeStatusTab === 'without_po' || activeStatusTab === 'inbox')
     ) {
@@ -2179,6 +2467,13 @@ export function OrderManagementView({
     setSelectedPoBlockId((prev) => {
       const stillValid = prev && vd.purchaseOrders.some((b) => b.id === prev);
       if (stillValid) return prev;
+      if (activeStatusTab === 'po_pending') {
+        const pend = vd.purchaseOrders.find(
+          (b) =>
+            b.id !== 'new' && !b.archivedAt && b.status === 'pending',
+        );
+        if (pend) return pend.id;
+      }
       return vd.purchaseOrders[0].id;
     });
   }, [
@@ -2190,9 +2485,19 @@ export function OrderManagementView({
     mainPanel,
   ]);
 
+  const centerPostViewData: ViewData = useMemo(() => {
+    if (viewData.type !== 'post' || activeStatusTab !== 'po_pending')
+      return viewData;
+    const pendingOnly = viewData.purchaseOrders.filter(
+      (p) => p.id !== 'new' && !p.archivedAt && p.status === 'pending',
+    );
+    if (pendingOnly.length === 0) return viewData;
+    return { ...viewData, purchaseOrders: pendingOnly };
+  }, [viewData, activeStatusTab]);
+
   let selectedPoPanelMeta: PoPanelMeta | undefined;
-  if (viewData.type === 'post' && selectedPoBlockId) {
-    selectedPoPanelMeta = viewData.purchaseOrders.find(
+  if (centerPostViewData.type === 'post' && selectedPoBlockId) {
+    selectedPoPanelMeta = centerPostViewData.purchaseOrders.find(
       (b) => b.id === selectedPoBlockId,
     )?.panelMeta;
   }
@@ -2207,7 +2512,7 @@ export function OrderManagementView({
     };
   }, [activeKey, customerGroups]);
 
-  /** Latest Vancouver order-day among drafts included for “Create PO” (min allowed expected date). */
+  /** Latest Vancouver order-day among included drafts — floor so expected date is not before any linked order. */
   const minExpectedYmdFromIncludedDrafts = useMemo(() => {
     const includedDrafts = currentDrafts.filter((d) => {
       const inc = draftInclusions[d.id];
@@ -2223,10 +2528,11 @@ export function OrderManagementView({
   const defaultExpectedYmd = useMemo(() => {
     const creationYmd = toVancouverYmd(new Date());
     if (!entry) return creationYmd;
-    const ref = entry.latestOrderedAt ?? creationYmd;
+    /** Fallback only if `creationYmd` parse fails inside `computeDefaultExpectedYmd`. */
+    const referenceYmd = entry.latestOrderedAt ?? creationYmd;
     let y = computeDefaultExpectedYmd({
       schedule: entry.deliverySchedule,
-      referenceYmd: ref,
+      referenceYmd,
       creationYmd,
     });
     if (
@@ -2239,16 +2545,27 @@ export function OrderManagementView({
   }, [entry, minExpectedYmdFromIncludedDrafts]);
 
   const selectedPoPrintBlock =
-    viewData.type === 'post' &&
+    centerPostViewData.type === 'post' &&
     selectedPoBlockId &&
     selectedPoBlockId !== '__drafts__'
-      ? (viewData.purchaseOrders.find((b) => b.id === selectedPoBlockId) ??
-        null)
+      ? (centerPostViewData.purchaseOrders.find(
+          (b) => b.id === selectedPoBlockId,
+        ) ?? null)
       : null;
 
   const poEmailDeliveryAlertItems = useMemo(
     () =>
       collectPoEmailDeliveryAlerts({
+        viewDataMap: patchedViewDataMap,
+        states,
+        customerGroups,
+      }),
+    [patchedViewDataMap, states, customerGroups],
+  );
+
+  const officePendingOrderAlertItems = useMemo(
+    () =>
+      collectOfficePendingOrderAlerts({
         viewDataMap: patchedViewDataMap,
         states,
         customerGroups,
@@ -2307,7 +2624,8 @@ export function OrderManagementView({
         poInternalNote={selectedPoPanelMeta?.comment ?? null}
         poEmailSentAt={selectedPoPanelMeta?.emailSentAt ?? null}
         poEmailDeliveryOutstanding={
-          activeStatusTab === 'po_created' &&
+          (activeStatusTab === 'po_created' ||
+            activeStatusTab === 'po_pending') &&
           (selectedPoPrintBlock?.emailDeliveryOutstanding ?? false)
         }
         selectedPoBlockId={selectedPoBlockId}
@@ -2383,10 +2701,11 @@ export function OrderManagementView({
           ) : (
             <PostPoView
               shopifyAdminStoreHandle={shopifyAdminStoreHandle}
-              viewData={viewData}
+              viewData={centerPostViewData as PostViewData}
               selectedPoBlockId={selectedPoBlockId}
               lineItemsLoading={lineItemsLoading}
               onRetryLineItems={handleRetryLineItemFetch}
+              onEditPo={handleEditPo}
             />
           )}
         </div>
@@ -2402,6 +2721,8 @@ export function OrderManagementView({
           onPoEmailDeliveryWaivedChange={handlePoEmailDeliveryWaivedChange}
           poPanelMeta={selectedPoPanelMeta}
           selectedPoBlockId={selectedPoBlockId}
+          onArchive={handleArchiveSupplierRow}
+          onArchivePurchaseOrder={handleArchivePurchaseOrder}
           onUnarchive={handleUnarchive}
           draftPoNumber={effectivePoNumber}
           poNumberIsManual={poNumberIsManual}
@@ -2413,6 +2734,7 @@ export function OrderManagementView({
           poPrintBlock={selectedPoPrintBlock}
           poPrintHeadline={poPrintHeadline}
           lineItemsLoading={lineItemsLoading}
+          inboxShopifyOrderIds={metaInboxShopifyOrderIds}
         />
       </div>
     </div>
@@ -2466,6 +2788,10 @@ export function OrderManagementView({
             router.refresh();
           }}
           onEmailDeliveryWaivedChange={handlePoEmailDeliveryWaivedChange}
+        />
+        <OfficePendingOrdersAlertsStrip
+          items={officePendingOrderAlertItems}
+          onNavigateToPendingPo={handleOfficePendingOrderStripNavigate}
         />
 
         {shopifyAdminApiConfigured ? (
@@ -2574,6 +2900,7 @@ export function OrderManagementView({
             />
 
             {(useInboxCustomerLayout ||
+              activeStatusTab === 'po_pending' ||
               activeStatusTab === 'po_created' ||
               activeStatusTab === 'fulfilled' ||
               showArchived) && (

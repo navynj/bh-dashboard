@@ -29,6 +29,8 @@ export type ShopifyOrderDraft = {
   id: string;
   /** Hub DB `shopify_orders.archived_at` (ISO); null = not archived. */
   archivedAt?: string | null;
+  /** Hub DB `shopify_orders.office_pending_at` (ISO); null = not on hold. */
+  officePendingAt?: string | null;
   /** Shopify Order GID for Admin order edits. */
   shopifyOrderGid: string;
   /** ISO currency from synced order (e.g. CAD). */

@@ -16,9 +16,10 @@ import {
   getShopifyAdminStoreHandleForOfficeUi,
   isShopifyAdminEnvConfigured,
 } from '@/lib/shopify/env';
-import type {
-  PrismaPoWithRelations,
-  PrismaPoSlimWithRelations,
+import {
+  prismaPoCreatedByInclude,
+  type PrismaPoWithRelations,
+  type PrismaPoSlimWithRelations,
 } from '@/features/order/office/mappers/map-purchase-order';
 import type { PurchaseOrderStatus } from '@/features/order/office/types/purchase-order';
 import { derivePurchaseOrderStatusFromShopify } from '@/lib/order/purchase-order-status-compute';
@@ -85,6 +86,15 @@ async function OfficeInboxContent() {
         shopifyOrders: { include: { customer: true } },
         supplier: true,
         emailDeliveries: { orderBy: { sentAt: 'desc' } },
+        createdBy: prismaPoCreatedByInclude,
+        deliveryLocationPreset: {
+          include: {
+            locations: {
+              select: { id: true, code: true, name: true },
+              orderBy: { code: 'asc' },
+            },
+          },
+        },
       },
     }),
     // Archived POs — no shopifyOrderLineItem, no emailDeliveries (not needed for sidebar)
@@ -95,6 +105,15 @@ async function OfficeInboxContent() {
         lineItems: { orderBy: { sequence: 'asc' } },
         shopifyOrders: { include: { customer: true } },
         supplier: true,
+        createdBy: prismaPoCreatedByInclude,
+        deliveryLocationPreset: {
+          include: {
+            locations: {
+              select: { id: true, code: true, name: true },
+              orderBy: { code: 'asc' },
+            },
+          },
+        },
       },
       take: 100,
     }),

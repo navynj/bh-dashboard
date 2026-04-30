@@ -29,6 +29,9 @@ export function pickStatusTabForEmailAlertPo(args: {
     isOfficePoDeliveryDone(po) &&
     po.status !== 'completed';
 
+  if (po.status === 'pending' && openDelivery) {
+    return 'po_pending';
+  }
   if (openDelivery && entry.poCreated && supplierRowHasOpenDeliveryPo(vd)) {
     return 'po_created';
   }
@@ -80,7 +83,8 @@ export function collectPoEmailDeliveryAlerts(args: {
     if (!entry) continue;
 
     for (const po of vd.purchaseOrders) {
-      if (po.id === 'new' || !po.emailDeliveryOutstanding) continue;
+      if (po.id === 'new' || po.status === 'pending') continue;
+      if (!po.emailDeliveryOutstanding) continue;
       if (seen.has(po.id)) continue;
       seen.add(po.id);
       out.push({
@@ -113,7 +117,10 @@ export function supplierHasPoEmailDeliveryOutstanding(
   const vd = viewDataMap[supplierKey];
   if (vd?.type !== 'post') return false;
   return vd.purchaseOrders.some(
-    (p) => p.id !== 'new' && p.emailDeliveryOutstanding,
+    (p) =>
+      p.id !== 'new' &&
+      p.status !== 'pending' &&
+      p.emailDeliveryOutstanding,
   );
 }
 
@@ -134,6 +141,7 @@ export function supplierHasPoEmailDeliveryOutstandingInVisiblePos(
   return vd.purchaseOrders.some(
     (p) =>
       p.id !== 'new' &&
+      p.status !== 'pending' &&
       allow.has(p.id) &&
       p.emailDeliveryOutstanding,
   );

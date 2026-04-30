@@ -60,18 +60,21 @@ function nextDeliveryFromWeekdays(
 
 export type ComputeDefaultExpectedYmdArgs = {
   schedule: SupplierDeliverySchedule | null | undefined;
-  /** Vancouver `YYYY-MM-DD` (e.g. latest order day); must be valid or falls back. */
+  /**
+   * Vancouver `YYYY-MM-DD` — legacy linked-order placement hint; used only when
+   * `creationYmd` fails to parse (fallback anchor / slice return).
+   */
   referenceYmd: string;
   /**
-   * Vancouver `YYYY-MM-DD` for the calendar day the PO is being created (typically “today”).
-   * Used for `day_after_creation`; should be `toVancouverYmd(new Date())` from the client.
+   * Vancouver `YYYY-MM-DD` for the calendar day the PO is being created (typically "today").
+   * All schedule rules anchor on this day (not the original Shopify order day).
    */
   creationYmd: string;
 };
 
 /**
- * Default PO `expectedDate` as `YYYY-MM-DD` from supplier schedule and reference day.
- * Unknown schedule / no match → `referenceYmd` if valid, else today Vancouver from caller.
+ * Default PO `expectedDate` as `YYYY-MM-DD` from supplier schedule, anchored on **PO creation
+ * day** (`creationYmd`). Unknown schedule → that same calendar day (not linked order day).
  */
 export function computeDefaultExpectedYmd({
   schedule,
@@ -79,23 +82,25 @@ export function computeDefaultExpectedYmd({
   creationYmd,
 }: ComputeDefaultExpectedYmdArgs): string {
   const ref = parseYmdUtcNoon(referenceYmd);
-  if (Number.isNaN(ref.getTime())) {
-    return referenceYmd.slice(0, 10);
-  }
-
   const createDay = parseYmdUtcNoon(creationYmd);
   const creationAnchor = Number.isNaN(createDay.getTime()) ? ref : createDay;
+  const anchor = Number.isNaN(creationAnchor.getTime()) ? ref : creationAnchor;
+
+  if (Number.isNaN(anchor.getTime())) {
+    const s = !Number.isNaN(ref.getTime()) ? referenceYmd : creationYmd;
+    return s.slice(0, 10);
+  }
 
   if (!schedule) {
-    return formatYmdUtc(ref);
+    return formatYmdUtc(anchor);
   }
 
   if (schedule.rule.kind === 'day_after_creation') {
-    return formatYmdUtc(addUtcDays(creationAnchor, 1));
+    return formatYmdUtc(addUtcDays(anchor, 1));
   }
 
   if (schedule.deliveryWeekdays.length === 0) {
-    return formatYmdUtc(ref);
+    return formatYmdUtc(anchor);
   }
 
   const sortedDays = [...new Set(schedule.deliveryWeekdays)].sort(
@@ -103,19 +108,19 @@ export function computeDefaultExpectedYmd({
   );
 
   if (schedule.rule.kind === 'next_delivery_day') {
-    const hit = nextDeliveryFromWeekdays(ref, sortedDays, 21);
-    return hit ?? formatYmdUtc(ref);
+    const hit = nextDeliveryFromWeekdays(anchor, sortedDays, 21);
+    return hit ?? formatYmdUtc(anchor);
   }
 
-  const isoDow = getIsoDayUtc(ref);
+  const isoDow = getIsoDayUtc(anchor);
   for (const w of schedule.rule.windows) {
     if (w.orderWeekdays.includes(isoDow)) {
       return formatYmdUtc(
-        deliveryDateFromWindow(ref, w.deliverWeekday, w.deliverIn),
+        deliveryDateFromWindow(anchor, w.deliverWeekday, w.deliverIn),
       );
     }
   }
 
-  const fallback = nextDeliveryFromWeekdays(ref, sortedDays, 21);
-  return fallback ?? formatYmdUtc(ref);
+  const fallback = nextDeliveryFromWeekdays(anchor, sortedDays, 21);
+  return fallback ?? formatYmdUtc(anchor);
 }

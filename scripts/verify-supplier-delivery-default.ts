@@ -15,14 +15,14 @@ const bh = supplierDeliveryScheduleFromPartitionWindows([
 
 const creationYmd = '2026-04-20';
 
-// Wed 2026-04-22 → BH window Tue–Thu → next ISO week Tue = 2026-04-28
+// PO created Mon 2026-04-20 → BH Fri–Mon window → same ISO week Fri (not Wed order ref)
 assert.equal(
   computeDefaultExpectedYmd({
     schedule: bh,
     referenceYmd: '2026-04-22',
     creationYmd,
   }),
-  '2026-04-28',
+  '2026-04-24',
 );
 
 // Mon 2026-04-20 → Fri–Mon window → same ISO week Fri = 2026-04-24
@@ -45,14 +45,14 @@ assert.equal(
   '2026-04-24',
 );
 
-// Tue 2026-04-21 → next ISO week Tue (not same calendar Tue)
+// PO created Mon 2026-04-20 — anchor Mon, not Tue reference → Fri–Mon window → Fri same week
 assert.equal(
   computeDefaultExpectedYmd({
     schedule: bh,
     referenceYmd: '2026-04-21',
     creationYmd,
   }),
-  '2026-04-28',
+  '2026-04-24',
 );
 
 assert.equal(
@@ -64,10 +64,10 @@ assert.equal(
     referenceYmd: '2026-04-21',
     creationYmd,
   }),
-  '2026-04-24',
+  '2026-04-21',
 );
 
-// Sat -> next Tue for Tue/Fri schedule
+// PO created Mon — next Tue/Fri strictly after Mon is Tue
 assert.equal(
   computeDefaultExpectedYmd({
     schedule: {
@@ -77,7 +77,7 @@ assert.equal(
     referenceYmd: '2026-04-25',
     creationYmd,
   }),
-  '2026-04-28',
+  '2026-04-21',
 );
 
 assert.equal(

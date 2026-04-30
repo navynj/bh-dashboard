@@ -28,6 +28,7 @@ import type {
   LinkedShopifyOrder,
   PoAddress,
   OfficePurchaseOrderBlock,
+  PurchaseOrderStatus,
 } from '../types';
 import {
   buildPoPdfInput,
@@ -38,6 +39,7 @@ import {
   MetaPoNumberInput,
   type MetaPoNumberFieldError,
 } from './MetaPoNumberInput';
+import { DeliveryLocationPresetPicker } from './DeliveryLocationPresetPicker';
 import { postSendPurchaseOrderEmail } from '../utils/post-send-po-email';
 import { Spinner } from '@/components/ui/spinner';
 
@@ -72,15 +74,20 @@ export type CreatePoPayload = {
   shippingAddress: PoAddress | null;
   billingAddress: PoAddress | null;
   billingSameAsShipping: boolean;
+  deliveryLocationPresetId?: string | null;
+  /** Create PO with hub `pending` status (inbox → PO Pending tab only). */
+  hubPending?: boolean;
 };
 
 export type EditPoFields = {
   expectedDate?: string | null;
   comment?: string | null;
   poNumber?: string;
+  status?: PurchaseOrderStatus;
   shippingAddress?: PoAddress | null;
   billingAddress?: PoAddress | null;
   billingSameAsShipping?: boolean;
+  deliveryLocationPresetId?: string | null;
 };
 
 export type EditPoResult =
@@ -113,6 +120,7 @@ type Props = {
   poPanelMeta?: PoPanelMeta;
   selectedPoBlockId?: string | null;
   onArchive?: (key: SupplierKey) => void;
+  onArchivePurchaseOrder?: (poId: string) => void;
   onUnarchive?: (key: SupplierKey) => void;
   draftPoNumber?: string;
   poNumberIsManual?: boolean;
@@ -127,6 +135,8 @@ type Props = {
   poPrintHeadline?: string | null;
   /** Line items are being lazy-loaded — disable actions that depend on them. */
   lineItemsLoading?: boolean;
+  /** Inbox Shopify order ids shown for this supplier row (non-archived drafts). */
+  inboxShopifyOrderIds?: string[];
 };
 
 export function MetaPanel({
@@ -142,6 +152,7 @@ export function MetaPanel({
   poPanelMeta,
   selectedPoBlockId,
   onArchive,
+  onArchivePurchaseOrder,
   onUnarchive,
   draftPoNumber,
   poNumberIsManual,
@@ -153,6 +164,7 @@ export function MetaPanel({
   poPrintBlock,
   poPrintHeadline,
   lineItemsLoading,
+  inboxShopifyOrderIds,
 }: Props) {
   return (
     <div className="w-[192px] flex-shrink-0 border-l bg-background flex flex-col overflow-y-auto">
@@ -172,6 +184,7 @@ export function MetaPanel({
           customerDefaultShipping={customerDefaultShipping}
           customerDefaultBilling={customerDefaultBilling}
           customerBillingSameAsShipping={customerBillingSameAsShipping}
+          inboxShopifyOrderIds={inboxShopifyOrderIds}
         />
       ) : (
         <WithPoMeta
@@ -183,7 +196,7 @@ export function MetaPanel({
           onPoEmailSent={onPoEmailSent}
           onPoEmailDeliveryWaivedChange={onPoEmailDeliveryWaivedChange}
           activeKey={activeKey}
-          onArchive={onArchive}
+          onArchivePurchaseOrder={onArchivePurchaseOrder}
           onUnarchive={onUnarchive}
           poPrintBlock={poPrintBlock}
           poPrintHeadline={poPrintHeadline}
@@ -361,6 +374,7 @@ function WithoutPoMeta({
   customerDefaultShipping,
   customerDefaultBilling,
   customerBillingSameAsShipping,
+  inboxShopifyOrderIds,
 }: {
   entry: SupplierEntry;
   activeKey: SupplierKey;
@@ -379,6 +393,7 @@ function WithoutPoMeta({
   customerDefaultShipping?: PoAddress | null;
   customerDefaultBilling?: PoAddress | null;
   customerBillingSameAsShipping?: boolean;
+  inboxShopifyOrderIds?: string[];
 }) {
   const [createPoNumberError, setCreatePoNumberError] =
     useState<MetaPoNumberFieldError>(null);
@@ -387,17 +402,18 @@ function WithoutPoMeta({
   const [shipAddr, setShipAddr] = useState<PoAddress>(
     customerDefaultShipping ?? { ...EMPTY_ADDR },
   );
+  const [shipPresetId, setShipPresetId] = useState<string | null>(null);
   const [billAddr, setBillAddr] = useState<PoAddress>(
     customerDefaultBilling ?? { ...EMPTY_ADDR },
   );
   const [billSame, setBillSame] = useState(
     customerBillingSameAsShipping ?? true,
   );
-
   useEffect(() => {
     setCreatePoNumberError(null);
     setShipAddrEditOpen(false);
     setShipAddr(customerDefaultShipping ?? { ...EMPTY_ADDR });
+    setShipPresetId(null);
     setBillAddr(customerDefaultBilling ?? { ...EMPTY_ADDR });
     setBillSame(customerBillingSameAsShipping ?? true);
   }, [
@@ -407,28 +423,36 @@ function WithoutPoMeta({
     customerBillingSameAsShipping,
   ]);
 
-  const handleCreate = async () => {
-    if (poNumberIsManual && !(draftPoNumber ?? '').trim()) {
-      setCreatePoNumberError('required');
-      return;
-    }
+  const buildCreatePayload = (): CreatePoPayload => {
     const form = document.getElementById(
       `meta-form-${activeKey}`,
     ) as HTMLFormElement | null;
     const fd = form ? new FormData(form) : null;
+    return {
+      expectedDate: (fd?.get('expectedDate') as string) || null,
+      comment: (fd?.get('comment') as string) || null,
+      shippingAddress: isAddrEmpty(shipAddr) ? null : shipAddr,
+      billingAddress: billSame
+        ? null
+        : isAddrEmpty(billAddr)
+          ? null
+          : billAddr,
+      billingSameAsShipping: billSame,
+      deliveryLocationPresetId: shipPresetId,
+    };
+  };
+
+  const handleCreate = async (hubPending?: boolean) => {
+    if (poNumberIsManual && !(draftPoNumber ?? '').trim()) {
+      setCreatePoNumberError('required');
+      return;
+    }
     setCreating(true);
     setCreatePoNumberError(null);
     try {
       const result = await onCreatePo(activeKey, {
-        expectedDate: (fd?.get('expectedDate') as string) || null,
-        comment: (fd?.get('comment') as string) || null,
-        shippingAddress: isAddrEmpty(shipAddr) ? null : shipAddr,
-        billingAddress: billSame
-          ? null
-          : isAddrEmpty(billAddr)
-            ? null
-            : billAddr,
-        billingSameAsShipping: billSame,
+        ...buildCreatePayload(),
+        hubPending: hubPending === true,
       });
       if (result.ok) {
         // success toast is shown in OrderManagementView (needs access to navigation state)
@@ -514,6 +538,16 @@ function WithoutPoMeta({
       </Section>
 
       <Section>
+        <DeliveryLocationPresetPicker
+          compact
+          className="mb-1.5"
+          selectedPresetId={shipPresetId}
+          onApply={({ presetId, poAddress }) => {
+            setShipPresetId(presetId);
+            setShipAddr(poAddress);
+          }}
+          onClear={() => setShipPresetId(null)}
+        />
         {shipAddrEditOpen ? (
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between gap-1">
@@ -530,7 +564,10 @@ function WithoutPoMeta({
             <CompactAddressInput
               label=""
               address={shipAddr}
-              onChange={setShipAddr}
+              onChange={(a) => {
+                setShipPresetId(null);
+                setShipAddr(a);
+              }}
             />
           </div>
         ) : (
@@ -590,14 +627,22 @@ function WithoutPoMeta({
             'Create PO now'
           )}
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          className="w-full justify-center text-[11px] rounded-[5px]"
-        >
-          Save edits
-        </Button>
+        {inboxShopifyOrderIds && inboxShopifyOrderIds.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="w-full justify-center text-[11px] rounded-[5px]"
+            disabled={creating}
+            onClick={() => void handleCreate(true)}
+          >
+            {creating ? (
+              <Spinner className="h-4 w-4 mr-1" />
+            ) : (
+              'Mark as PO pending'
+            )}
+          </Button>
+        )}
         {(entry.isArchived ? onUnarchive : onArchive) ? (
           <>
             <Separator className="my-0.5" />
@@ -645,7 +690,7 @@ function WithPoMeta({
   onPoEmailSent,
   onPoEmailDeliveryWaivedChange,
   activeKey,
-  onArchive,
+  onArchivePurchaseOrder,
   onUnarchive,
   poPrintBlock,
   poPrintHeadline,
@@ -664,7 +709,7 @@ function WithPoMeta({
     waived: boolean,
   ) => void | Promise<void>;
   activeKey: SupplierKey;
-  onArchive?: (key: SupplierKey) => void;
+  onArchivePurchaseOrder?: (poId: string) => void;
   onUnarchive?: (key: SupplierKey) => void;
   poPrintBlock?: OfficePurchaseOrderBlock | null;
   poPrintHeadline?: string | null;
@@ -688,6 +733,7 @@ function WithPoMeta({
   >(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pendingStatusSaving, setPendingStatusSaving] = useState(false);
 
   useEffect(() => {
     setEmailSentLocal(!!poPanelMeta?.emailSentAt);
@@ -763,6 +809,14 @@ function WithPoMeta({
 
   const poNumber = poPanelMeta?.poNumber ?? entry.referenceKey;
   const created = fmtDate(poPanelMeta?.dateCreated ?? entry.dateCreated);
+  const createdByLabel = (() => {
+    const u = poPanelMeta?.createdBy;
+    if (!u) return '—';
+    const name = u.name?.trim() ?? '';
+    const email = u.email?.trim() ?? '';
+    if (name && email) return `${name} (${email})`;
+    return name || email || '—';
+  })();
   const expected = fmtDate(poPanelMeta?.expectedDate ?? entry.expectedDate);
   const internalNote = poPanelMeta?.comment?.trim() ?? '';
   const statusLabel = poPanelMeta?.status ?? 'unfulfilled';
@@ -808,6 +862,7 @@ function WithPoMeta({
   const [editShipAddr, setEditShipAddr] = useState<PoAddress>({
     ...EMPTY_ADDR,
   });
+  const [editShipPresetId, setEditShipPresetId] = useState<string | null>(null);
   const [editBillAddr, setEditBillAddr] = useState<PoAddress>({
     ...EMPTY_ADDR,
   });
@@ -823,6 +878,7 @@ function WithPoMeta({
     setPoNumberError(null);
     setSaveFailed(false);
     setEditShipAddr(poShipAddr ?? { ...EMPTY_ADDR });
+    setEditShipPresetId(poPanelMeta?.deliveryLocationPreset?.id ?? null);
     setEditBillAddr(poBillAddr ?? { ...EMPTY_ADDR });
     setEditBillSame(poBillSame);
     setEditing(true);
@@ -851,6 +907,7 @@ function WithPoMeta({
             ? null
             : editBillAddr,
         billingSameAsShipping: editBillSame,
+        deliveryLocationPresetId: editShipPresetId,
       });
       if (result.ok) {
         setEditing(false);
@@ -959,6 +1016,11 @@ function WithPoMeta({
       </Section>
 
       <Section>
+        <MetaLabel>Created by</MetaLabel>
+        <MetaValue>{createdByLabel}</MetaValue>
+      </Section>
+
+      <Section>
         <MetaLabel>Expected delivery</MetaLabel>
         {editing ? (
           <YmdDateInput
@@ -1028,13 +1090,40 @@ function WithPoMeta({
           )}
         </div>
         {editing ? (
-          <CompactAddressInput
-            label=""
-            address={editShipAddr}
-            onChange={setEditShipAddr}
-          />
+          <>
+            <DeliveryLocationPresetPicker
+              compact
+              className="mb-1.5"
+              selectedPresetId={editShipPresetId}
+              onApply={({ presetId, poAddress }) => {
+                setEditShipPresetId(presetId);
+                setEditShipAddr(poAddress);
+              }}
+              onClear={() => setEditShipPresetId(null)}
+            />
+            <CompactAddressInput
+              label=""
+              address={editShipAddr}
+              onChange={(a) => {
+                setEditShipPresetId(null);
+                setEditShipAddr(a);
+              }}
+            />
+          </>
         ) : (
-          <MetaValue>{formatAddrOneLine(poShipAddr)}</MetaValue>
+          <>
+            <MetaValue>{formatAddrOneLine(poShipAddr)}</MetaValue>
+            {poPanelMeta?.deliveryLocationPreset ? (
+              <div className="mt-0.5">
+                <MetaSub>
+                  프리셋: {poPanelMeta.deliveryLocationPreset.name}
+                  {poPanelMeta.deliveryLocationPreset.locationCodes.length > 0
+                    ? ` (${poPanelMeta.deliveryLocationPreset.locationCodes.join(', ')})`
+                    : ' (Location 미연결)'}
+                </MetaSub>
+              </div>
+            ) : null}
+          </>
         )}
       </Section>
 
@@ -1248,30 +1337,32 @@ function WithPoMeta({
             >
               Delete PO
             </Button>
-            {(entry.isArchived ? onUnarchive : onArchive) ? (
-              <>
-                <Separator className="my-0.5" />
-                {entry.isArchived ? (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="w-full justify-center text-[11px] rounded-[5px]"
-                    onClick={() => onUnarchive?.(activeKey)}
-                  >
-                    Unarchive
-                  </Button>
-                ) : (
+            {entry.isArchived
+              ? onUnarchive && (
                   <Button
                     variant="ghost"
                     size="xs"
                     className="w-full justify-center text-[11px] rounded-[5px] text-muted-foreground"
-                    onClick={() => onArchive?.(activeKey)}
+                    onClick={() => onUnarchive(activeKey)}
                   >
-                    Archive
+                    Unarchive PO
+                  </Button>
+                )
+              : onArchivePurchaseOrder &&
+                selectedPoBlockId &&
+                selectedPoBlockId !== '__drafts__' &&
+                selectedPoBlockId !== 'new' && (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="w-full justify-center text-[11px] rounded-[5px] text-muted-foreground"
+                    onClick={() =>
+                      onArchivePurchaseOrder(selectedPoBlockId)
+                    }
+                  >
+                    Archive PO
                   </Button>
                 )}
-              </>
-            ) : null}
           </>
         )}
       </div>
@@ -1287,6 +1378,41 @@ function WithPoMeta({
           </div>
         </Section>
       )}
+
+      {selectedPoBlockId &&
+        selectedPoBlockId !== '__drafts__' &&
+        selectedPoBlockId !== 'new' && (
+          <Section>
+            <Button
+              type="button"
+              variant={statusLabel === 'pending' ? 'default' : 'outline'}
+              size="xs"
+              className="w-full justify-center text-[11px] rounded-[5px]"
+              disabled={pendingStatusSaving}
+              onClick={() => {
+                if (!selectedPoBlockId) return;
+                const next: PurchaseOrderStatus =
+                  statusLabel === 'pending' ? 'unfulfilled' : 'pending';
+                setPendingStatusSaving(true);
+                void (async () => {
+                  try {
+                    await onEditPo(selectedPoBlockId, {
+                      status: next,
+                    });
+                  } finally {
+                    setPendingStatusSaving(false);
+                  }
+                })();
+              }}
+            >
+              {pendingStatusSaving
+                ? 'Saving…'
+                : statusLabel === 'pending'
+                  ? 'Clear pending'
+                  : 'Mark PO pending'}
+            </Button>
+          </Section>
+        )}
 
       {/* Shopify sync */}
       <div className="mt-auto px-3 py-2.5 border-t">

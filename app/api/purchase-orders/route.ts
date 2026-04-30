@@ -3,7 +3,10 @@ import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
 import { parseBody, purchaseOrderCreateSchema } from '@/lib/api/schemas';
 import { toApiErrorResponse } from '@/lib/core/errors';
-import { mapPrismaPoToBlock } from '@/features/order/office/mappers/map-purchase-order';
+import {
+  mapPrismaPoToBlock,
+  prismaPoCreatedByInclude,
+} from '@/features/order/office/mappers/map-purchase-order';
 import { resolvePoCreateLineShopifyLinks } from '@/lib/order/resolve-po-create-line-shopify-links';
 import { loadVariantOfficeNotesMap } from '@/lib/order/shopify-variant-office-note';
 import {
@@ -107,6 +110,19 @@ export async function POST(request: NextRequest) {
       lineResolvedVariantGids,
     } = resolved;
 
+    if (data.deliveryLocationPresetId) {
+      const preset = await prisma.deliveryLocationPreset.findUnique({
+        where: { id: data.deliveryLocationPresetId },
+        select: { id: true },
+      });
+      if (!preset) {
+        return NextResponse.json(
+          { error: 'Delivery location preset not found' },
+          { status: 400 },
+        );
+      }
+    }
+
     const po = await prisma.$transaction(async (tx) => {
       let poNumber = data.poNumber;
       if (poNumber === 'AUTO') {
@@ -130,6 +146,7 @@ export async function POST(request: NextRequest) {
           poNumber,
           currency: data.currency,
           isAuto: data.isAuto,
+          status: data.hubPending ? 'pending' : 'unfulfilled',
           dateCreated: new Date(),
           expectedDate: data.expectedDate ? new Date(data.expectedDate) : null,
           comment: data.comment ?? null,
@@ -137,7 +154,9 @@ export async function POST(request: NextRequest) {
           shippingAddress: data.shippingAddress ?? undefined,
           billingAddress: data.billingAddress ?? undefined,
           billingSameAsShipping: data.billingSameAsShipping,
+          deliveryLocationPresetId: data.deliveryLocationPresetId ?? null,
           authorizedBy,
+          createdById: session.user.id,
         },
       });
 
@@ -199,6 +218,15 @@ export async function POST(request: NextRequest) {
           shopifyOrders: { include: { customer: true } },
           supplier: true,
           emailDeliveries: true,
+          createdBy: prismaPoCreatedByInclude,
+          deliveryLocationPreset: {
+            include: {
+              locations: {
+                select: { id: true, code: true, name: true },
+                orderBy: { code: 'asc' },
+              },
+            },
+          },
         },
       });
     });

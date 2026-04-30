@@ -24,6 +24,7 @@ import {
   supplierHasPoEmailDeliveryOutstanding,
   supplierHasPoEmailDeliveryOutstandingInVisiblePos,
 } from '../utils/collect-po-email-delivery-alerts';
+import { PoEmailSentProgress } from './PoEmailSentProgress';
 
 type Props = {
   customerGroups: SidebarCustomerGroup[];
@@ -63,10 +64,13 @@ function expandKey(bucketKey: string | undefined, groupId: string) {
 function PoSidebarEmailStatusLine({
   po,
   emphasizeOutstanding,
+  expectedRecipientCount,
 }: {
   po: OfficePurchaseOrderBlock;
   /** Red “not sent” only on PO Created tab; elsewhere muted. */
   emphasizeOutstanding: boolean;
+  /** Resolved supplier PO email TO count (matches table / send job). */
+  expectedRecipientCount: number;
 }) {
   if (po.supplierOrderChannelType !== 'email') return null;
   if (po.legacyExternalId != null) return null;
@@ -75,46 +79,30 @@ function PoSidebarEmailStatusLine({
   const sentIso = po.panelMeta?.emailSentAt;
   const waivedIso = po.panelMeta?.emailDeliveryWaivedAt;
 
-  // Nothing sent yet
-  if (deliveries.length === 0 && !sentIso) {
-    if (waivedIso) {
-      return (
-        <div className="text-[9px] leading-tight mt-px text-muted-foreground font-medium">
-          Email: Not sending (waived)
-        </div>
-      );
-    }
+  if (waivedIso && deliveries.length === 0 && !sentIso) {
     return (
-      <div
-        className={
-          emphasizeOutstanding
-            ? 'text-[9px] leading-tight mt-px text-destructive font-semibold'
-            : 'text-[9px] leading-tight mt-px text-muted-foreground font-medium'
-        }
-      >
-        Email: Not sent
+      <div className="text-[9px] leading-tight mt-px text-muted-foreground font-medium">
+        Email: Not sending (waived)
       </div>
     );
   }
 
-  const total = deliveries.length > 0 ? deliveries.length : 1;
   const replyReceivedAt = po.panelMeta?.emailReplyReceivedAt;
 
   return (
-    <div className="flex items-center gap-1.5 mt-px">
-      <div className="flex items-center gap-0.5">
-        {deliveries.length > 0
-          ? deliveries.map((_, i) => (
-              <span key={i} className="inline-block w-2 h-2 rounded-sm bg-emerald-500" />
-            ))
-          : <span className="inline-block w-2 h-2 rounded-sm bg-emerald-500" />}
+    <div className="mt-px flex flex-col gap-0.5">
+      <div className="text-[9px] leading-none text-muted-foreground/70 font-medium">
+        Email
       </div>
-      <span className="text-[8px] leading-none font-medium text-emerald-700">
-        Sent {total > 1 ? `×${total}` : ''}
-      </span>
-      {replyReceivedAt ? (
-        <span className="text-[8px] leading-none font-medium text-blue-600">· Reply ✓</span>
-      ) : null}
+      <PoEmailSentProgress
+        tracked
+        compact
+        deliveryCount={deliveries.length}
+        expectedRecipientCount={expectedRecipientCount}
+        emailSentAt={sentIso ?? null}
+        emailReplyReceivedAt={replyReceivedAt}
+        emphasizePending={emphasizeOutstanding && po.emailDeliveryOutstanding}
+      />
     </div>
   );
 }
@@ -168,13 +156,15 @@ export function Sidebar({
   activeStatusTab,
   showArchived = false,
 }: Props) {
-  /** PO email “nag” (red) only on PO Created — not on Inbox / other status tabs. */
-  const emphasizePoEmailNag = activeStatusTab === 'po_created';
+  /** PO email “nag” (red) on PO Created and PO Pending — not on Inbox / other status tabs. */
+  const emphasizePoEmailNag =
+    activeStatusTab === 'po_created' || activeStatusTab === 'po_pending';
 
   const draftsOnly =
     activeStatusTab === 'without_po' || activeStatusTab === 'inbox';
   const hideIndicators =
     draftsOnly ||
+    activeStatusTab === 'po_pending' ||
     activeStatusTab === 'po_created' ||
     activeStatusTab === 'fulfilled' ||
     activeStatusTab === 'completed' ||
@@ -870,6 +860,9 @@ function ExpectedDateSupplierFirstPanel({
                     <PoSidebarEmailStatusLine
                       po={po}
                       emphasizeOutstanding={emphasizePoEmailNag}
+                      expectedRecipientCount={
+                        states[ref.supplierKey]?.supplierPoContacts.length ?? 0
+                      }
                     />
                     <FulfillLine
                       done={meta.fulfillDoneCount}
@@ -1058,6 +1051,9 @@ function ExpectedDateBucketPanel({
                     <PoSidebarEmailStatusLine
                       po={po}
                       emphasizeOutstanding={emphasizePoEmailNag}
+                      expectedRecipientCount={
+                        entry?.supplierPoContacts.length ?? 0
+                      }
                     />
                     <FulfillLine
                       done={meta.fulfillDoneCount}
@@ -1099,12 +1095,14 @@ function TwoColumnView({
   /** Inbox supplier-first: left column is customers — adjust empty-state copy. */
   leftColumnEmptyHint?: string;
 }) {
-  const emphasizePoEmailNag = activeStatusTab === 'po_created';
+  const emphasizePoEmailNag =
+    activeStatusTab === 'po_created' || activeStatusTab === 'po_pending';
 
   const isDraftsOnly =
     activeStatusTab === 'without_po' || activeStatusTab === 'inbox';
   const hideIndicators =
     isDraftsOnly ||
+    activeStatusTab === 'po_pending' ||
     activeStatusTab === 'po_created' ||
     activeStatusTab === 'fulfilled' ||
     activeStatusTab === 'completed';
@@ -1119,6 +1117,7 @@ function TwoColumnView({
       : [];
 
   const hideDrafts =
+    activeStatusTab === 'po_pending' ||
     activeStatusTab === 'po_created' ||
     activeStatusTab === 'fulfilled' ||
     activeStatusTab === 'completed';
@@ -1297,6 +1296,9 @@ function TwoColumnView({
                       <PoSidebarEmailStatusLine
                         po={po}
                         emphasizeOutstanding={emphasizePoEmailNag}
+                        expectedRecipientCount={
+                          states[activeKey]?.supplierPoContacts.length ?? 0
+                        }
                       />
                       <FulfillLine
                         done={meta.fulfillDoneCount}

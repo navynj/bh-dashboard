@@ -73,5 +73,10 @@ export function computePurchaseOrderStatus(
     next = 'completed';
   }
 
+  /** Manual hold: keep `pending` until fulfillment or receipts advance past pure `unfulfilled`. */
+  if (input.status === 'pending' && next === 'unfulfilled') {
+    return 'pending';
+  }
+
   return next;
 }

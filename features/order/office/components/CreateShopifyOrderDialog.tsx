@@ -30,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { DeliveryLocationPresetPicker } from './DeliveryLocationPresetPicker';
 
 type LineRow = {
   key: string;
@@ -162,6 +163,7 @@ export function CreateShopifyOrderDialog({
   >('shipping');
   /** Decimal string in shop currency; only applied when delivery is shipping. */
   const [shippingFeeInput, setShippingFeeInput] = useState('0');
+  const [shipPresetId, setShipPresetId] = useState<string | null>(null);
 
   /** When false, full shipping address is one summary line; all inputs when true. */
   const [shippingAddressEdit, setShippingAddressEdit] = useState(false);
@@ -196,6 +198,7 @@ export function CreateShopifyOrderDialog({
     setNote('');
     setDeliveryMethod('shipping');
     setShippingFeeInput('0');
+    setShipPresetId(null);
     setShippingAddressEdit(false);
     setBillingAddressEdit(false);
   }, []);
@@ -292,6 +295,7 @@ export function CreateShopifyOrderDialog({
   const applyCustomer = useCallback((node: ShopifyAdminCustomerNode) => {
     customerSearchSeqRef.current += 1;
     setCustomerLoading(false);
+    setShipPresetId(null);
     setSelectedCustomer(node);
     const mail = pickCustomerAddress(node);
     let line1 = '';
@@ -694,6 +698,23 @@ export function CreateShopifyOrderDialog({
                   {shippingAddressEdit ? 'Done' : 'Edit address'}
                 </Button>
               </div>
+              <DeliveryLocationPresetPicker
+                selectedPresetId={shipPresetId}
+                onApply={({ presetId, poAddress, company }) => {
+                  setShipPresetId(presetId);
+                  setAddr1(poAddress.address1);
+                  setAddr2(poAddress.address2 ?? '');
+                  setCity(poAddress.city);
+                  setProvinceCode(poAddress.province);
+                  setZip(poAddress.postalCode);
+                  setCountryCode(
+                    (poAddress.country ?? 'CA').trim().toUpperCase() || 'CA',
+                  );
+                  if (company?.trim()) setCompany(company.trim());
+                  setShippingAddressEdit(true);
+                }}
+                onClear={() => setShipPresetId(null)}
+              />
               {!shippingAddressEdit ? (
                 <button
                   type="button"
@@ -715,7 +736,10 @@ export function CreateShopifyOrderDialog({
                     <Input
                       className="h-9"
                       value={addr1}
-                      onChange={(e) => setAddr1(e.target.value)}
+                      onChange={(e) => {
+                        setShipPresetId(null);
+                        setAddr1(e.target.value);
+                      }}
                     />
                   </div>
                   <div className="col-span-2">
@@ -723,7 +747,10 @@ export function CreateShopifyOrderDialog({
                     <Input
                       className="h-9"
                       value={addr2}
-                      onChange={(e) => setAddr2(e.target.value)}
+                      onChange={(e) => {
+                        setShipPresetId(null);
+                        setAddr2(e.target.value);
+                      }}
                     />
                   </div>
                   <div>
@@ -731,7 +758,10 @@ export function CreateShopifyOrderDialog({
                     <Input
                       className="h-9"
                       value={city}
-                      onChange={(e) => setCity(e.target.value)}
+                      onChange={(e) => {
+                        setShipPresetId(null);
+                        setCity(e.target.value);
+                      }}
                     />
                   </div>
                   <div>
@@ -740,7 +770,10 @@ export function CreateShopifyOrderDialog({
                       className="h-9"
                       placeholder="BC, ON, QC…"
                       value={provinceCode}
-                      onChange={(e) => setProvinceCode(e.target.value)}
+                      onChange={(e) => {
+                        setShipPresetId(null);
+                        setProvinceCode(e.target.value);
+                      }}
                     />
                   </div>
                   <div>
@@ -748,7 +781,10 @@ export function CreateShopifyOrderDialog({
                     <Input
                       className="h-9"
                       value={zip}
-                      onChange={(e) => setZip(e.target.value)}
+                      onChange={(e) => {
+                        setShipPresetId(null);
+                        setZip(e.target.value);
+                      }}
                     />
                   </div>
                   <div>
@@ -757,9 +793,10 @@ export function CreateShopifyOrderDialog({
                       className="h-9"
                       maxLength={2}
                       value={countryCode}
-                      onChange={(e) =>
-                        setCountryCode(e.target.value.toUpperCase())
-                      }
+                      onChange={(e) => {
+                        setShipPresetId(null);
+                        setCountryCode(e.target.value.toUpperCase());
+                      }}
                     />
                   </div>
                   <div>
@@ -767,7 +804,10 @@ export function CreateShopifyOrderDialog({
                     <Input
                       className="h-9"
                       value={company}
-                      onChange={(e) => setCompany(e.target.value)}
+                      onChange={(e) => {
+                        setShipPresetId(null);
+                        setCompany(e.target.value);
+                      }}
                     />
                   </div>
                   <div>

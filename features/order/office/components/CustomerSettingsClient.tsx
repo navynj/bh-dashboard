@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { DeliveryLocationPresetPicker } from './DeliveryLocationPresetPicker';
 
 export type Address = {
   address1: string;
@@ -405,6 +406,24 @@ export function CustomerSettingsClient({ customers }: Props) {
               <hr className="my-2" />
 
               <div className="space-y-1.5">
+                <DeliveryLocationPresetPicker
+                  compact
+                  className="pb-0.5"
+                  onApply={({ poAddress, company: presetCompany }) => {
+                    setShippingAddr({
+                      address1: poAddress.address1,
+                      address2: poAddress.address2 ?? '',
+                      city: poAddress.city,
+                      province: poAddress.province,
+                      postalCode: poAddress.postalCode,
+                      country: (poAddress.country ?? 'CA').trim() || 'CA',
+                    });
+                    if (presetCompany?.trim()) {
+                      setCompanyValue(presetCompany.trim());
+                    }
+                    setShippingAddrEditOpen(true);
+                  }}
+                />
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-medium">Default Shipping Address</label>
                   {shippingAddrEditOpen ? (

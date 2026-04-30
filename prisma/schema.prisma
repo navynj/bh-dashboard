@@ -65,24 +65,52 @@ model Realm {
 }
 
 model Location {
-  id                  String               @id @default(cuid())
-  code                String               @unique
+  id                  String                   @id @default(cuid())
+  code                String                   @unique
   name                String
-  createdAt           DateTime             @default(now()) @map("created_at")
-  classId             String?              @map("class_id")
-  realmId             String               @map("realm_id")
-  startYearMonth      String?              @map("start_year_month")
-  showBudget          Boolean              @default(true) @map("show_budget")
-  cloverMerchantId    String?              @map("clover_merchant_id")
-  cloverToken         String?              @map("clover_token")
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  classId             String?                  @map("class_id")
+  realmId             String                   @map("realm_id")
+  startYearMonth      String?                  @map("start_year_month")
+  showBudget          Boolean                  @default(true) @map("show_budget")
+  cloverMerchantId    String?                  @map("clover_merchant_id")
+  cloverToken         String?                  @map("clover_token")
   budgets             Budget[]
   laborTargets        LaborTarget[]
   revenueAnnualGoals  RevenueAnnualGoal[]
   revenueMonthTargets RevenueMonthTarget[]
-  realm               Realm                @relation(fields: [realmId], references: [id])
+  realm               Realm                    @relation(fields: [realmId], references: [id])
   users               User[]
+  /// Optional default ship-to preset shared with other locations (many `Location`s may point to the same preset).
+  deliveryLocationPresetId String?               @map("delivery_location_preset_id")
+  deliveryLocationPreset   DeliveryLocationPreset? @relation(fields: [deliveryLocationPresetId], references: [id], onDelete: SetNull)
 
+  @@index([deliveryLocationPresetId])
   @@map("locations")
+  @@schema("public")
+}
+
+/// Office + delivery: reusable ship-to address. Many `Location` rows may reference the same preset via `locations.delivery_location_preset_id`.
+model DeliveryLocationPreset {
+  id         String   @id @default(cuid())
+  /// Short label for search (e.g. “Loading dock”, “Catering kitchen”).
+  name       String
+  company    String?
+  address1   String   @map("address1")
+  address2   String?  @map("address2")
+  city       String
+  province   String
+  postalCode String   @map("postal_code")
+  country    String   @default("CA")
+  lat        Float?
+  lng        Float?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  locations      Location[]
+  purchaseOrders PurchaseOrder[]
+
+  @@map("delivery_location_presets")
   @@schema("public")
 }
 
@@ -110,6 +138,8 @@ model User {
   permittedUsers  User[]            @relation("UserPermittedBy")
   /// delivery.Driver.userId → public.users.id (one driver profile per user)
   driver          Driver?
+  /// `order.purchase_orders.created_by_id` — POs created in the hub (not legacy CSV id).
+  purchaseOrdersCreated PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
 
   @@map("users")
   @@schema("public")
@@ -605,6 +635,8 @@ model ShopifyOrder {
   /// Customer-visible order note from Shopify (`Order.note`).
   customerNote             String?                @map("customer_note") @db.Text
   archivedAt               DateTime?              @map("archived_at") @db.Timestamptz
+  /// Office inbox: mark order “on hold” until cleared (not synced to Shopify).
+  officePendingAt          DateTime?              @map("office_pending_at") @db.Timestamptz
   syncedAt                 DateTime               @default(now()) @map("synced_at") @db.Timestamptz
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz
   updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz
@@ -736,7 +768,7 @@ model PurchaseOrder {
   poNumber              String                  @unique @map("po_number")
   /// customer = driven by Shopify orders, stock = office stocking without customer orders.
   poType                String                  @default("customer") @map("po_type")
-  /// unfulfilled | partially_fulfilled | fulfilled | completed
+  /// pending | unfulfilled | partially_fulfilled | fulfilled | completed
   status                String                  @default("unfulfilled")
   currency              String
   isAuto                Boolean                 @default(false) @map("is_auto")
@@ -772,6 +804,12 @@ model PurchaseOrder {
   /// Billing address for this PO (JSON, same shape as shipping).
   billingAddress        Json?                   @map("billing_address")
   billingSameAsShipping Boolean                 @default(true) @map("billing_same_as_shipping")
+  /// Optional link to `public.delivery_location_presets` when ship-to was chosen from a preset.
+  deliveryLocationPresetId String?            @map("delivery_location_preset_id")
+  deliveryLocationPreset   DeliveryLocationPreset? @relation(fields: [deliveryLocationPresetId], references: [id], onDelete: SetNull)
+  /// Hub user who created this PO (`POST /api/purchase-orders`). Null for legacy CSV import rows.
+  createdById           String?                 @map("created_by_id")
+  createdBy             User?                   @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   supplierId            String                  @map("supplier_id")
   supplier              Supplier                @relation(fields: [supplierId], references: [id])
   shopifyOrders         ShopifyOrder[]
@@ -783,6 +821,7 @@ model PurchaseOrder {
   @@index([poType])
   @@index([status])
   @@index([supplierId])
+  @@index([createdById])
   @@index([archivedAt])
   @@index([expectedDate])
   @@map("purchase_orders")

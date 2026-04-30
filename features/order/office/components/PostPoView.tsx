@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { PoTable } from './PoTable';
 import type { PostViewData } from '../types';
+import type { EditPoFields, EditPoResult } from './MetaPanel';
 
 type Props = {
   shopifyAdminStoreHandle?: string | null;
@@ -8,6 +9,10 @@ type Props = {
   selectedPoBlockId: string | null;
   lineItemsLoading?: boolean;
   onRetryLineItems?: () => void;
+  onEditPo?: (
+    poId: string,
+    fields: EditPoFields,
+  ) => Promise<EditPoResult>;
 };
 
 export function PostPoView({
@@ -16,6 +21,7 @@ export function PostPoView({
   selectedPoBlockId,
   lineItemsLoading,
   onRetryLineItems,
+  onEditPo,
 }: Props) {
   const pos = viewData.purchaseOrders;
   const hasMulti = pos.length > 1;
@@ -47,6 +53,7 @@ export function PostPoView({
           purchaseOrder={po}
           lineItemsLoading={lineItemsLoading}
           onRetryLineItems={onRetryLineItems}
+          onEditPo={onEditPo}
         />
       ))}
     </div>

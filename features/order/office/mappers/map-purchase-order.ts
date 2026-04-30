@@ -11,6 +11,7 @@ import type {
   OfficePurchaseOrderBlock,
   PoLineItemView,
   PoPanelMeta,
+  PoDeliveryLocationPresetSummary,
   PurchaseOrderStatus,
   LinkedShopifyOrder,
   PoEmailDeliveryItem,
@@ -21,6 +22,11 @@ import { sortPoLineItemsByProductTitleAsc } from '../utils/sort-lines-by-product
 import { minExpectedDateYmdFromShopifyOrders } from '@/lib/order/min-expected-date-ymd-from-shopify-orders';
 import { toOrderedAtIso } from '../utils/vancouver-datetime';
 import { computeEmailDeliveryOutstanding } from '../utils/po-email-delivery-policy';
+
+/** Use on every Prisma load that feeds `mapPrismaPoToBlock` / `mapPrismaPoToSlimBlock`. */
+export const prismaPoCreatedByInclude = {
+  select: { id: true, name: true, email: true },
+} as const;
 
 // ─── Prisma payload types ─────────────────────────────────────────────────────
 
@@ -34,6 +40,15 @@ export type PrismaPoWithRelations = Prisma.PurchaseOrderGetPayload<{
     shopifyOrders: { include: { customer: true } };
     supplier: true;
     emailDeliveries: true;
+    createdBy: typeof prismaPoCreatedByInclude;
+    deliveryLocationPreset: {
+      include: {
+        locations: {
+          select: { id: true; code: true; name: true };
+          orderBy: { code: 'asc' };
+        };
+      };
+    };
   };
 }>;
 
@@ -44,6 +59,15 @@ export type PrismaPoSlimWithRelations = Prisma.PurchaseOrderGetPayload<{
     shopifyOrders: { include: { customer: true } };
     supplier: true;
     emailDeliveries: true;
+    createdBy: typeof prismaPoCreatedByInclude;
+    deliveryLocationPreset: {
+      include: {
+        locations: {
+          select: { id: true; code: true; name: true };
+          orderBy: { code: 'asc' };
+        };
+      };
+    };
   };
 }>;
 
@@ -66,6 +90,31 @@ function dateToIso(d: Date | null | undefined): string | null {
 }
 
 export const derivePurchaseOrderStatus = derivePurchaseOrderStatusFromShopify;
+
+function mapPoCreatedBy(
+  user: PrismaPoWithRelations['createdBy'],
+): PoPanelMeta['createdBy'] {
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: user.name?.trim() ? user.name.trim() : null,
+    email: user.email?.trim() ? user.email.trim() : null,
+  };
+}
+
+function mapDeliveryLocationPresetSummary(
+  preset:
+    | PrismaPoWithRelations['deliveryLocationPreset']
+    | PrismaPoSlimWithRelations['deliveryLocationPreset'],
+): PoDeliveryLocationPresetSummary | null {
+  if (!preset) return null;
+  const codes = preset.locations.map((l) => l.code);
+  return {
+    id: preset.id,
+    name: preset.name,
+    locationCodes: codes,
+  };
+}
 
 /** Minimal PO payload for mapping `lineItems` the same way as `mapPrismaPoToBlock`. */
 export type PrismaPayloadForPoLineItemViews = {
@@ -188,6 +237,7 @@ export function mapPrismaPoToBlock(
     archivedAt: po.archivedAt,
     legacyExternalId: po.legacyExternalId,
     emailDeliveryWaivedAt: po.emailDeliveryWaivedAt,
+    purchaseOrderStatus: storedStatus,
   });
 
   const lineItems = mapPrismaPayloadToPoLineItemViews(
@@ -252,7 +302,11 @@ export function mapPrismaPoToBlock(
     billingAddress: (po.billingAddress ??
       null) as PoPanelMeta['billingAddress'],
     billingSameAsShipping: po.billingSameAsShipping,
+    deliveryLocationPreset: mapDeliveryLocationPresetSummary(
+      po.deliveryLocationPreset,
+    ),
     authorizedBy: po.authorizedBy?.trim() ?? null,
+    createdBy: mapPoCreatedBy(po.createdBy),
     emailSentAt: po.emailSentAt ? po.emailSentAt.toISOString() : null,
     emailReplyReceivedAt: po.emailReplyReceivedAt ? po.emailReplyReceivedAt.toISOString() : null,
     emailDeliveryWaivedAt: po.emailDeliveryWaivedAt
@@ -312,6 +366,7 @@ export function mapPrismaPoToSlimBlock(
     archivedAt: po.archivedAt,
     legacyExternalId: po.legacyExternalId,
     emailDeliveryWaivedAt: po.emailDeliveryWaivedAt,
+    purchaseOrderStatus: storedStatus,
   });
 
   const orderById = new Map(linkedOrders.map((o) => [o.id, o]));
@@ -361,7 +416,11 @@ export function mapPrismaPoToSlimBlock(
     shippingAddress: (po.shippingAddress ?? null) as PoPanelMeta['shippingAddress'],
     billingAddress: (po.billingAddress ?? null) as PoPanelMeta['billingAddress'],
     billingSameAsShipping: po.billingSameAsShipping,
+    deliveryLocationPreset: mapDeliveryLocationPresetSummary(
+      po.deliveryLocationPreset,
+    ),
     authorizedBy: po.authorizedBy?.trim() ?? null,
+    createdBy: mapPoCreatedBy(po.createdBy),
     emailSentAt: po.emailSentAt ? po.emailSentAt.toISOString() : null,
     emailReplyReceivedAt: po.emailReplyReceivedAt ? po.emailReplyReceivedAt.toISOString() : null,
     emailDeliveryWaivedAt: po.emailDeliveryWaivedAt

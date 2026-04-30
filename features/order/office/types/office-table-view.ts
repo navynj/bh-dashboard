@@ -59,8 +59,27 @@ export type OfficeTableViewPoRow = {
   poNumber: string;
   status: string;
   supplierCompany: string;
+  /** Display label for hub PO creator (`users.name` / `email`); "—" when unknown. */
+  createdByLabel: string;
   createdAt: string;
   expectedDate: string | null;
+  /**
+   * Hub-tracked email-channel PO (not legacy CSV import) — show email column
+   * state instead of "—".
+   */
+  poEmailTracked: boolean;
+  /** Primary TO recipients from supplier channel; 0 when none configured. */
+  expectedPoEmailRecipients: number;
+  /** Same rule as grouped view / `computeEmailDeliveryOutstanding`. */
+  emailDeliveryOutstanding: boolean;
+  /** When the supplier PO email was sent (`PurchaseOrder.emailSentAt`). */
+  emailSentAt: string | null;
+  /** Office marked “do not send email” (`PurchaseOrder.emailDeliveryWaivedAt`). */
+  emailDeliveryWaivedAt: string | null;
+  /** Number of PO email deliveries logged (one per recipient). */
+  emailDeliveryCount: number;
+  /** Supplier replied to PO email (when tracked). */
+  emailReplyReceivedAt: string | null;
   archived: boolean;
   lineItemCount: number;
   shopifyOrderCount: number;

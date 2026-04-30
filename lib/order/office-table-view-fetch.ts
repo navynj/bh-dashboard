@@ -5,6 +5,10 @@ import type {
   OfficeTableViewPoRow,
   OfficeTableViewShopifyRow,
 } from '@/features/order/office/types/office-table-view';
+import { computeEmailDeliveryOutstanding } from '@/features/order/office/utils/po-email-delivery-policy';
+import type { PurchaseOrderStatus } from '@/features/order/office/types/purchase-order';
+import { expectedPoEmailRecipientCount } from '@/lib/order/expected-po-email-recipient-count';
+import { legacyFallbackOrderChannel } from '@/lib/order/supplier-order-channel';
 
 type ShopifyCustomerForTable = {
   displayName: string | null;
@@ -58,6 +62,16 @@ export function mapShopifyOrderToTableRow(o: {
   };
 }
 
+function formatPoCreatedByLabel(
+  user: { name: string | null; email: string | null } | null,
+): string {
+  if (!user) return '—';
+  const name = user.name?.trim() ?? '';
+  const email = user.email?.trim() ?? '';
+  if (name && email) return `${name} (${email})`;
+  return name || email || '—';
+}
+
 export function mapPurchaseOrderToTableRow(po: {
   id: string;
   poNumber: string;
@@ -65,16 +79,63 @@ export function mapPurchaseOrderToTableRow(po: {
   createdAt: Date;
   expectedDate: Date | null;
   archivedAt: Date | null;
-  supplier: { company: string };
-  _count: { lineItems: number; shopifyOrders: number };
+  legacyExternalId: number | null;
+  emailSentAt: Date | null;
+  emailDeliveryWaivedAt: Date | null;
+  emailReplyReceivedAt: Date | null;
+  supplier: {
+    company: string;
+    orderChannelType: string;
+    orderChannelPayload: unknown;
+    contactEmails: string[];
+    contactName: string | null;
+    link: string | null;
+    notes: string | null;
+  };
+  createdBy: { name: string | null; email: string | null } | null;
+  _count: { lineItems: number; shopifyOrders: number; emailDeliveries: number };
 }): OfficeTableViewPoRow {
+  const resolvedChannel = legacyFallbackOrderChannel({
+    orderChannelType: po.supplier.orderChannelType,
+    orderChannelPayload: po.supplier.orderChannelPayload,
+    contactEmails: po.supplier.contactEmails,
+    contactName: po.supplier.contactName,
+    link: po.supplier.link,
+    notes: po.supplier.notes,
+  });
+  const poEmailTracked =
+    resolvedChannel.type === 'email' && po.legacyExternalId == null;
+  const expectedPoEmailRecipients = poEmailTracked
+    ? expectedPoEmailRecipientCount(po.supplier)
+    : 0;
+  const emailDeliveryOutstanding = computeEmailDeliveryOutstanding({
+    supplierOrderChannelType: resolvedChannel.type,
+    emailSentAt: po.emailSentAt,
+    archivedAt: po.archivedAt,
+    legacyExternalId: po.legacyExternalId,
+    emailDeliveryWaivedAt: po.emailDeliveryWaivedAt,
+    purchaseOrderStatus: po.status as PurchaseOrderStatus,
+  });
+
   return {
     id: po.id,
     poNumber: po.poNumber,
     status: po.status,
     supplierCompany: po.supplier.company,
+    createdByLabel: formatPoCreatedByLabel(po.createdBy),
+    poEmailTracked,
+    expectedPoEmailRecipients,
+    emailDeliveryOutstanding,
     createdAt: po.createdAt.toISOString(),
     expectedDate: po.expectedDate ? po.expectedDate.toISOString().slice(0, 10) : null,
+    emailSentAt: po.emailSentAt ? po.emailSentAt.toISOString() : null,
+    emailDeliveryWaivedAt: po.emailDeliveryWaivedAt
+      ? po.emailDeliveryWaivedAt.toISOString()
+      : null,
+    emailDeliveryCount: po._count.emailDeliveries,
+    emailReplyReceivedAt: po.emailReplyReceivedAt
+      ? po.emailReplyReceivedAt.toISOString()
+      : null,
     archived: po.archivedAt != null,
     lineItemCount: po._count.lineItems,
     shopifyOrderCount: po._count.shopifyOrders,
@@ -113,8 +174,23 @@ export const poSelect = {
   createdAt: true,
   expectedDate: true,
   archivedAt: true,
-  supplier: { select: { company: true } },
-  _count: { select: { lineItems: true, shopifyOrders: true } },
+  legacyExternalId: true,
+  emailSentAt: true,
+  emailDeliveryWaivedAt: true,
+  emailReplyReceivedAt: true,
+  supplier: {
+    select: {
+      company: true,
+      orderChannelType: true,
+      orderChannelPayload: true,
+      contactEmails: true,
+      contactName: true,
+      link: true,
+      notes: true,
+    },
+  },
+  createdBy: { select: { name: true, email: true } },
+  _count: { select: { lineItems: true, shopifyOrders: true, emailDeliveries: true } },
 } as const;
 
 export async function fetchShopifyOrdersForOfficeTableView(

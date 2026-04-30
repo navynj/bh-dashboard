@@ -4,7 +4,10 @@ import { prisma } from '@/lib/core/prisma';
 import { parseBody, purchaseOrderUpdateSchema } from '@/lib/api/schemas';
 import { toApiErrorResponse } from '@/lib/core/errors';
 import { recomputePurchaseOrderStatusById } from '@/lib/order/purchase-order-status';
-import { mapPrismaPoToBlock } from '@/features/order/office/mappers/map-purchase-order';
+import {
+  mapPrismaPoToBlock,
+  prismaPoCreatedByInclude,
+} from '@/features/order/office/mappers/map-purchase-order';
 import {
   EXPECTED_DATE_BEFORE_ORDER_CODE,
   expectedDateBeforeOrderMessage,
@@ -37,6 +40,15 @@ export async function GET(
         shopifyOrders: { include: { customer: true } },
         supplier: true,
         emailDeliveries: { orderBy: { sentAt: 'desc' } },
+        createdBy: prismaPoCreatedByInclude,
+        deliveryLocationPreset: {
+          include: {
+            locations: {
+              select: { id: true, code: true, name: true },
+              orderBy: { code: 'asc' },
+            },
+          },
+        },
       },
     });
 
@@ -117,6 +129,19 @@ export async function PUT(
       }
     }
 
+    if (data.deliveryLocationPresetId) {
+      const preset = await prisma.deliveryLocationPreset.findUnique({
+        where: { id: data.deliveryLocationPresetId },
+        select: { id: true },
+      });
+      if (!preset) {
+        return NextResponse.json(
+          { error: 'Delivery location preset not found' },
+          { status: 400 },
+        );
+      }
+    }
+
     if (data.poNumber !== undefined) {
       const taken = await prisma.purchaseOrder.findFirst({
         where: { poNumber: data.poNumber, NOT: { id } },
@@ -150,6 +175,21 @@ export async function PUT(
         ? new Date()
         : null;
     }
+    if (data.shippingAddress !== undefined) {
+      updateData.shippingAddress = data.shippingAddress ?? null;
+    }
+    if (data.billingAddress !== undefined) {
+      updateData.billingAddress = data.billingAddress ?? null;
+    }
+    if (data.billingSameAsShipping !== undefined) {
+      updateData.billingSameAsShipping = data.billingSameAsShipping;
+    }
+    if (data.deliveryLocationPresetId !== undefined) {
+      updateData.deliveryLocationPresetId = data.deliveryLocationPresetId;
+    }
+    if (data.status !== undefined) {
+      updateData.status = data.status;
+    }
 
     await prisma.purchaseOrder.update({
       where: { id },
@@ -164,6 +204,15 @@ export async function PUT(
         lineItems: { orderBy: { sequence: 'asc' } },
         shopifyOrders: true,
         supplier: true,
+        createdBy: prismaPoCreatedByInclude,
+        deliveryLocationPreset: {
+          include: {
+            locations: {
+              select: { id: true, code: true, name: true },
+              orderBy: { code: 'asc' },
+            },
+          },
+        },
       },
     });
 

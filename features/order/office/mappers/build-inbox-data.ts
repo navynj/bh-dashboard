@@ -32,6 +32,7 @@ import type {
   StatusTab,
   ShopifyOrderDraft,
   CustomerAddress,
+  PurchaseOrderStatus,
 } from '../types';
 import type { Prisma } from '@prisma/client';
 import { sortPrePoLineDraftsByProductTitleAsc } from '../utils/sort-lines-by-product-title';
@@ -665,6 +666,9 @@ function shopifyOrderToDraft(
   return {
     id: order.id,
     archivedAt: order.archivedAt ? order.archivedAt.toISOString() : null,
+    officePendingAt: order.officePendingAt
+      ? order.officePendingAt.toISOString()
+      : null,
     shopifyOrderGid: order.shopifyGid,
     currencyCode: order.currencyCode ?? null,
     orderNumber: order.name ?? order.id,
@@ -831,6 +835,7 @@ export function buildInboxData(
   const statusCounts: Record<StatusTab, number> = {
     inbox: 0,
     without_po: 0,
+    po_pending: 0,
     po_created: 0,
     fulfilled: 0,
     completed: 0,
@@ -968,6 +973,7 @@ export function buildInboxData(
             archivedAt: p.archivedAt,
             legacyExternalId: p.legacyExternalId,
             emailDeliveryWaivedAt: p.emailDeliveryWaivedAt,
+            purchaseOrderStatus: p.status as PurchaseOrderStatus,
           }),
         );
       const custLabel = custInfo?.name ?? 'Unknown';
