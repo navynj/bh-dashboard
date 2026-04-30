@@ -2,7 +2,7 @@ import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from '@/lib/core/prisma';
-import type { UserStatus } from '@prisma/client';
+import type { UserRole, UserStatus } from '@prisma/client';
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
@@ -19,20 +19,62 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (url.startsWith('/')) return `${baseUrl}${url}`;
       return baseUrl;
     },
+    /**
+     * Persist role/location on the JWT so `session` does not hit Prisma on every `auth()`
+     * (e.g. each `/api/*` call). Refresh when signing in, on `update()`, or when legacy
+     * tokens lack claims (first request after deploy).
+     */
+    async jwt({ token, user, trigger }) {
+      const userId =
+        (typeof user?.id === 'string' ? user.id : undefined) ?? token.sub ?? undefined;
+      if (!userId) return token;
+
+      const needsProfile =
+        user != null ||
+        trigger === 'update' ||
+        token.role === undefined ||
+        token.status === undefined;
+
+      if (!needsProfile) return token;
+
+      const dbUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          role: true,
+          status: true,
+          locationId: true,
+          rejectReason: true,
+          location: { select: { code: true } },
+        },
+      });
+      if (dbUser) {
+        token.role = dbUser.role;
+        token.status = dbUser.status;
+        token.locationId = dbUser.locationId;
+        token.locationCode = dbUser.location?.code ?? null;
+        token.rejectReason = dbUser.rejectReason ?? null;
+      } else {
+        // Missing user row: set sentinels so we do not refetch on every request.
+        token.role = null;
+        token.status = 'rejected';
+        token.locationId = null;
+        token.locationCode = null;
+        token.rejectReason = null;
+      }
+      return token;
+    },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.sub ?? '';
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.sub },
-          include: { location: true },
-        });
-        if (dbUser) {
-          session.user.role = dbUser.role;
-          session.user.status = dbUser.status;
-          session.user.locationId = dbUser.locationId;
-          session.user.locationCode = dbUser.location?.code ?? null;
-          session.user.rejectReason = dbUser.rejectReason ?? null;
-        }
+        session.user.role = (token.role as UserRole | null | undefined) ?? null;
+        session.user.status =
+          (token.status as UserStatus | undefined) ?? 'pending_onboarding';
+        session.user.locationId =
+          (token.locationId as string | null | undefined) ?? null;
+        session.user.locationCode =
+          (token.locationCode as string | null | undefined) ?? null;
+        session.user.rejectReason =
+          (token.rejectReason as string | null | undefined) ?? null;
       }
       return session;
     },
