@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { YmdDateInput } from '@/components/ui/ymd-date-input';
 import {
   DropdownMenu,
@@ -844,19 +845,14 @@ export function OfficeTableSplitView({
             >
               Customer
             </label>
-            <select
+            <SearchableSelect
               id="office-table-customer"
-              className={selectCls}
+              options={customerFilterOptions}
               value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-            >
-              <option value="">All</option>
-              {customerFilterOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={setCustomerId}
+              allLabel="All"
+              searchPlaceholder="Filter customers…"
+            />
           </div>
           <div className="flex min-w-[9rem] max-w-[14rem] flex-col gap-1">
             <label
@@ -865,19 +861,14 @@ export function OfficeTableSplitView({
             >
               Supplier
             </label>
-            <select
+            <SearchableSelect
               id="office-table-supplier"
-              className={selectCls}
+              options={supplierFilterOptions}
               value={supplierId}
-              onChange={(e) => setSupplierId(e.target.value)}
-            >
-              <option value="">All</option>
-              {supplierFilterOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={setSupplierId}
+              allLabel="All"
+              searchPlaceholder="Filter suppliers…"
+            />
           </div>
           {supplierGroupFilterOptions.length > 0 ? (
             <div className="flex min-w-[9rem] max-w-[14rem] flex-col gap-1">
