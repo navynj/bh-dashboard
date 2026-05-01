@@ -188,10 +188,10 @@ export function DeliveryLocationPresetsClient({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground max-w-2xl">
-          공용 배송 주소 프리셋입니다. 여러{' '}
-          <span className="font-medium text-foreground">Location</span>이 동일 프리셋을
-          가리킬 수 있습니다. 연결을 비우면 Location과 무관한 주소만 남습니다. PO·Shopify
-          주문에서 검색해 선택할 수 있습니다.
+          Shared ship-to presets. Multiple{' '}
+          <span className="font-medium text-foreground">Location</span> records can point
+          to the same preset. Clear all links to keep an address that is not tied to any
+          location. Search and pick these in POs and Shopify orders.
         </p>
         <Button size="sm" onClick={openCreate}>
           <Plus className="h-4 w-4 mr-1" />
@@ -268,10 +268,11 @@ export function DeliveryLocationPresetsClient({
           </DialogHeader>
           <div className="grid gap-3 py-2">
             <div className="space-y-1">
-              <Label>연결할 Location (복수 선택)</Label>
+              <Label>Link locations (multi-select)</Label>
               {locations.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  DB에 Location이 없습니다. 나중에 추가한 뒤 여기서 연결할 수 있습니다.
+                  No locations in the database yet. Add locations first, then link them
+                  here.
                 </p>
               ) : (
                 <div className="max-h-40 overflow-y-auto rounded-md border px-2 py-1.5 space-y-1">
@@ -296,7 +297,8 @@ export function DeliveryLocationPresetsClient({
                 </div>
               )}
               <p className="text-[10px] text-muted-foreground">
-                선택한 모든 Location의 기본 배송 프리셋이 이 주소로 설정됩니다.
+                Saving applies this preset as the default ship-to for every selected
+                location.
               </p>
             </div>
             <div className="space-y-1">

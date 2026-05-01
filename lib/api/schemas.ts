@@ -22,8 +22,8 @@ export const onboardingPostSchema = z
       .string()
       .min(1, 'Name is required')
       .transform((s) => s.trim()),
-    role: z.enum(['office', 'manager', 'assistant'], {
-      message: 'Valid role is required (office, manager, assistant)',
+    role: z.enum(['office', 'manager', 'supply'], {
+      message: 'Valid role is required (office, manager, supply)',
     }),
     locationId: z.string().min(1).optional(),
   })
@@ -145,7 +145,7 @@ export const userPatchSchema = z.object({
     .min(0)
     .transform((s) => s.trim())
     .optional(),
-  role: z.enum(['admin', 'office', 'manager', 'assistant']).optional(),
+  role: z.enum(['admin', 'office', 'manager', 'supply']).optional(),
   status: z
     .enum(['pending_onboarding', 'pending_approval', 'active', 'rejected'])
     .optional(),

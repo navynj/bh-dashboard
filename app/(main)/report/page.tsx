@@ -12,7 +12,7 @@ export default async function ReportPage() {
   if (!session?.user?.id) {
     redirect('/auth');
   }
-  if (session.user.role === 'assistant') redirect('/order');
+  if (session.user.role === 'supply') redirect('/order');
 
   const isOfficeOrAdmin = getOfficeOrAdmin(session.user.role);
   const managerLocationId = session.user.locationId ?? undefined;

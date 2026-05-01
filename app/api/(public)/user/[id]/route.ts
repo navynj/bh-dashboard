@@ -1,6 +1,7 @@
 import { parseBody, userPatchSchema } from '@/lib/api/schemas';
 import { auth, getOfficeOrAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/core/prisma';
+import type { UserRole } from '@prisma/client';
 import { NextResponse } from 'next/server';
 
 export async function PATCH(
@@ -30,17 +31,13 @@ export async function PATCH(
 
   const updateData: {
     name?: string | null;
-    role?: 'admin' | 'office' | 'manager';
+    role?: UserRole;
     status?: 'pending_onboarding' | 'pending_approval' | 'active' | 'rejected';
     locationId?: string | null;
   } = {};
   if (body.name !== undefined) updateData.name = body.name || null;
   if (body.role !== undefined) {
-    const validRole: 'admin' | 'office' | 'manager' | undefined =
-      body.role === 'admin' || body.role === 'office' || body.role === 'manager'
-        ? body.role
-        : undefined;
-    if (validRole) updateData.role = validRole;
+    updateData.role = body.role;
   }
   if (body.status !== undefined) updateData.status = body.status;
   if (body.locationId !== undefined) updateData.locationId = body.locationId ?? null;

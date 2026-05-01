@@ -38,7 +38,7 @@ import { z } from 'zod';
 const onboardingSchema = z
   .object({
     name: z.string().min(1, 'Display name is required'),
-    role: z.enum(['manager', 'assistant', 'office']),
+    role: z.enum(['manager', 'supply', 'office']),
     locationId: z.string().optional(),
   })
   .refine(

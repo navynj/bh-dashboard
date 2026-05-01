@@ -7,7 +7,7 @@ export type UserRole =
   | 'admin'
   | 'office'
   | 'manager'
-  | 'assistant'
+  | 'supply'
   | 'employee'
   | 'supplier';
 
@@ -15,7 +15,7 @@ export const USER_ROLES: readonly UserRole[] = [
   'admin',
   'office',
   'manager',
-  'assistant',
+  'supply',
   'employee',
   'supplier',
 ];

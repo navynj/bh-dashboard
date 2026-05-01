@@ -136,14 +136,14 @@ export function getIsManager(role: string | null | undefined): boolean {
   return role === 'manager';
 }
 
-/** Can see Delivery and Cost in nav (admin, office, assistant). */
+/** Can see Delivery and Cost in nav (admin, office, supply). */
 export function getCanSeeDeliveryAndCost(
   role: string | null | undefined,
 ): boolean {
-  return getOfficeOrAdmin(role) || role === 'assistant';
+  return getOfficeOrAdmin(role) || role === 'supply';
 }
 
-/** Can see Budget and Reports in nav (admin, office, manager). Assistant cannot. */
+/** Can see Budget and Reports in nav (admin, office, manager). Supply cannot. */
 export function getCanSeeBudgetAndReports(
   role: string | null | undefined,
 ): boolean {
@@ -155,7 +155,7 @@ export function getCanSeeOrderSection(
 ): boolean {
   return (
     getOfficeOrAdmin(role) ||
-    role === 'assistant' ||
+    role === 'supply' ||
     role === 'manager' ||
     role === 'supplier'
   );

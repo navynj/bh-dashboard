@@ -13,7 +13,7 @@ export default async function ReportLocationPage({
   const { id: locationId } = await params;
 
   const session = await auth();
-  if (session?.user?.role === 'assistant') redirect('/order');
+  if (session?.user?.role === 'supply') redirect('/order');
   const isOfficeOrAdmin = getOfficeOrAdmin(session?.user?.role);
 
   const connections = await getConnections(session ?? null);

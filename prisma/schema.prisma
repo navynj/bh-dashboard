@@ -149,7 +149,7 @@ enum UserRole {
   admin
   office
   manager
-  assistant
+  supply
   employee
   supplier
 

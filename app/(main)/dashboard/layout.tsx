@@ -11,7 +11,7 @@ import React, { Suspense } from 'react';
 const BudgetLayout = async ({ children }: { children: React.ReactNode }) => {
   const yearMonth = getCurrentYearMonth();
   const session = await auth();
-  if (session?.user?.role === 'assistant') redirect('/order');
+  if (session?.user?.role === 'supply') redirect('/order');
   const isOfficeOrAdmin = session?.user
     ? getOfficeOrAdmin(session.user.role)
     : false;

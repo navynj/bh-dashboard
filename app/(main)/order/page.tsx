@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 
 /**
- * /order — Routes by role: office staff → /order/office, supplier → /order/supplier,
+ * /order — Routes by role: admin, office, or supply → /order/office; supplier → /order/supplier;
  * manager → /order/location. Employees see no-access messaging.
  */
 export default async function OrderRedirectPage() {
@@ -12,7 +12,7 @@ export default async function OrderRedirectPage() {
   switch (role) {
     case 'admin':
     case 'office':
-    case 'assistant':
+    case 'supply':
       redirect('/order/office');
     case 'supplier':
       redirect('/order/supplier');
