@@ -56,8 +56,12 @@ function splitName(name: string | null | undefined): {
   return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
 }
 
-function hasStreetLine(addr: ShopifyMailingAddress | null | undefined): boolean {
-  return Boolean((addr?.address1 ?? '').trim() || (addr?.address2 ?? '').trim());
+function hasStreetLine(
+  addr: ShopifyMailingAddress | null | undefined,
+): boolean {
+  return Boolean(
+    (addr?.address1 ?? '').trim() || (addr?.address2 ?? '').trim(),
+  );
 }
 
 function pickCustomerAddress(
@@ -92,12 +96,16 @@ function formatAddressSummaryLine(p: {
   phone: string;
 }): string | null {
   const segs: string[] = [];
-  const name = [p.firstName.trim(), p.lastName.trim()].filter(Boolean).join(' ');
+  const name = [p.firstName.trim(), p.lastName.trim()]
+    .filter(Boolean)
+    .join(' ');
   if (name) segs.push(name);
   if (p.company.trim()) segs.push(p.company.trim());
   const street = [p.addr1.trim(), p.addr2.trim()].filter(Boolean).join(', ');
   if (street) segs.push(street);
-  const provZip = [p.provinceCode.trim(), p.zip.trim()].filter(Boolean).join(' ');
+  const provZip = [p.provinceCode.trim(), p.zip.trim()]
+    .filter(Boolean)
+    .join(' ');
   const cityPart = [p.city.trim(), provZip].filter(Boolean).join(', ');
   if (cityPart) segs.push(cityPart);
   const cc = p.countryCode.trim().toUpperCase();
@@ -158,9 +166,8 @@ export function CreateShopifyOrderDialog({
     useState<NonNullable<ShopifyOrderCreateBody['financialStatus']>>('PENDING');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [deliveryMethod, setDeliveryMethod] = useState<
-    NonNullable<ShopifyOrderCreateBody['deliveryMethod']>
-  >('shipping');
+  const [deliveryMethod, setDeliveryMethod] =
+    useState<NonNullable<ShopifyOrderCreateBody['deliveryMethod']>>('shipping');
   /** Decimal string in shop currency; only applied when delivery is shipping. */
   const [shippingFeeInput, setShippingFeeInput] = useState('0');
   const [shipPresetId, setShipPresetId] = useState<string | null>(null);
@@ -215,10 +222,7 @@ export function CreateShopifyOrderDialog({
 
   useEffect(() => {
     const q = customerQuery.trim();
-    if (
-      lastCustomerSearchQuery !== null &&
-      q !== lastCustomerSearchQuery
-    ) {
+    if (lastCustomerSearchQuery !== null && q !== lastCustomerSearchQuery) {
       setCustomerHits([]);
       setLastCustomerSearchQuery(null);
     }
@@ -505,7 +509,9 @@ export function CreateShopifyOrderDialog({
     const rawFee = shippingFeeInput.trim().replace(',', '.');
     const parsedFee = parseFloat(rawFee);
     const shippingFee =
-      deliveryMethod === 'shipping' && Number.isFinite(parsedFee) && parsedFee >= 0
+      deliveryMethod === 'shipping' &&
+      Number.isFinite(parsedFee) &&
+      parsedFee >= 0
         ? parsedFee
         : 0;
 
@@ -886,7 +892,9 @@ export function CreateShopifyOrderDialog({
                       onClick={() => setBillingAddressEdit(true)}
                     >
                       {billingSummaryLine ? (
-                        <span className="break-words">{billingSummaryLine}</span>
+                        <span className="break-words">
+                          {billingSummaryLine}
+                        </span>
                       ) : (
                         <span className="text-muted-foreground">
                           No billing address — click to edit
@@ -896,7 +904,9 @@ export function CreateShopifyOrderDialog({
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
                       <div className="col-span-2">
-                        <Label className="text-xs">Billing address line 1</Label>
+                        <Label className="text-xs">
+                          Billing address line 1
+                        </Label>
                         <Input
                           className="h-9"
                           value={billAddr1}
@@ -904,7 +914,9 @@ export function CreateShopifyOrderDialog({
                         />
                       </div>
                       <div className="col-span-2">
-                        <Label className="text-xs">Billing address line 2</Label>
+                        <Label className="text-xs">
+                          Billing address line 2
+                        </Label>
                         <Input
                           className="h-9"
                           value={billAddr2}
@@ -996,8 +1008,8 @@ export function CreateShopifyOrderDialog({
                 </div>
               ) : (
                 <p className="text-[11px] text-muted-foreground">
-                  Pick up orders use a $0 &quot;Pick up&quot; delivery line; line
-                  items are marked as not requiring shipment.
+                  Pick up orders use a $0 &quot;Pick up&quot; delivery line;
+                  line items are marked as not requiring shipment.
                 </p>
               )}
             </section>
@@ -1041,7 +1053,9 @@ export function CreateShopifyOrderDialog({
                         <TableCell className="text-xs">
                           <div className="font-medium">{row.label}</div>
                           {row.sku ? (
-                            <div className="text-muted-foreground">{row.sku}</div>
+                            <div className="text-muted-foreground">
+                              {row.sku}
+                            </div>
                           ) : null}
                         </TableCell>
                         <TableCell className="text-xs">
@@ -1112,7 +1126,7 @@ export function CreateShopifyOrderDialog({
             </section>
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2">
             <Button
               type="button"
               variant="outline"
