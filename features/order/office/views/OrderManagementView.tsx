@@ -663,7 +663,7 @@ export function OrderManagementView({
           fallbackBillingAddress: group?.defaultBillingAddress ?? null,
           fallbackShippingAddress: group?.defaultShippingAddress ?? null,
         });
-        if (input) openPoPdfPrint(input);
+        if (input) void openPoPdfPrint(input);
       };
 
       const doViewPo = () => {
@@ -1262,6 +1262,21 @@ export function OrderManagementView({
                   : tab,
               );
               setActivePeriod('all');
+            } else if (activeStatusTab === 'po_pending') {
+              const currentVd = patchedViewDataMap[activeKey];
+              const remainingPending =
+                currentVd?.type === 'post'
+                  ? currentVd.purchaseOrders.filter(
+                      (p) =>
+                        p.id !== poId &&
+                        p.id !== 'new' &&
+                        !p.archivedAt &&
+                        p.status === 'pending',
+                    ).length
+                  : 0;
+              if (remainingPending === 0) {
+                setActiveStatusTab('po_created');
+              }
             }
           }
           router.refresh();
@@ -1297,7 +1312,7 @@ export function OrderManagementView({
         return { ok: false, reason: 'unknown' };
       }
     },
-    [router, patchedViewDataMap],
+    [router, patchedViewDataMap, activeStatusTab, activeKey],
   );
 
   const handleDeletePo = useCallback(
@@ -2521,7 +2536,6 @@ export function OrderManagementView({
     const pendingOnly = viewData.purchaseOrders.filter(
       (p) => p.id !== 'new' && !p.archivedAt && p.status === 'pending',
     );
-    if (pendingOnly.length === 0) return viewData;
     return { ...viewData, purchaseOrders: pendingOnly };
   }, [viewData, activeStatusTab]);
 

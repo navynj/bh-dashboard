@@ -58,6 +58,7 @@ export type LinkedShopifyOrder = {
 };
 
 export type PoAddress = {
+  name?: string;
   address1: string;
   address2?: string;
   city: string;

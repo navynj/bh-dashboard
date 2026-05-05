@@ -25,6 +25,12 @@ function createTransport() {
   });
 }
 
+let _transport: ReturnType<typeof nodemailer.createTransport> | null = null;
+function getTransport() {
+  if (!_transport) _transport = createTransport();
+  return _transport;
+}
+
 function buildTrackingPixelUrl(token: string): string | null {
   const base = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim().replace(/\/$/, '');
   if (!base) return null;
@@ -93,29 +99,6 @@ export async function sendPoEmail(args: {
 
   if (to.length === 0) return;
 
-  if (to.length > 1) {
-    if (trackingToken) {
-      throw new Error(
-        'sendPoEmail: use one To recipient when trackingToken is set, or call once per recipient.',
-      );
-    }
-    const dedicated =
-      args.dedicatedToRecipientsLower ??
-      new Set(to.map((c) => c.email.toLowerCase()));
-    for (const c of to) {
-      await sendPoEmail({
-        supplierName: args.supplierName,
-        pdfInput: args.pdfInput,
-        outbound: args.outbound,
-        pdfBuffer: args.pdfBuffer,
-        supplierCcEmails: args.supplierCcEmails,
-        to: [c],
-        dedicatedToRecipientsLower: dedicated,
-      });
-    }
-    return;
-  }
-
   const pdfBuffer = args.pdfBuffer ?? buildPoPdfBuffer(pdfInput);
   const plainBody = buildPoEmailPlainBody({ outbound, supplierName, poNumber: pdfInput.poNumber });
   const subject = buildPoEmailSubject(outbound, pdfInput.poNumber);
@@ -137,7 +120,7 @@ export async function sendPoEmail(args: {
     `</div>`,
   ].join('\n');
 
-  const transporter = createTransport();
+  const transporter = getTransport();
   const toLower = new Set(to.map((c) => c.email.toLowerCase()));
   const dedicatedLower =
     args.dedicatedToRecipientsLower ?? toLower;

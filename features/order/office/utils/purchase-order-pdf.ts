@@ -2,6 +2,27 @@ import { jsPDF } from 'jspdf';
 import { format, isValid, parseISO } from 'date-fns';
 import { formatProductLabel, type OfficePurchaseOrderBlock, type PoAddress } from '../types';
 
+export type KoreanFonts = { regular: string; bold: string }; // base64-encoded TTF
+
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary);
+}
+
+let _cachedFonts: KoreanFonts | null = null;
+
+export async function loadPdfFonts(): Promise<KoreanFonts> {
+  if (_cachedFonts) return _cachedFonts;
+  const [regular, bold] = await Promise.all([
+    fetch('/fonts/NanumGothic-Regular.ttf').then((r) => r.arrayBuffer()),
+    fetch('/fonts/NanumGothic-Bold.ttf').then((r) => r.arrayBuffer()),
+  ]);
+  _cachedFonts = { regular: arrayBufferToBase64(regular), bold: arrayBufferToBase64(bold) };
+  return _cachedFonts;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PAGE_W = 215.9;
@@ -178,22 +199,23 @@ function drawAddrCol(
   x: number,
   y: number,
   maxW: number,
+  ff: string,
 ): number {
   doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
+  doc.setFont(ff, 'bold');
   doc.setTextColor(100, 100, 100);
   doc.text(label.toUpperCase(), x, y);
   doc.setTextColor(0, 0, 0);
   y += LH * 0.85;
 
-  doc.setFont('helvetica', 'normal');
+  doc.setFont(ff, 'normal');
   doc.setFontSize(9.5);
 
   if (headline?.trim()) {
-    doc.setFont('helvetica', 'bold');
+    doc.setFont(ff, 'bold');
     const hl = doc.splitTextToSize(headline.trim(), maxW) as string[];
     for (const l of hl) { doc.text(l, x, y); y += LH; }
-    doc.setFont('helvetica', 'normal');
+    doc.setFont(ff, 'normal');
   }
 
   if (lines.length === 0 && !headline?.trim()) {
@@ -219,7 +241,8 @@ export type PoPdfInput = {
   poNote: string | null;
   dateCreated: string | null;
   expectedDate: string | null;
-  customerHeadline: string | null;
+  shippingHeadline: string | null;
+  billingHeadline: string | null;
   billingAddressLines: string[];
   shippingAddressLines: string[];
   supplierCompany: string;
@@ -236,9 +259,16 @@ export type PoPdfInput = {
 
 // ─── PDF builder ──────────────────────────────────────────────────────────────
 
-function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: number } {
+function buildDocCore(input: PoPdfInput, pageH: number, fonts?: KoreanFonts): { doc: jsPDF; finalY: number } {
   const doc = new jsPDF({ unit: 'mm', format: 'letter' });
-  doc.setFont('helvetica', 'normal');
+  const ff = fonts ? 'NanumGothic' : 'helvetica';
+  if (fonts) {
+    doc.addFileToVFS('NanumGothic-Regular.ttf', fonts.regular);
+    doc.addFont('NanumGothic-Regular.ttf', 'NanumGothic', 'normal');
+    doc.addFileToVFS('NanumGothic-Bold.ttf', fonts.bold);
+    doc.addFont('NanumGothic-Bold.ttf', 'NanumGothic', 'bold');
+  }
+  doc.setFont(ff, 'normal');
 
   const ensurePage = makeEnsurePage(pageH);
 
@@ -248,7 +278,7 @@ function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: n
   const ordersStr = input.linkedShopifyOrderNames.length
     ? input.linkedShopifyOrderNames.join(', ')
     : '';
-  doc.setFont('helvetica', 'normal');
+  doc.setFont(ff, 'normal');
   doc.setFontSize(ORDER_BAND_FONT_PT);
   doc.setTextColor(95, 95, 95);
   const orderBandMaxW = 88;
@@ -270,7 +300,7 @@ function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: n
 
   // Vertically center title + order lines in the band (cross-axis like flex items-center)
   const yBandMid = y + bandH / 2;
-  doc.setFont('helvetica', 'bold');
+  doc.setFont(ff, 'bold');
   doc.setFontSize(13);
   doc.text(
     `Purchase Order #${input.poNumber}`,
@@ -279,7 +309,7 @@ function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: n
   );
 
   if (orderBandLines.length > 0) {
-    doc.setFont('helvetica', 'normal');
+    doc.setFont(ff, 'normal');
     doc.setFontSize(ORDER_BAND_FONT_PT);
     doc.setTextColor(95, 95, 95);
     const lx = PAGE_W - MARGIN - 2;
@@ -301,11 +331,11 @@ function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: n
   const noteText = input.poNote?.trim() ?? '';
   if (noteText) {
     doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont(ff, 'bold');
     doc.setTextColor(100, 100, 100);
     doc.text('PO NOTE', MARGIN, y);
     y += LH * 0.85;
-    doc.setFont('helvetica', 'normal');
+    doc.setFont(ff, 'normal');
     doc.setFontSize(9);
     doc.setTextColor(0, 0, 0);
     const noteLines = doc.splitTextToSize(noteText, PAGE_W - 2 * MARGIN) as string[];
@@ -320,12 +350,12 @@ function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: n
   // ── Ship to (top) → Bill to (below) stacked left; Signature box right ───
   const yAddrStart = y;
   const yAfterShip = drawAddrCol(
-    doc, 'Ship to', input.customerHeadline, input.shippingAddressLines,
-    MARGIN, y, W_ADDR_COL,
+    doc, 'Ship to', input.shippingHeadline, input.shippingAddressLines,
+    MARGIN, y, W_ADDR_COL, ff,
   );
   const yAfterBill = drawAddrCol(
-    doc, 'Bill to', input.customerHeadline, input.billingAddressLines,
-    MARGIN, yAfterShip + 5, W_ADDR_COL,
+    doc, 'Bill to', input.billingHeadline, input.billingAddressLines,
+    MARGIN, yAfterShip + 5, W_ADDR_COL, ff,
   );
   // Signature box: right column, fixed height (left addresses may extend lower)
   drawSignatureBox(doc, X_SIG_BOX, yAddrStart, W_SIG_BOX, H_SIG_BOX);
@@ -336,7 +366,7 @@ function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: n
 
   // ── Supplier + dates ──────────────────────────────────────────────────────
   doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
+  doc.setFont(ff, 'bold');
   doc.setTextColor(100, 100, 100);
   doc.text('SUPPLIER', MARGIN, y);
   doc.text('DATE CREATED', MARGIN + 55, y);
@@ -344,7 +374,7 @@ function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: n
   doc.setTextColor(0, 0, 0);
   y += LH * 0.85;
 
-  doc.setFont('helvetica', 'normal');
+  doc.setFont(ff, 'normal');
   doc.setFontSize(9.5);
   doc.text(input.supplierCompany,                          MARGIN,       y);
   doc.text(ymd2display(input.dateCreated)  ?? '—',         MARGIN + 55,  y);
@@ -360,7 +390,7 @@ function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: n
 
   const hdrY = y + ROW_TOP;
   doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
+  doc.setFont(ff, 'bold');
   doc.text('Order no.',     X_ORDER, hdrY);
   doc.setFontSize(8.5);
   doc.text('Item',          X_ITEM,  hdrY);
@@ -370,7 +400,7 @@ function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: n
   y += hdrH;
 
   // ── Table rows ────────────────────────────────────────────────────────────
-  doc.setFont('helvetica', 'normal');
+  doc.setFont(ff, 'normal');
   doc.setFontSize(9);
 
   for (const row of input.lineItems) {
@@ -409,13 +439,13 @@ function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: n
   const pageCount = doc.getNumberOfPages();
   const shippingDateLabel = ymd2display(input.expectedDate) ?? '—';
   const shippingAddressLabel = footerShipToOneLine(
-    input.customerHeadline,
+    input.shippingHeadline,
     input.shippingAddressLines,
   );
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
+    doc.setFont(ff, 'normal');
     doc.setTextColor(120, 120, 120);
     doc.text(`PO #${input.poNumber}`, MARGIN, pageH - 14);
     doc.text(`Ship To: ${shippingAddressLabel}`, MARGIN, pageH - 10);
@@ -427,8 +457,8 @@ function buildDocCore(input: PoPdfInput, pageH: number): { doc: jsPDF; finalY: n
   return { doc, finalY };
 }
 
-function buildDoc(input: PoPdfInput): jsPDF {
-  return buildDocCore(input, PAGE_H).doc;
+function buildDoc(input: PoPdfInput, fonts?: KoreanFonts): jsPDF {
+  return buildDocCore(input, PAGE_H, fonts).doc;
 }
 
 // ─── Build input from a PO block ──────────────────────────────────────────────
@@ -450,10 +480,10 @@ export function buildPoPdfInput(args: {
   if (!meta) return null;
 
   // Prefer address stored on the PO; fall back to the customer's defaults.
-  const billAddr = (meta.billingAddress ?? fallbackBillingAddress) as PoAddress | null;
-  const shipAddr = meta.billingSameAsShipping
-    ? billAddr
-    : ((meta.shippingAddress ?? fallbackShippingAddress) as PoAddress | null);
+  const shipAddr = (meta.shippingAddress ?? fallbackShippingAddress) as PoAddress | null;
+  const billAddr = meta.billingSameAsShipping
+    ? shipAddr
+    : ((meta.billingAddress ?? fallbackBillingAddress) as PoAddress | null);
 
   const linkedShopifyOrderNames = [
     ...new Set(
@@ -477,7 +507,8 @@ export function buildPoPdfInput(args: {
     poNote: meta.comment?.trim() ? meta.comment.trim() : null,
     dateCreated: meta.dateCreated,
     expectedDate: meta.expectedDate,
-    customerHeadline,
+    shippingHeadline: (shipAddr as PoAddress | null)?.name?.trim() || customerHeadline,
+    billingHeadline: (billAddr as PoAddress | null)?.name?.trim() || customerHeadline,
     billingAddressLines: addrLines(billAddr),
     shippingAddressLines: addrLines(shipAddr),
     supplierCompany,
@@ -487,8 +518,8 @@ export function buildPoPdfInput(args: {
 
 // ─── Public actions ───────────────────────────────────────────────────────────
 
-export function buildPoPdfBuffer(input: PoPdfInput): Buffer {
-  const doc = buildDoc(input);
+export function buildPoPdfBuffer(input: PoPdfInput, fonts?: KoreanFonts): Buffer {
+  const doc = buildDoc(input, fonts);
   return Buffer.from(doc.output('arraybuffer'));
 }
 
@@ -502,8 +533,9 @@ function poPdfFilename(poNumber: string): string {
 }
 
 /** Saves the same PDF as print, as a file download in the browser. */
-export function downloadPoPdf(input: PoPdfInput): void {
-  const doc = buildDoc(input);
+export async function downloadPoPdf(input: PoPdfInput): Promise<void> {
+  const fonts = await loadPdfFonts();
+  const doc = buildDoc(input, fonts);
   const blob = doc.output('blob');
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -516,8 +548,9 @@ export function downloadPoPdf(input: PoPdfInput): void {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-export function openPoPdfPrint(input: PoPdfInput): void {
-  const doc = buildDoc(input);
+export async function openPoPdfPrint(input: PoPdfInput): Promise<void> {
+  const fonts = await loadPdfFonts();
+  const doc = buildDoc(input, fonts);
   const blob = doc.output('blob');
   const url  = URL.createObjectURL(blob);
   window.open(url, '_blank', 'noopener,noreferrer');

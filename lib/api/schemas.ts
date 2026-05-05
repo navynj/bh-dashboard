@@ -605,6 +605,7 @@ export type ShopifyOrderCreateBody = z.infer<
 // ─── Address ─────────────────────────────────────────────────────────────────
 
 export const addressSchema = z.object({
+  name: z.string().trim().optional().default(''),
   address1: z.string().trim().min(1, 'Address line 1 is required'),
   address2: z.string().trim().optional().default(''),
   city: z.string().trim().min(1, 'City is required'),

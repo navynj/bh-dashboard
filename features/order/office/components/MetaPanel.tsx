@@ -60,6 +60,7 @@ const CA_PROVINCES = [
 ] as const;
 
 const EMPTY_ADDR: PoAddress = {
+  name: '',
   address1: '',
   address2: '',
   city: '',
@@ -292,6 +293,7 @@ function isAddrEmpty(a: PoAddress | null | undefined): boolean {
 function formatAddrOneLine(a: PoAddress | null | undefined): string {
   if (!a || !a.address1.trim()) return '—';
   const parts = [
+    a.name,
     a.address1,
     a.address2,
     a.city,
@@ -318,6 +320,12 @@ function CompactAddressInput({
   return (
     <div className="flex flex-col gap-1">
       {label ? <MetaLabel>{label}</MetaLabel> : null}
+      <Input
+        value={address.name ?? ''}
+        onChange={(e) => set('name', e.target.value)}
+        className={cls}
+        placeholder="Name (defaults to customer name)"
+      />
       <Input
         value={address.address1}
         onChange={(e) => set('address1', e.target.value)}
@@ -1004,12 +1012,12 @@ function WithPoMeta({
 
   const handleDownloadPo = () => {
     const input = buildCurrentPoPdfInput();
-    if (input) downloadPoPdf(input);
+    if (input) void downloadPoPdf(input);
   };
 
   const handlePrintPo = () => {
     const input = buildCurrentPoPdfInput();
-    if (input) openPoPdfPrint(input);
+    if (input) void openPoPdfPrint(input);
   };
 
   return (

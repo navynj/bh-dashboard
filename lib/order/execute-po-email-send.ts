@@ -1,12 +1,32 @@
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '@/lib/core/prisma';
 import { sendPoEmail } from '@/lib/order/send-po-email';
 import { getPoEmailOutboundSettings } from '@/lib/order/po-email-settings';
-import type { PoPdfInput } from '@/features/order/office/utils/purchase-order-pdf';
+import type { PoPdfInput, KoreanFonts } from '@/features/order/office/utils/purchase-order-pdf';
 import { buildPoPdfBuffer } from '@/features/order/office/utils/purchase-order-pdf';
 import { parseSupplierOrderChannelPayload } from '@/lib/order/supplier-order-channel';
 import type { EmailOrderChannelPayload, SupplierEmailContact } from '@/lib/order/supplier-order-channel';
 
+let _cachedFonts: KoreanFonts | undefined | null = null;
+
+function loadKoreanFontsSync(): KoreanFonts | undefined {
+  if (_cachedFonts !== null) return _cachedFonts;
+  try {
+    const dir = path.join(process.cwd(), 'public', 'fonts');
+    _cachedFonts = {
+      regular: fs.readFileSync(path.join(dir, 'NanumGothic-Regular.ttf')).toString('base64'),
+      bold: fs.readFileSync(path.join(dir, 'NanumGothic-Bold.ttf')).toString('base64'),
+    };
+    return _cachedFonts;
+  } catch {
+    _cachedFonts = undefined;
+    return undefined;
+  }
+}
+
 type PoAddress = {
+  name?: string;
   address1: string;
   address2?: string;
   city: string;
@@ -111,13 +131,16 @@ export async function executePurchaseOrderOutboundEmailSend(
     ? po.shippingAddress
     : (po.billingAddress ?? po.shippingAddress);
 
+  const shipAddrObj = po.shippingAddress as PoAddress | null;
+  const billAddrObj = billingAddr as PoAddress | null;
   const pdfInput: PoPdfInput = {
     poNumber: po.poNumber,
     linkedShopifyOrderNames,
     poNote: po.comment?.trim() ? po.comment.trim() : null,
     dateCreated: dateToYmd(po.dateCreated),
     expectedDate: dateToYmd(po.expectedDate),
-    customerHeadline,
+    shippingHeadline: shipAddrObj?.name?.trim() || customerHeadline,
+    billingHeadline: billAddrObj?.name?.trim() || customerHeadline,
     billingAddressLines: toAddrLines(billingAddr),
     shippingAddressLines: toAddrLines(po.shippingAddress),
     supplierCompany: po.supplier.company,
@@ -125,38 +148,37 @@ export async function executePurchaseOrderOutboundEmailSend(
   };
 
   const outbound = await getPoEmailOutboundSettings(prisma);
-  const pdfBuffer = buildPoPdfBuffer(pdfInput);
+  const pdfBuffer = buildPoPdfBuffer(pdfInput, loadKoreanFontsSync());
   const sentAt = new Date();
 
   await prisma.poEmailDelivery.deleteMany({ where: { purchaseOrderId } });
 
-  const deliveryTokens: string[] = [];
-  const allPrimaryToLower = new Set(
-    contacts.map((c) => c.email.trim().toLowerCase()).filter(Boolean),
+  const deliveryRecords = await Promise.all(
+    contacts.map(async (contact) => {
+      const token = crypto.randomUUID();
+      await prisma.poEmailDelivery.create({
+        data: {
+          purchaseOrderId,
+          recipientEmail: contact.email,
+          recipientName: contact.name ?? null,
+          trackingToken: token,
+          sentAt,
+        },
+      });
+      return { contact, token };
+    }),
   );
-  for (const contact of contacts) {
-    const token = crypto.randomUUID();
-    deliveryTokens.push(token);
-    await prisma.poEmailDelivery.create({
-      data: {
-        purchaseOrderId,
-        recipientEmail: contact.email,
-        recipientName: contact.name ?? null,
-        trackingToken: token,
-        sentAt,
-      },
-    });
-    await sendPoEmail({
-      to: [contact],
-      supplierName: contact.name ?? po.supplier.company,
-      pdfInput,
-      outbound,
-      trackingToken: token,
-      pdfBuffer,
-      supplierCcEmails,
-      dedicatedToRecipientsLower: allPrimaryToLower,
-    });
-  }
+  const deliveryTokens = deliveryRecords.map((r) => r.token);
+
+  await sendPoEmail({
+    to: contacts,
+    supplierName: po.supplier.company,
+    pdfInput,
+    outbound,
+    trackingToken: deliveryTokens[0],
+    pdfBuffer,
+    supplierCcEmails,
+  });
 
   await prisma.purchaseOrder.update({
     where: { id: purchaseOrderId },
