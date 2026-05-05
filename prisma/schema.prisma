@@ -265,7 +265,6 @@ model Cost {
   labors           Labor[]
   others           Other[]
   prices           Price[]
-  tags             CostTag[]
   createdAt        DateTime          @default(now()) @db.Timestamptz
   updatedAt        DateTime          @updatedAt @db.Timestamptz
   CostEditHistory  CostEditHistory[]
@@ -359,14 +358,12 @@ model Price {
   @@schema("cost")
 }
 
-model CostTag {
+model Tag {
   id               String            @id @default(cuid())
   name             String
   color            String            @default("gray")
   createdAt        DateTime          @default(now()) @db.Timestamptz
   updatedAt        DateTime          @updatedAt @db.Timestamptz
-  cost             Cost?             @relation(fields: [costId], references: [id])
-  costId           String?
   costTagRelations CostTagRelation[]
 
   @@map("tags")
@@ -376,8 +373,8 @@ model CostTag {
 model CostTagRelation {
   costId String
   tagId  String
-  Cost   Cost    @relation(fields: [costId], references: [id], onDelete: Cascade)
-  Tag    CostTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  Cost   Cost   @relation(fields: [costId], references: [id], onDelete: Cascade)
+  Tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([costId, tagId])
   @@map("cost_tags")
