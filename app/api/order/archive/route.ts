@@ -26,14 +26,20 @@ export async function POST(request: NextRequest) {
 
     const now = new Date();
 
-    // When archiving real Shopify orders, remove their line items on Shopify (qty → 0)
-    // rather than cancelling the whole order — the order is often split across POs.
+    // When archiving real Shopify orders, remove only the relevant line items (qty → 0)
+    // rather than all items — a Shopify order may be split across multiple POs.
     if (archive && shopifyOrderIds?.length && isShopifyAdminEnvConfigured()) {
+      // Scope to line items linked to the specific POs being archived, or any PO-linked
+      // items when archiving Shopify orders directly (no purchaseOrderIds given).
+      const lineItemFilter = purchaseOrderIds?.length
+        ? { purchaseOrderLineItems: { some: { purchaseOrderId: { in: purchaseOrderIds } } } }
+        : { purchaseOrderLineItems: { some: {} } };
+
       const rows = await prisma.shopifyOrder.findMany({
         where: { id: { in: shopifyOrderIds }, isCustomOrder: { not: true } },
         select: {
           shopifyGid: true,
-          lineItems: { select: { shopifyGid: true } },
+          lineItems: { where: lineItemFilter, select: { shopifyGid: true } },
         },
       });
 

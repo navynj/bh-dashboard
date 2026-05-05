@@ -102,6 +102,8 @@ function importProgressPercent(p: ImportStreamProgress): number {
   }
 }
 
+type SingleSyncResult = { ok: boolean; orderName?: string; error?: string; detail?: string };
+
 export function OfficeDataSyncClient() {
   const router = useRouter();
 
@@ -116,6 +118,10 @@ export function OfficeDataSyncClient() {
   const [importLiveProgress, setImportLiveProgress] = useState<ImportStreamProgress | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const importAbortRef = useRef<AbortController | null>(null);
+
+  const [singleOrderName, setSingleOrderName] = useState('');
+  const [singleSyncing, setSingleSyncing] = useState(false);
+  const [singleResult, setSingleResult] = useState<SingleSyncResult | null>(null);
 
   const handleStopSync = useCallback(() => {
     syncAbortRef.current?.abort();
@@ -340,6 +346,27 @@ export function OfficeDataSyncClient() {
     }
   }, [router]);
 
+  const handleSingleSync = useCallback(async () => {
+    const name = singleOrderName.trim();
+    if (!name) return;
+    setSingleSyncing(true);
+    setSingleResult(null);
+    try {
+      const res = await fetch('/api/order/sync/shopify/single', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderName: name }),
+      });
+      const json = (await res.json()) as SingleSyncResult;
+      setSingleResult(res.ok ? json : { ok: false, error: json.error, detail: json.detail });
+      if (res.ok) router.refresh();
+    } catch (err) {
+      setSingleResult({ ok: false, error: String(err) });
+    } finally {
+      setSingleSyncing(false);
+    }
+  }, [singleOrderName, router]);
+
   const pct = liveProgress ? Math.round(progressPercent(liveProgress)) : 0;
   const importPct = importLiveProgress
     ? Math.round(importProgressPercent(importLiveProgress))
@@ -426,6 +453,62 @@ export function OfficeDataSyncClient() {
           <div className="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1.5">
             {syncResult.unmappedVendors.length} unmapped vendor(s):{' '}
             {syncResult.unmappedVendors.join(', ')}
+          </div>
+        )}
+      </section>
+
+      {/* Single Order Sync */}
+      <section className="rounded-lg border p-4 space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold">Sync Single Shopify Order</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Enter a Shopify order number to re-fetch and sync just that order.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="text"
+            placeholder="#1234"
+            value={singleOrderName}
+            onChange={(e) => {
+              setSingleOrderName(e.target.value);
+              setSingleResult(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !singleSyncing) handleSingleSync();
+            }}
+            disabled={singleSyncing}
+            className="h-8 w-32 rounded-md border border-input bg-background px-2.5 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={singleSyncing || !singleOrderName.trim()}
+            onClick={handleSingleSync}
+            className="text-xs"
+          >
+            {singleSyncing ? 'Syncing…' : 'Sync Order'}
+          </Button>
+        </div>
+        {singleResult && (
+          <div
+            className={`text-xs rounded px-2 py-1.5 ${
+              singleResult.ok ? 'text-green-700 bg-green-50' : 'text-red-600 bg-red-50'
+            }`}
+            role={singleResult.ok ? undefined : 'alert'}
+          >
+            {singleResult.ok ? (
+              `${singleResult.orderName} synced.`
+            ) : (
+              <div className="space-y-1">
+                <div>{singleResult.error ?? 'Failed'}</div>
+                {singleResult.detail && (
+                  <div className="text-[10px] leading-snug break-words opacity-95">
+                    {singleResult.detail}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </section>
