@@ -28,6 +28,7 @@ export function supplierRowHasOpenDeliveryPo(vd: ViewData | undefined): boolean 
     (p) =>
       p.id !== 'new' &&
       !p.archivedAt &&
+      p.status !== 'pending' &&
       !isOfficePoDeliveryDone(p),
   );
 }
@@ -80,7 +81,7 @@ export function expectedDateKeysForPoTab(
   for (const po of vd.purchaseOrders) {
     if (po.id === 'new') continue;
     if (po.archivedAt) continue;
-    if (tab === 'po_created' && isOfficePoDeliveryDone(po)) continue;
+    if (tab === 'po_created' && (isOfficePoDeliveryDone(po) || po.status === 'pending')) continue;
     if (
       tab === 'fulfilled' &&
       (!isOfficePoDeliveryDone(po) || po.status === 'completed')
