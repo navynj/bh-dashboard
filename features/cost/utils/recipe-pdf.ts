@@ -197,53 +197,51 @@ function buildDoc(input: RecipePdfInput, fonts?: KoreanFonts): jsPDF {
       ? (lossPerPiece * input.totalCount / totalWeight) * 100
       : 0;
 
-  const summaryH = 26;
+  const hasWeightRow2 = input.finalWeight != null || input.lossAmount != null;
+  const summaryH = hasWeightRow2 ? 34 : 18;
   doc.setFillColor(248, 248, 248);
   doc.setDrawColor(210, 210, 210);
   doc.setLineWidth(0.2);
   doc.roundedRect(M, y, PAGE_W - 2 * M, summaryH, 2, 2, 'FD');
 
   const col1X = M + 6;
-  const col2X = M + 55;
-  const col3X = M + 110;
+  const col2X = M + 65;
+  const col3X = M + 122;
 
-  const labelY = y + 7;
-  const valY = y + 13;
-
+  // Row 1: 총 갯수 / 총 무게 / 개당 무게(로스 전)
   doc.setFont(ff, 'bold');
   doc.setFontSize(7.5);
   doc.setTextColor(120, 120, 120);
-  doc.text('총 갯수', col1X, labelY);
-  doc.text('총 무게', col2X, labelY);
-  doc.text('개당 무게 (로스 전)', col3X, labelY);
+  doc.text('총 갯수', col1X, y + 6);
+  doc.text('총 무게', col2X, y + 6);
+  doc.text('개당 무게 (로스 전)', col3X, y + 6);
 
   doc.setFont(ff, 'bold');
-  doc.setFontSize(11);
+  doc.setFontSize(10);
   doc.setTextColor(0, 0, 0);
-  doc.text(`${input.totalCount}개`, col1X, valY);
-  doc.text(`${totalWeight.toFixed(1)}g`, col2X, valY);
-  doc.text(`${weightPerPiece.toFixed(2)}g`, col3X, valY);
+  doc.text(`${input.totalCount}개`, col1X, y + 12);
+  doc.text(`${totalWeight.toFixed(1)}g`, col2X, y + 12);
+  doc.text(`${weightPerPiece.toFixed(2)}g`, col3X, y + 12);
 
-  const row2LabelY = y + 20;
-  const row2ValY = y + 24; // not used directly
+  // Row 2: 개당 최종 무게 / 개당 로스 / 로스율
+  if (hasWeightRow2) {
+    const finalWStr = `${finalWeightPerPiece.toFixed(2)}g`;
+    const lossStr = lossPerPiece > 0 ? `${lossPerPiece.toFixed(2)}g` : '-';
+    const rateStr = lossRate > 0 ? `${lossRate.toFixed(1)}%` : '-';
 
-  if (input.finalWeight != null || input.lossAmount != null) {
     doc.setFont(ff, 'bold');
     doc.setFontSize(7.5);
     doc.setTextColor(120, 120, 120);
-    doc.text('개당 최종 무게', col1X, row2LabelY);
-    doc.text('개당 로스', col2X, row2LabelY);
-    doc.text('로스율', col3X, row2LabelY);
+    doc.text('개당 최종 무게', col1X, y + 22);
+    doc.text('개당 로스', col2X, y + 22);
+    doc.text('로스율', col3X, y + 22);
 
     doc.setFont(ff, 'normal');
     doc.setFontSize(9);
     doc.setTextColor(0, 0, 0);
-    const finalWStr = `${finalWeightPerPiece.toFixed(2)}g`;
-    const lossStr = lossPerPiece > 0 ? `${lossPerPiece.toFixed(2)}g` : '-';
-    const rateStr = lossRate > 0 ? `${lossRate.toFixed(1)}%` : '-';
-    doc.text(finalWStr, col1X + 22, row2LabelY, { align: 'right' });
-    doc.text(lossStr, col2X + 22, row2LabelY, { align: 'right' });
-    doc.text(rateStr, col3X + 18, row2LabelY, { align: 'right' });
+    doc.text(finalWStr, col1X, y + 29);
+    doc.text(lossStr, col2X, y + 29);
+    doc.text(rateStr, col3X, y + 29);
   }
 
   doc.setDrawColor(0, 0, 0);
@@ -254,9 +252,8 @@ function buildDoc(input: RecipePdfInput, fonts?: KoreanFonts): jsPDF {
 
   const ingredientCols: ColDef[] = [
     { label: 'No.', x: M, w: 10 },
-    { label: '재료명', x: M + 11, w: 100 },
-    { label: '양', x: M + 112, w: 35, align: 'right' },
-    { label: '단위', x: M + 148, w: 24 },
+    { label: '재료명', x: M + 11, w: 130 },
+    { label: '양 (g)', x: M + 142, w: 40, align: 'right' },
   ];
 
   y = drawTableHeader(doc, ff, y, ingredientCols);
@@ -268,7 +265,6 @@ function buildDoc(input: RecipePdfInput, fonts?: KoreanFonts): jsPDF {
       String(i + 1),
       ing.title,
       ing.amount % 1 === 0 ? String(ing.amount) : ing.amount.toFixed(2),
-      ing.unit,
     ]),
     ingredientCols,
   );
@@ -281,9 +277,8 @@ function buildDoc(input: RecipePdfInput, fonts?: KoreanFonts): jsPDF {
 
     const packagingCols: ColDef[] = [
       { label: 'No.', x: M, w: 10 },
-      { label: '패키징명', x: M + 11, w: 100 },
-      { label: '양', x: M + 112, w: 35, align: 'right' },
-      { label: '단위', x: M + 148, w: 24 },
+      { label: '패키징명', x: M + 11, w: 130 },
+      { label: '양 (g)', x: M + 142, w: 40, align: 'right' },
     ];
 
     y = drawTableHeader(doc, ff, y, packagingCols);
@@ -295,7 +290,6 @@ function buildDoc(input: RecipePdfInput, fonts?: KoreanFonts): jsPDF {
         String(i + 1),
         pkg.title,
         pkg.amount % 1 === 0 ? String(pkg.amount) : pkg.amount.toFixed(2),
-        pkg.unit,
       ]),
       packagingCols,
     );

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { DataTableColumnHeader } from '@/components/ui/data-table-column-header';
 import { createColumnHelper } from '@tanstack/react-table';
 import { format } from 'date-fns';
@@ -15,8 +16,10 @@ export const costColumns = [
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Cost.title" />
     ),
-    cell: ({ getValue }) => (
-      <span className="font-medium">{getValue()}</span>
+    cell: ({ row, getValue }) => (
+      <Link href={`/cost/edit/${row.original.id}`} className="font-medium hover:underline">
+        {getValue()}
+      </Link>
     ),
   }),
   columnHelper.accessor('tags', {

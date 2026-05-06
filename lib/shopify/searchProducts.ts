@@ -42,6 +42,55 @@ const PRODUCTS_SEARCH = `query OfficeProductsSearch($first: Int!, $query: String
   }
 }`;
 
+const PRODUCTS_SEARCH_PAGINATED = `query OfficeProductsSearchPaginated($first: Int!, $query: String!, $after: String) {
+  products(first: $first, query: $query, after: $after) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    edges {
+      cursor
+      node {
+        id
+        title
+        status
+        featuredImage {
+          url
+        }
+        variants(first: 25) {
+          edges {
+            node {
+              id
+              title
+              sku
+              price
+              image {
+                url
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+type OfficeProductSearchPaginatedData = {
+  products: {
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    edges: Array<{
+      cursor: string;
+      node: OfficeProductSearchData['products']['edges'][number]['node'];
+    }>;
+  };
+};
+
+export type IngredientSearchPage = {
+  hits: OfficeProductSearchVariantHit[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
 export type OfficeProductSearchProductStatus = 'ACTIVE' | 'DRAFT' | 'ARCHIVED';
 
 export type OfficeProductSearchVariantHit = {
@@ -193,4 +242,101 @@ export function searchProductsForOfficeFromEnv(
   opts?: { includeDrafts?: boolean },
 ) {
   return searchProductsForOffice(getShopifyAdminEnv(), query, first, opts);
+}
+
+const BATCH_SIZE = 20;
+
+/**
+ * Fetch one batch of title-matching products for infinite scroll.
+ * Walks Shopify pages (250/page) from `afterCursor` until `BATCH_SIZE` title
+ * matches are found, then returns them with a cursor the client can send back.
+ *
+ * `nextCursor` points to the last matched variant's product edge cursor so the
+ * next call resumes exactly where this one stopped.
+ */
+export async function fetchIngredientSearchPage(
+  creds: ShopifyAdminCredentials,
+  userQuery: string,
+  afterCursor: string | null = null,
+  opts?: { includeDrafts?: boolean },
+): Promise<IngredientSearchPage> {
+  const client = createAdminApiClient({
+    storeDomain: creds.shopDomain.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+    apiVersion: creds.apiVersion,
+    accessToken: creds.accessToken,
+  });
+
+  const scopedQuery = shopifySearchQueryWithStatusScope(userQuery, Boolean(opts?.includeDrafts));
+  const ql = userQuery.trim().toLowerCase();
+  const hits: OfficeProductSearchVariantHit[] = [];
+  let shopifyCursor: string | null = afterCursor;
+  // cursor of the last product edge that yielded a match — used as nextCursor
+  let lastMatchEdgeCursor: string | null = null;
+  // whether there are more Shopify pages beyond the last one we fetched
+  let shopifyHasMore = false;
+
+  outer: while (hits.length < BATCH_SIZE) {
+    const result: { data?: OfficeProductSearchPaginatedData; errors?: unknown } =
+      await client.request<OfficeProductSearchPaginatedData>(
+        PRODUCTS_SEARCH_PAGINATED,
+        { variables: { first: 250, query: scopedQuery, after: shopifyCursor } },
+      );
+
+    const errList = Array.isArray(result.errors) ? result.errors : result.errors ? [result.errors] : [];
+    if (errList.length > 0) {
+      const msg = (errList as unknown[])
+        .map((e) => e && typeof e === 'object' && 'message' in e ? String((e as { message?: string }).message) : String(e))
+        .join('; ');
+      throw new Error(`Shopify products search failed: ${msg}`);
+    }
+
+    const page: OfficeProductSearchPaginatedData['products'] | undefined = result.data?.products;
+    if (!page) break;
+
+    shopifyHasMore = page.pageInfo.hasNextPage;
+
+    for (const edge of page.edges) {
+      const p = edge.node;
+      if (!p.title.toLowerCase().includes(ql)) continue;
+
+      const productStatus = normalizeProductStatus(p.status);
+      for (const ve of p.variants.edges) {
+        const v = ve.node;
+        const imageUrl = v.image?.url?.trim() || p.featuredImage?.url?.trim() || null;
+        hits.push({
+          productId: p.id,
+          productTitle: p.title,
+          productStatus,
+          variantId: v.id,
+          variantTitle: v.title,
+          sku: v.sku,
+          price: shopifyMoneyAmountToDecimalString(v.price),
+          unitCost: null,
+          imageUrl,
+        });
+      }
+      lastMatchEdgeCursor = edge.cursor;
+
+      if (hits.length >= BATCH_SIZE) break outer;
+    }
+
+    if (!page.pageInfo.hasNextPage) break;
+    shopifyCursor = page.pageInfo.endCursor;
+  }
+
+  const hasMore = hits.length >= BATCH_SIZE || shopifyHasMore;
+
+  return {
+    hits,
+    nextCursor: hasMore ? lastMatchEdgeCursor : null,
+    hasMore,
+  };
+}
+
+export function fetchIngredientSearchPageFromEnv(
+  userQuery: string,
+  afterCursor: string | null = null,
+  opts?: { includeDrafts?: boolean },
+) {
+  return fetchIngredientSearchPage(getShopifyAdminEnv(), userQuery, afterCursor, opts);
 }

@@ -12,7 +12,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/cost/list', labelKey: 'Cost.costs' },
-  { href: '/cost/product', labelKey: 'Product.products' },
+  // { href: '/cost/product', labelKey: 'Product.products' },
 ];
 
 export default function CostNav() {
