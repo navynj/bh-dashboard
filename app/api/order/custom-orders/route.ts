@@ -24,9 +24,11 @@ const createCustomOrderSchema = z.object({
   lineItems: z.array(customOrderLineItemSchema).min(1),
 });
 
-function generateReplacementOrderName(): string {
-  const digits = Math.floor(1000 + Math.random() * 9000);
-  return `#RE${digits}`;
+function generateReplacementOrderName(poNumber: string): string {
+  // Take the first whitespace-delimited token, strip any leading "#".
+  // e.g. "#2345 H - a1" → "2345", "#2345a" → "2345a"
+  const firstToken = (poNumber.split(/\s+/)[0] ?? poNumber).replace(/^#/, '');
+  return `#RE${firstToken}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -97,7 +99,7 @@ export async function POST(request: NextRequest) {
       data: {
         id: customOrderId,
         shopifyGid: `custom::${customOrderId}`,
-        name: generateReplacementOrderName(),
+        name: generateReplacementOrderName(sourcePo.poNumber),
         orderNumber: 0,
         isCustomOrder: true,
         referenceOrderNames,
