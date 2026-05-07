@@ -481,11 +481,6 @@ export function PoTable({
     setSavingOrderEdit(true);
     setOrderEditError(null);
     try {
-      const variantCatalogUpdates: {
-        productGid: string;
-        variantGid: string;
-        price: string;
-      }[] = [];
       const groups = new Map<string, ShopifyOrderEditOperation[]>();
       const ensure = (id: string) => {
         if (!groups.has(id)) groups.set(id, []);
@@ -524,18 +519,6 @@ export function PoTable({
         const oldP = parseMoney(o.price);
         const newP = parseMoney(row.itemPrice);
         if (Math.abs(oldP - newP) > 0.0005) {
-          if (row.shopifyVariantGid && row.shopifyProductGid) {
-            const upd = window.confirm(
-              'Also update the catalog variant price in Shopify for this line?',
-            );
-            if (upd) {
-              variantCatalogUpdates.push({
-                productGid: row.shopifyProductGid,
-                variantGid: row.shopifyVariantGid,
-                price: newP.toFixed(2),
-              });
-            }
-          }
           ensure(orderLocalId).push({
             type: 'setUnitPrice',
             shopifyLineItemGid: gid,
@@ -553,18 +536,6 @@ export function PoTable({
         }
         if (row._isNew && row._newKind === 'variant' && row.shopifyVariantGid) {
           const unit = parseMoney(row.itemPrice);
-          if (row.shopifyProductGid && row.shopifyVariantGid) {
-            const upd = window.confirm(
-              'Also update the catalog variant price for this new line?',
-            );
-            if (upd) {
-              variantCatalogUpdates.push({
-                productGid: row.shopifyProductGid,
-                variantGid: row.shopifyVariantGid,
-                price: unit.toFixed(2),
-              });
-            }
-          }
           ensure(target).push({
             type: 'addVariant',
             variantGid: row.shopifyVariantGid,
@@ -609,10 +580,6 @@ export function PoTable({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               operations: ops,
-              variantCatalogUpdates:
-                variantCatalogUpdates.length > 0
-                  ? variantCatalogUpdates
-                  : undefined,
               purchaseOrderId: purchaseOrder.id,
               appendLinesFromShopifyOrderLocalId:
                 hadAdds && addsHere && newLineTargetOrderId === localOrderId
@@ -647,22 +614,6 @@ export function PoTable({
           if (!res.ok) {
             setOrderEditError(
               typeof body?.error === 'string' ? body.error : 'Save failed',
-            );
-            return;
-          }
-        }
-        if (variantCatalogUpdates.length > 0) {
-          const vres = await fetch('/api/shopify/variant-catalog-updates', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ updates: variantCatalogUpdates }),
-          });
-          const vbody = await vres.json().catch(() => ({}));
-          if (!vres.ok) {
-            setOrderEditError(
-              typeof vbody?.error === 'string'
-                ? vbody.error
-                : 'Catalog price update failed',
             );
             return;
           }
