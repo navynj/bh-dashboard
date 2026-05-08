@@ -819,8 +819,8 @@ model PurchaseOrder {
   /// Hub user who created this PO (`POST /api/purchase-orders`). Null for legacy CSV import rows.
   createdById           String?                 @map("created_by_id")
   createdBy             User?                   @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  supplierId            String                  @map("supplier_id")
-  supplier              Supplier                @relation(fields: [supplierId], references: [id])
+  supplierId            String?                 @map("supplier_id")
+  supplier              Supplier?               @relation(fields: [supplierId], references: [id])
   shopifyOrders         ShopifyOrder[]
   lineItems             PurchaseOrderLineItem[]
   emailDeliveries       PoEmailDelivery[]

@@ -30,24 +30,32 @@ export async function POST(_request: NextRequest, context: RouteContext) {
       );
     }
 
+    if (!po.supplier) {
+      return NextResponse.json(
+        { error: 'This purchase order has no supplier and cannot be emailed.' },
+        { status: 422 },
+      );
+    }
+    const supplier = po.supplier;
+
     const channelPayload = parseSupplierOrderChannelPayload(
-      (po.supplier.orderChannelType ?? 'email') as
+      (supplier.orderChannelType ?? 'email') as
         | 'email'
         | 'order_link'
         | 'direct_instruction',
-      po.supplier.orderChannelPayload,
+      supplier.orderChannelPayload,
     );
 
     let contacts: SupplierEmailContact[] = [];
-    if (channelPayload.success && po.supplier.orderChannelType === 'email') {
+    if (channelPayload.success && supplier.orderChannelType === 'email') {
       const ep = channelPayload.data as EmailOrderChannelPayload;
       contacts = ep.contacts;
     }
 
-    if (contacts.length === 0 && po.supplier.contactEmails.length > 0) {
-      contacts = po.supplier.contactEmails.map((email, i) => ({
+    if (contacts.length === 0 && supplier.contactEmails.length > 0) {
+      contacts = supplier.contactEmails.map((email, i) => ({
         email,
-        name: i === 0 ? (po.supplier.contactName ?? null) : null,
+        name: i === 0 ? (supplier.contactName ?? null) : null,
       }));
     }
 

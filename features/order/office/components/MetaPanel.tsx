@@ -1064,6 +1064,13 @@ function WithPoMeta({
         </div>
       </Section>
 
+      {poPanelMeta?.orderedAt && (
+        <Section>
+          <MetaLabel>Order placed</MetaLabel>
+          <MetaValue>{fmtDate(poPanelMeta.orderedAt)}</MetaValue>
+        </Section>
+      )}
+
       <Section>
         <MetaLabel>PO created</MetaLabel>
         <MetaValue>{created}</MetaValue>

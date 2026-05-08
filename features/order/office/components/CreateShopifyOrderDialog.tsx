@@ -32,14 +32,24 @@ import {
 } from '@/components/ui/table';
 import { DeliveryLocationPresetPicker } from './DeliveryLocationPresetPicker';
 
-type LineRow = {
-  key: string;
-  kind: 'variant';
-  variantGid: string;
-  label: string;
-  sku: string | null;
-  quantity: number;
-};
+type LineRow =
+  | {
+      key: string;
+      kind: 'variant';
+      variantGid: string;
+      label: string;
+      sku: string | null;
+      quantity: number;
+    }
+  | {
+      key: string;
+      kind: 'custom';
+      title: string;
+      unitPrice: string; // decimal string
+      unitCost: string;  // decimal string
+      quantity: number;
+      taxable: boolean;
+    };
 
 function newKey(): string {
   return `r_${Math.random().toString(36).slice(2, 11)}`;
@@ -384,6 +394,21 @@ export function CreateShopifyOrderDialog({
     ]);
   }, []);
 
+  const addCustomItem = useCallback(() => {
+    setLines((prev) => [
+      ...prev,
+      {
+        key: newKey(),
+        kind: 'custom',
+        title: '',
+        unitPrice: '0.00',
+        unitCost: '0.00',
+        quantity: 1,
+        taxable: true,
+      },
+    ]);
+  }, []);
+
   const shippingPayload =
     useMemo((): ShopifyOrderCreateBody['shippingAddress'] => {
       return {
@@ -509,6 +534,14 @@ export function CreateShopifyOrderDialog({
       return;
     }
 
+    const customInvalid = lines.find(
+      (l) => l.kind === 'custom' && !l.title.trim(),
+    );
+    if (customInvalid) {
+      toast.error('Custom item title is required');
+      return;
+    }
+
     const rawFee = shippingFeeInput.trim().replace(',', '.');
     const parsedFee = parseFloat(rawFee);
     const shippingFee =
@@ -522,11 +555,22 @@ export function CreateShopifyOrderDialog({
       customerShopifyGid: selectedCustomer.id,
       shippingAddress: shippingPayload,
       billingAddress: billingPayload,
-      lineItems: lines.map((row) => ({
-        kind: 'variant' as const,
-        variantGid: row.variantGid,
-        quantity: row.quantity,
-      })),
+      lineItems: lines.map((row) =>
+        row.kind === 'custom'
+          ? {
+              kind: 'custom' as const,
+              title: row.title.trim(),
+              quantity: row.quantity,
+              unitPrice: Math.max(0, parseFloat(row.unitPrice) || 0),
+              unitCost: Math.max(0, parseFloat(row.unitCost) || 0),
+              taxable: row.taxable,
+            }
+          : {
+              kind: 'variant' as const,
+              variantGid: row.variantGid,
+              quantity: row.quantity,
+            },
+      ),
       deliveryMethod,
       shippingFee,
       financialStatus,
@@ -1056,21 +1100,34 @@ export function CreateShopifyOrderDialog({
                 <div className="text-xs font-medium text-muted-foreground">
                   Line items
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => setProductPickOpen(true)}
-                >
-                  Add catalog item…
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setProductPickOpen(true)}
+                  >
+                    Add catalog item…
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={addCustomItem}
+                  >
+                    Add custom item
+                  </Button>
+                </div>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs">Item</TableHead>
-                    <TableHead className="w-24 text-xs">Qty</TableHead>
+                    <TableHead className="w-20 text-xs">Price</TableHead>
+                    <TableHead className="w-20 text-xs">Cost</TableHead>
+                    <TableHead className="w-20 text-xs">Qty</TableHead>
                     <TableHead className="w-20 text-right text-xs" />
                   </TableRow>
                 </TableHeader>
@@ -1078,7 +1135,7 @@ export function CreateShopifyOrderDialog({
                   {lines.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={3}
+                        colSpan={5}
                         className="text-xs text-muted-foreground"
                       >
                         No lines yet
@@ -1086,14 +1143,96 @@ export function CreateShopifyOrderDialog({
                     </TableRow>
                   ) : (
                     lines.map((row) => (
-                      <TableRow key={row.key}>
+                      <TableRow key={row.key} className="align-top">
                         <TableCell className="text-xs">
-                          <div className="font-medium">{row.label}</div>
-                          {row.sku ? (
-                            <div className="text-muted-foreground">
-                              {row.sku}
+                          {row.kind === 'custom' ? (
+                            <div className="space-y-1">
+                              <Input
+                                className="h-8 text-xs"
+                                placeholder="Item title"
+                                value={row.title}
+                                onChange={(e) =>
+                                  setLines((prev) =>
+                                    prev.map((l) =>
+                                      l.key === row.key
+                                        ? { ...l, title: e.target.value }
+                                        : l,
+                                    ),
+                                  )
+                                }
+                              />
+                              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+                                <input
+                                  type="checkbox"
+                                  className="size-3"
+                                  checked={row.taxable}
+                                  onChange={(e) =>
+                                    setLines((prev) =>
+                                      prev.map((l) =>
+                                        l.key === row.key
+                                          ? { ...l, taxable: e.target.checked }
+                                          : l,
+                                      ),
+                                    )
+                                  }
+                                />
+                                Taxable
+                              </label>
                             </div>
-                          ) : null}
+                          ) : (
+                            <>
+                              <div className="font-medium">{row.label}</div>
+                              {row.sku ? (
+                                <div className="text-muted-foreground">
+                                  {row.sku}
+                                </div>
+                              ) : null}
+                            </>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {row.kind === 'custom' ? (
+                            <Input
+                              className="h-8 text-xs"
+                              type="text"
+                              inputMode="decimal"
+                              placeholder="0.00"
+                              value={row.unitPrice}
+                              onChange={(e) =>
+                                setLines((prev) =>
+                                  prev.map((l) =>
+                                    l.key === row.key
+                                      ? { ...l, unitPrice: e.target.value }
+                                      : l,
+                                  ),
+                                )
+                              }
+                            />
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {row.kind === 'custom' ? (
+                            <Input
+                              className="h-8 text-xs"
+                              type="text"
+                              inputMode="decimal"
+                              placeholder="0.00"
+                              value={row.unitCost}
+                              onChange={(e) =>
+                                setLines((prev) =>
+                                  prev.map((l) =>
+                                    l.key === row.key
+                                      ? { ...l, unitCost: e.target.value }
+                                      : l,
+                                  ),
+                                )
+                              }
+                            />
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-xs">
                           <Input

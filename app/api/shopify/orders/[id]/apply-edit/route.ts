@@ -26,6 +26,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if ('error' in parsed) return parsed.error;
     const { data } = parsed;
 
+    const hasShopifyOps = data.operations.length > 0;
+    const hasCostPatches = (data.costPatches?.length ?? 0) > 0;
+
+    if (!hasShopifyOps && !hasCostPatches) {
+      return NextResponse.json({ error: 'No operations provided' }, { status: 400 });
+    }
+
     const order = await prisma.shopifyOrder.findUnique({
       where: { id: localOrderId },
       select: { id: true, shopifyGid: true },
@@ -34,7 +41,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Shopify order not found' }, { status: 404 });
     }
 
-    if (isHubOnlyShopifyOrderGid(order.shopifyGid)) {
+    if (hasShopifyOps && isHubOnlyShopifyOrderGid(order.shopifyGid)) {
       return NextResponse.json(
         {
           error:
@@ -46,39 +53,86 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const creds = getShopifyAdminEnv();
 
-    await applyOrderEditAndCommit(
-      creds,
-      order.shopifyGid,
-      data.operations as OrderEditOperation[],
-      { notifyCustomer: false },
-    );
+    if (hasShopifyOps) {
+      await applyOrderEditAndCommit(
+        creds,
+        order.shopifyGid,
+        data.operations as OrderEditOperation[],
+        { notifyCustomer: false },
+      );
 
-    const variantCatalogUpdates = data.variantCatalogUpdates;
-    const hasVariantUpdates = Boolean(variantCatalogUpdates?.length);
-    const syncOutcome = (async (): Promise<boolean> => {
-      const node = await fetchShopifyOrderNodeByGid(creds, order.shopifyGid, {
-        lineItems: 'sync',
-      });
-      if (!node) return false;
-      await syncOneOrder(node);
-      return true;
-    })();
+      const variantCatalogUpdates = data.variantCatalogUpdates;
+      const hasVariantUpdates = Boolean(variantCatalogUpdates?.length);
+      const syncOutcome = (async (): Promise<boolean> => {
+        const node = await fetchShopifyOrderNodeByGid(creds, order.shopifyGid, {
+          lineItems: 'sync',
+        });
+        if (!node) return false;
+        await syncOneOrder(node);
+        return true;
+      })();
 
-    const [, ok] = await Promise.all([
-      hasVariantUpdates && variantCatalogUpdates
-        ? applyVariantCatalogPriceUpdates(creds, variantCatalogUpdates)
-        : Promise.resolve(),
-      syncOutcome,
-    ]);
+      const [, ok] = await Promise.all([
+        hasVariantUpdates && variantCatalogUpdates
+          ? applyVariantCatalogPriceUpdates(creds, variantCatalogUpdates)
+          : Promise.resolve(),
+        syncOutcome,
+      ]);
 
-    if (!ok) {
-      return NextResponse.json(
-        { error: 'Could not reload order from Shopify after edit.' },
-        { status: 502 },
+      if (!ok) {
+        return NextResponse.json(
+          { error: 'Could not reload order from Shopify after edit.' },
+          { status: 502 },
+        );
+      }
+    }
+
+    // Apply hub-DB-only cost patches (after sync so newly-added custom items exist in DB)
+    if (hasCostPatches) {
+      await Promise.all(
+        (data.costPatches ?? []).map((patch) => {
+          if (patch.shopifyLineItemGid) {
+            return prisma.shopifyOrderLineItem.updateMany({
+              where: { shopifyGid: patch.shopifyLineItemGid },
+              data: { unitCost: patch.unitCost },
+            });
+          }
+          if (patch.title) {
+            return prisma.shopifyOrderLineItem.updateMany({
+              where: { orderId: order.id, title: patch.title, variantGid: null },
+              data: { unitCost: patch.unitCost },
+            });
+          }
+          return null;
+        }),
       );
     }
 
-    if (data.purchaseOrderId && !data.deferPurchaseOrderResync) {
+    // Stamp vendor on newly-added custom items so they're grouped under the right supplier in inbox.
+    const addedCustomTitles = hasShopifyOps
+      ? data.operations
+          .filter((op) => op.type === 'addCustomItem')
+          .map((op) => (op as { title: string }).title)
+      : [];
+    if (addedCustomTitles.length > 0 && data.purchaseOrderId) {
+      const po = await prisma.purchaseOrder.findUnique({
+        where: { id: data.purchaseOrderId },
+        select: { supplier: { select: { shopifyVendorName: true } } },
+      });
+      const vendorName = po?.supplier?.shopifyVendorName ?? null;
+      if (vendorName) {
+        await Promise.all(
+          addedCustomTitles.map((title) =>
+            prisma.shopifyOrderLineItem.updateMany({
+              where: { orderId: order.id, title, variantGid: null, vendor: null },
+              data: { vendor: vendorName },
+            }),
+          ),
+        );
+      }
+    }
+
+    if (hasShopifyOps && data.purchaseOrderId && !data.deferPurchaseOrderResync) {
       await resyncPurchaseOrderLineItemsFromShopify({
         purchaseOrderId: data.purchaseOrderId,
         appendFromShopifyOrderId: data.appendLinesFromShopifyOrderLocalId ?? null,

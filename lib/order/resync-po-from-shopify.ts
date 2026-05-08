@@ -78,7 +78,7 @@ export async function resyncPurchaseOrderLineItemsFromShopify(
 
   const linkedOrderIds = new Set(po.shopifyOrders.map((o) => o.id));
   const vendorNorm =
-    po.supplier.shopifyVendorName?.trim().toLowerCase() ?? null;
+    po.supplier?.shopifyVendorName?.trim().toLowerCase() ?? null;
 
   const linkedSoliIds = po.lineItems
     .map((l) => l.shopifyOrderLineItemId)

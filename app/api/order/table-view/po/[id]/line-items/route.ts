@@ -68,7 +68,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({
       ok: true,
       poNumber: po.poNumber,
-      supplierCompany: po.supplier.company,
+      supplierCompany: po.supplier?.company ?? null,
       currency: po.currency,
       lines,
     });

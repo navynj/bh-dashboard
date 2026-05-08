@@ -42,7 +42,7 @@ type DraftLine = PrePoLineDraft & {
   localId: string;
   removed?: boolean;
   isNew?: boolean;
-  newKind?: 'variant';
+  newKind?: 'variant' | 'custom';
 };
 
 type Props = {
@@ -111,7 +111,7 @@ export function OrderBlock({
   const [editing, setEditing] = useState(false);
   const [draftLines, setDraftLines] = useState<DraftLine[]>(() => draftFromOrder(order));
   const [saving, setSaving] = useState(false);
-  const originalByGid = useRef<Map<string, { quantity: number; itemPrice: string | null }>>(
+  const originalByGid = useRef<Map<string, { quantity: number; itemPrice: string | null; itemCost: string | null }>>(
     new Map(),
   );
   const [addOpen, setAddOpen] = useState(false);
@@ -132,10 +132,10 @@ export function OrderBlock({
   );
 
   const beginEdit = useCallback(() => {
-    const m = new Map<string, { quantity: number; itemPrice: string | null }>();
+    const m = new Map<string, { quantity: number; itemPrice: string | null; itemCost: string | null }>();
     for (const li of order.lineItems) {
       if (li.shopifyLineItemGid) {
-        m.set(li.shopifyLineItemGid, { quantity: li.quantity, itemPrice: li.itemPrice });
+        m.set(li.shopifyLineItemGid, { quantity: li.quantity, itemPrice: li.itemPrice, itemCost: li.itemCost ?? null });
       }
     }
     originalByGid.current = m;
@@ -148,8 +148,10 @@ export function OrderBlock({
     setDraftLines(draftFromOrder(order));
   }, [order]);
 
-  const buildSavePayload = useCallback(async () => {
+  const buildSavePayload = useCallback(() => {
     const ops: ShopifyOrderEditOperation[] = [];
+    type CostPatch = { shopifyLineItemGid?: string; title?: string; unitCost: number };
+    const costPatches: CostPatch[] = [];
     const orig = originalByGid.current;
 
     for (const [gid, o] of orig) {
@@ -159,12 +161,17 @@ export function OrderBlock({
         continue;
       }
       if (row.quantity !== o.quantity) {
-        ops.push({
-          type: 'setQuantity',
-          shopifyLineItemGid: gid,
-          quantity: row.quantity,
-          restock: false,
-        });
+        ops.push({ type: 'setQuantity', shopifyLineItemGid: gid, quantity: row.quantity, restock: false });
+      }
+      const oldP = parseMoney(o.itemPrice);
+      const newP = parseMoney(row.itemPrice);
+      if (Math.abs(oldP - newP) > 0.0005) {
+        ops.push({ type: 'setUnitPrice', shopifyLineItemGid: gid, unitPrice: newP });
+      }
+      const oldC = parseMoney(o.itemCost);
+      const newC = parseMoney(row.itemCost);
+      if (Math.abs(oldC - newC) > 0.0005) {
+        costPatches.push({ shopifyLineItemGid: gid, unitCost: newC });
       }
     }
 
@@ -180,16 +187,33 @@ export function OrderBlock({
           unitPriceOverride: unit > 0 ? unit : undefined,
         });
       }
+      if (row.isNew && row.newKind === 'custom' && row.productTitle?.trim()) {
+        const unitPrice = parseMoney(row.itemPrice);
+        ops.push({
+          type: 'addCustomItem',
+          title: row.productTitle.trim(),
+          quantity: Math.max(1, row.quantity),
+          unitPrice: unitPrice >= 0 ? unitPrice : 0,
+          taxable: true,
+          requiresShipping: true,
+        });
+        const unitCost = parseMoney(row.itemCost);
+        if (unitCost > 0) {
+          costPatches.push({ title: row.productTitle.trim(), unitCost });
+        }
+      }
     }
 
-    return { ops };
+    return { ops, costPatches };
   }, [draftLines]);
 
   const saveReplacementEdit = useCallback(async () => {
     type DbOp =
       | { type: 'setQuantity'; lineItemId: string; quantity: number }
+      | { type: 'setPrice'; lineItemId: string; price: number }
+      | { type: 'setCost'; lineItemId: string; unitCost: number }
       | { type: 'removeLine'; lineItemId: string }
-      | { type: 'addLine'; productTitle: string; quantity: number; sku?: string | null; itemPrice?: string | null; shopifyVariantGid?: string | null; shopifyProductGid?: string | null; imageUrl?: string | null };
+      | { type: 'addLine'; productTitle: string; quantity: number; sku?: string | null; itemPrice?: string | null; unitCost?: number | null; shopifyVariantGid?: string | null; shopifyProductGid?: string | null; imageUrl?: string | null };
 
     const ops: DbOp[] = [];
 
@@ -198,23 +222,39 @@ export function OrderBlock({
       const curr = draftLines.find((d) => d.shopifyLineItemId === orig.shopifyLineItemId && !d.removed);
       if (!curr) {
         ops.push({ type: 'removeLine', lineItemId: orig.shopifyLineItemId });
-      } else if (curr.quantity !== orig.quantity) {
-        ops.push({ type: 'setQuantity', lineItemId: orig.shopifyLineItemId, quantity: curr.quantity });
+      } else {
+        if (curr.quantity !== orig.quantity) {
+          ops.push({ type: 'setQuantity', lineItemId: orig.shopifyLineItemId, quantity: curr.quantity });
+        }
+        const oldP = parseMoney(orig.itemPrice);
+        const newP = parseMoney(curr.itemPrice);
+        if (Math.abs(oldP - newP) > 0.0005) {
+          ops.push({ type: 'setPrice', lineItemId: orig.shopifyLineItemId, price: newP });
+        }
+        const oldC = parseMoney(orig.itemCost ?? null);
+        const newC = parseMoney(curr.itemCost ?? null);
+        if (Math.abs(oldC - newC) > 0.0005) {
+          ops.push({ type: 'setCost', lineItemId: orig.shopifyLineItemId, unitCost: newC });
+        }
       }
     }
 
     for (const row of draftLines) {
       if (row.removed || row.shopifyLineItemId) continue;
-      if (row.isNew && row.newKind === 'variant') {
+      if (row.isNew && (row.newKind === 'variant' || row.newKind === 'custom')) {
+        const title = row.productTitle?.trim();
+        if (!title) continue;
+        const unitCost = parseMoney(row.itemCost ?? null);
         ops.push({
           type: 'addLine',
-          productTitle: row.productTitle,
+          productTitle: title,
           quantity: Math.max(1, row.quantity),
           sku: row.sku,
           shopifyVariantGid: row.shopifyVariantGid ?? null,
           shopifyProductGid: row.shopifyProductGid ?? null,
           imageUrl: row.imageUrl ?? null,
           itemPrice: row.itemPrice ?? null,
+          unitCost: unitCost > 0 ? unitCost : null,
         });
       }
     }
@@ -257,20 +297,23 @@ export function OrderBlock({
     }
     setSaving(true);
     try {
-      const { ops } = await buildSavePayload();
-      if (ops.length === 0) {
+      const { ops, costPatches } = buildSavePayload();
+      if (ops.length === 0 && costPatches.length === 0) {
         toast.message('No changes to save');
         setEditing(false);
         return;
       }
 
-      const hasAppend = ops.some((o) => o.type === 'addVariant');
+      const hasAppend = ops.some(
+        (o) => o.type === 'addVariant' || o.type === 'addCustomItem',
+      );
 
       const res = await fetch(`/api/shopify/orders/${order.id}/apply-edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           operations: ops,
+          costPatches,
           purchaseOrderId: purchaseOrderId ?? undefined,
           appendLinesFromShopifyOrderLocalId: hasAppend ? order.id : undefined,
         }),
@@ -312,6 +355,28 @@ export function OrderBlock({
       },
     ]);
     setAddOpen(false);
+  }, []);
+
+  const addCustomLine = useCallback(() => {
+    setDraftLines((prev) => [
+      ...prev,
+      {
+        localId: newLocalId(),
+        isNew: true,
+        newKind: 'custom' as const,
+        shopifyLineItemId: undefined,
+        shopifyLineItemGid: undefined,
+        shopifyVariantGid: undefined,
+        shopifyProductGid: undefined,
+        sku: null,
+        imageUrl: null,
+        productTitle: '',
+        itemPrice: '0',
+        itemCost: '0',
+        quantity: 1,
+        includeInPo: true,
+      },
+    ]);
   }, []);
 
   const visibleDrafts = useMemo(() => draftLines.filter((d) => !d.removed), [draftLines]);
@@ -514,6 +579,15 @@ export function OrderBlock({
           >
             Add line
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="text-[10px] rounded-[5px]"
+            onClick={addCustomLine}
+          >
+            Add custom line
+          </Button>
           <span className="text-[10px] text-muted-foreground">
             {order.isReplacementOrder
               ? 'Changes apply to the replacement order only.'
@@ -585,15 +659,32 @@ export function OrderBlock({
                 )}
               >
                 <TableCell className="px-3 py-[7px]">
-                  <ShopifyLineProductCell
-                    linkMode="none"
-                    shopifyAdminStoreHandle={shopifyAdminStoreHandle}
-                    shopifyProductGid={(row as PrePoLineDraft).shopifyProductGid}
-                    shopifyVariantGid={(row as PrePoLineDraft).shopifyVariantGid}
-                    imageUrl={row.imageUrl}
-                    label={row.productTitle}
-                    sku={row.sku}
-                  />
+                  {editing && (row as DraftLine).isNew && (row as DraftLine).newKind === 'custom' ? (
+                    <Input
+                      className="h-7 text-[11px]"
+                      placeholder="Item title"
+                      value={row.productTitle ?? ''}
+                      onChange={(e) =>
+                        setDraftLines((prev) =>
+                          prev.map((d) =>
+                            d.localId === (row as DraftLine).localId
+                              ? { ...d, productTitle: e.target.value }
+                              : d,
+                          ),
+                        )
+                      }
+                    />
+                  ) : (
+                    <ShopifyLineProductCell
+                      linkMode="none"
+                      shopifyAdminStoreHandle={shopifyAdminStoreHandle}
+                      shopifyProductGid={(row as PrePoLineDraft).shopifyProductGid}
+                      shopifyVariantGid={(row as PrePoLineDraft).shopifyVariantGid}
+                      imageUrl={row.imageUrl}
+                      label={row.productTitle}
+                      sku={row.sku}
+                    />
+                  )}
                 </TableCell>
                 <TableCell className="w-10 px-1 py-[7px] text-center align-middle">
                   <ShopifyProductAdminArrowLink
@@ -607,13 +698,43 @@ export function OrderBlock({
                 </TableCell>
                 <TableCell className="px-3 py-[7px] text-[11px]">
                   {editing ? (
-                    <span>{formatItemPrice(row.itemPrice)}</span>
+                    <Input
+                      className="h-7 text-[11px]"
+                      placeholder="0.00"
+                      value={row.itemPrice ?? ''}
+                      onChange={(e) =>
+                        setDraftLines((prev) =>
+                          prev.map((d) =>
+                            d.localId === (row as DraftLine).localId
+                              ? { ...d, itemPrice: e.target.value || null }
+                              : d,
+                          ),
+                        )
+                      }
+                    />
                   ) : (
                     formatItemPrice(row.itemPrice)
                   )}
                 </TableCell>
                 <TableCell className="px-3 py-[7px] text-[11px]">
-                  {formatItemPrice((row as PrePoLineDraft).itemCost ?? null)}
+                  {editing ? (
+                    <Input
+                      className="h-7 text-[11px]"
+                      placeholder="0.00"
+                      value={(row as PrePoLineDraft).itemCost ?? ''}
+                      onChange={(e) =>
+                        setDraftLines((prev) =>
+                          prev.map((d) =>
+                            d.localId === (row as DraftLine).localId
+                              ? { ...d, itemCost: e.target.value || null }
+                              : d,
+                          ),
+                        )
+                      }
+                    />
+                  ) : (
+                    formatItemPrice((row as PrePoLineDraft).itemCost ?? null)
+                  )}
                 </TableCell>
                 <TableCell
                   className={cn(

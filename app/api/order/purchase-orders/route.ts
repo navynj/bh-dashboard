@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
           dateCreated: new Date(),
           expectedDate: data.expectedDate ? new Date(data.expectedDate) : null,
           comment: data.comment ?? null,
-          supplierId: data.supplierId!,
+          supplierId: data.supplierId ?? null,
           shippingAddress: data.shippingAddress ?? undefined,
           billingAddress: data.billingAddress ?? undefined,
           billingSameAsShipping: data.billingSameAsShipping,

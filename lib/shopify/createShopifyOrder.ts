@@ -70,7 +70,7 @@ export type CreateShopifyOrderMailingInput = {
 
 export type CreateShopifyOrderLineInput =
   | { kind: 'variant'; variantGid: string; quantity: number }
-  | { kind: 'custom'; title: string; quantity: number; unitPrice: number };
+  | { kind: 'custom'; title: string; quantity: number; unitPrice: number; unitCost?: number; taxable?: boolean };
 
 export type CreateShopifyOrderFinancialStatus = 'PENDING' | 'PAID';
 
@@ -176,6 +176,7 @@ export async function createShopifyOrder(
       priceSet: {
         shopMoney: { amount, currencyCode },
       },
+      taxable: li.taxable ?? true,
       requiresShipping,
     };
   });

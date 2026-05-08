@@ -14,6 +14,7 @@ import type {
 } from '@/lib/shopify/createShopifyOrder';
 import { fetchShopifyOrderNodeByGid } from '@/lib/shopify/fetchOrders';
 import { syncOneOrder } from '@/lib/shopify/sync/upsert-order';
+import { prisma } from '@/lib/core/prisma';
 
 function trimOrUndef(s: string | undefined): string | undefined {
   const t = s?.trim();
@@ -69,6 +70,8 @@ export async function POST(request: NextRequest) {
               title: li.title,
               quantity: li.quantity,
               unitPrice: li.unitPrice,
+              unitCost: li.unitCost ?? 0,
+              taxable: li.taxable ?? true,
             },
       ),
       deliveryMethod: body.deliveryMethod,
@@ -93,6 +96,30 @@ export async function POST(request: NextRequest) {
     }
 
     const synced = await syncOneOrder(node);
+
+    // Patch unitCost for custom line items — Shopify has no cost field for non-variant items.
+    // Match input custom items to synced line items by position (same creation order).
+    const inputCustomItems = params.lineItems.filter(
+      (li): li is Extract<typeof li, { kind: 'custom' }> =>
+        li.kind === 'custom' && (li.unitCost ?? 0) > 0,
+    );
+    if (inputCustomItems.length > 0) {
+      // node.lineItems preserves Shopify's order — custom items have variant === null
+      const customLineGids = node.lineItems.edges
+        .filter((e) => e.node.variant === null)
+        .map((e) => e.node.id);
+
+      await Promise.all(
+        inputCustomItems.map((li, i) => {
+          const gid = customLineGids[i];
+          if (!gid) return null;
+          return prisma.shopifyOrderLineItem.updateMany({
+            where: { shopifyGid: gid, orderId: synced.id },
+            data: { unitCost: li.unitCost },
+          });
+        }),
+      );
+    }
 
     return NextResponse.json({
       ok: true,

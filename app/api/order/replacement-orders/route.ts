@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
     // Use supplier's Shopify vendor name so inbox can match back to the supplier.
     // Fall back to company name when shopifyVendorName is not set.
     const supplierVendor =
-      sourcePo.supplier.shopifyVendorName ?? sourcePo.supplier.company ?? null;
+      sourcePo.supplier?.shopifyVendorName ?? sourcePo.supplier?.company ?? null;
 
     const replacementOrderId = createId();
     const now = new Date();

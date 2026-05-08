@@ -506,7 +506,16 @@ export const shopifyOrderEditOperationSchema = z.discriminatedUnion('type', [
 ]);
 
 export const shopifyOrderApplyEditBodySchema = z.object({
-  operations: z.array(shopifyOrderEditOperationSchema).min(1),
+  operations: z.array(shopifyOrderEditOperationSchema).min(0),
+  costPatches: z
+    .array(
+      z.object({
+        shopifyLineItemGid: z.string().optional(),
+        title: z.string().optional(),
+        unitCost: z.number().nonnegative(),
+      }),
+    )
+    .optional(),
   variantCatalogUpdates: z
     .array(
       z.object({
@@ -573,6 +582,8 @@ const shopifyOrderCreateLineSchema = z.discriminatedUnion('kind', [
     title: z.string().trim().min(1, 'Custom item title is required'),
     quantity: z.number().int().min(1),
     unitPrice: z.number().nonnegative(),
+    unitCost: z.number().nonnegative().optional().default(0),
+    taxable: z.boolean().optional().default(true),
   }),
 ]);
 

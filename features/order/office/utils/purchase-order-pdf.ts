@@ -239,6 +239,8 @@ export type PoPdfInput = {
   linkedShopifyOrderNames: string[];
   /** Hub-only PO note (`purchase_orders.comment`); shown below title band when set. */
   poNote: string | null;
+  /** Earliest Shopify order placement date (processedAt) among linked orders. */
+  orderedAt: string | null;
   dateCreated: string | null;
   expectedDate: string | null;
   shippingHeadline: string | null;
@@ -364,21 +366,23 @@ function buildDocCore(input: PoPdfInput, pageH: number, fonts?: KoreanFonts): { 
   rule(doc, y);
   y += 5;
 
-  // ── Supplier + dates ──────────────────────────────────────────────────────
+  // ── Supplier + dates (4 columns) ─────────────────────────────────────────
   doc.setFontSize(8);
   doc.setFont(ff, 'bold');
   doc.setTextColor(100, 100, 100);
-  doc.text('SUPPLIER', MARGIN, y);
-  doc.text('DATE CREATED', MARGIN + 55, y);
-  doc.text('DELIVERY DATE', MARGIN + 118, y);
+  doc.text('SUPPLIER',       MARGIN,        y);
+  doc.text('ORDER PLACED',   MARGIN + 42,   y);
+  doc.text('PO CREATED',     MARGIN + 95,   y);
+  doc.text('DELIVERY DATE',  MARGIN + 148,  y);
   doc.setTextColor(0, 0, 0);
   y += LH * 0.85;
 
   doc.setFont(ff, 'normal');
   doc.setFontSize(9.5);
   doc.text(input.supplierCompany,                          MARGIN,       y);
-  doc.text(ymd2display(input.dateCreated)  ?? '—',         MARGIN + 55,  y);
-  doc.text(ymd2display(input.expectedDate) ?? '—',         MARGIN + 118, y);
+  doc.text(ymd2display(input.orderedAt)    ?? '—',         MARGIN + 42,  y);
+  doc.text(ymd2display(input.dateCreated)  ?? '—',         MARGIN + 95,  y);
+  doc.text(ymd2display(input.expectedDate) ?? '—',         MARGIN + 148, y);
   y += LH + 6;
 
   // ── Table header (filled row) ─────────────────────────────────────────────
@@ -505,6 +509,7 @@ export function buildPoPdfInput(args: {
     poNumber: block.poNumber,
     linkedShopifyOrderNames,
     poNote: meta.comment?.trim() ? meta.comment.trim() : null,
+    orderedAt: meta.orderedAt ?? null,
     dateCreated: meta.dateCreated,
     expectedDate: meta.expectedDate,
     shippingHeadline: (shipAddr as PoAddress | null)?.name?.trim() || customerHeadline,

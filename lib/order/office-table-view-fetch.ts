@@ -91,21 +91,21 @@ export function mapPurchaseOrderToTableRow(po: {
     contactName: string | null;
     link: string | null;
     notes: string | null;
-  };
+  } | null;
   createdBy: { name: string | null; email: string | null } | null;
   _count: { lineItems: number; shopifyOrders: number; emailDeliveries: number };
 }): OfficeTableViewPoRow {
   const resolvedChannel = legacyFallbackOrderChannel({
-    orderChannelType: po.supplier.orderChannelType,
-    orderChannelPayload: po.supplier.orderChannelPayload,
-    contactEmails: po.supplier.contactEmails,
-    contactName: po.supplier.contactName,
-    link: po.supplier.link,
-    notes: po.supplier.notes,
+    orderChannelType: po.supplier?.orderChannelType ?? 'email',
+    orderChannelPayload: po.supplier?.orderChannelPayload ?? null,
+    contactEmails: po.supplier?.contactEmails ?? [],
+    contactName: po.supplier?.contactName ?? null,
+    link: po.supplier?.link ?? null,
+    notes: po.supplier?.notes ?? null,
   });
   const poEmailTracked =
     resolvedChannel.type === 'email' && po.legacyExternalId == null;
-  const expectedPoEmailRecipients = poEmailTracked
+  const expectedPoEmailRecipients = poEmailTracked && po.supplier
     ? expectedPoEmailRecipientCount(po.supplier)
     : 0;
   const emailDeliveryOutstanding = computeEmailDeliveryOutstanding({
@@ -121,7 +121,7 @@ export function mapPurchaseOrderToTableRow(po: {
     id: po.id,
     poNumber: po.poNumber,
     status: po.status,
-    supplierCompany: po.supplier.company,
+    supplierCompany: po.supplier?.company ?? '—',
     createdByLabel: formatPoCreatedByLabel(po.createdBy),
     poEmailTracked,
     expectedPoEmailRecipients,

@@ -120,7 +120,7 @@ type EditPoLine = PoLineItemView & {
   _local: string;
   _removed?: boolean;
   _isNew?: boolean;
-  _newKind?: 'variant';
+  _newKind?: 'variant' | 'custom';
 };
 
 function parseMoney(s: string | null | undefined): number {
@@ -527,6 +527,14 @@ export function PoTable({
         }
       }
 
+      // Cost patches: hub-DB-only unit cost updates (no Shopify API call)
+      type CostPatch = { shopifyLineItemGid?: string; title?: string; unitCost: number };
+      const costPatchesByOrder = new Map<string, CostPatch[]>();
+      const ensureCost = (id: string) => {
+        if (!costPatchesByOrder.has(id)) costPatchesByOrder.set(id, []);
+        return costPatchesByOrder.get(id)!;
+      };
+
       for (const row of editLines) {
         if (row._removed || row.shopifyLineItemGid) continue;
         const target = newLineTargetOrderId;
@@ -544,18 +552,52 @@ export function PoTable({
             unitPriceOverride: unit > 0 ? unit : undefined,
           });
         }
+        if (row._isNew && row._newKind === 'custom' && row.productTitle?.trim()) {
+          const unitPrice = parseMoney(row.itemPrice);
+          ensure(target).push({
+            type: 'addCustomItem',
+            title: row.productTitle.trim(),
+            quantity: Math.max(1, row.quantity),
+            unitPrice: unitPrice >= 0 ? unitPrice : 0,
+            taxable: true,
+            requiresShipping: true,
+          });
+          const unitCost = parseMoney(row.itemCost ?? null);
+          if (unitCost > 0) {
+            ensureCost(target).push({ title: row.productTitle.trim(), unitCost });
+          }
+        }
+      }
+
+      // Cost changes on existing lines
+      for (const row of editLines) {
+        if (row._removed || !row.shopifyLineItemGid || !row.shopifyOrderId) continue;
+        const orig = items.find((i) => i.shopifyLineItemGid === row.shopifyLineItemGid);
+        const origCost = parseMoney(orig?.itemCost ?? null);
+        const newCost = parseMoney(row.itemCost ?? null);
+        if (Math.abs(origCost - newCost) > 0.0005) {
+          ensureCost(row.shopifyOrderId).push({
+            shopifyLineItemGid: row.shopifyLineItemGid,
+            unitCost: newCost,
+          });
+        }
       }
 
       const entries = [...groups.entries()].filter(([, ops]) => ops.length > 0);
-      if (entries.length === 0) {
-        toast.message('No Shopify changes to save');
+      const allOrderIds = new Set([
+        ...entries.map(([id]) => id),
+        ...costPatchesByOrder.keys(),
+      ]);
+
+      if (allOrderIds.size === 0) {
+        toast.message('No changes to save');
         setOrderEditMode(false);
         return;
       }
 
       let hadAdds = false;
       for (const [, ops] of entries) {
-        if (ops.some((o) => o.type === 'addVariant')) {
+        if (ops.some((o) => o.type === 'addVariant' || o.type === 'addCustomItem')) {
           hadAdds = true;
           break;
         }
@@ -563,16 +605,21 @@ export function PoTable({
 
       let appendAfterSync: string | undefined;
       for (const [localOrderId, ops] of entries) {
-        const addsHere = ops.some((o) => o.type === 'addVariant');
+        const addsHere = ops.some(
+          (o) => o.type === 'addVariant' || o.type === 'addCustomItem',
+        );
         if (hadAdds && addsHere && newLineTargetOrderId === localOrderId) {
           appendAfterSync = localOrderId;
           break;
         }
       }
 
-      if (entries.length === 1) {
-        const [localOrderId, ops] = entries[0];
-        const addsHere = ops.some((o) => o.type === 'addVariant');
+      if (allOrderIds.size === 1) {
+        const localOrderId = [...allOrderIds][0];
+        const ops = groups.get(localOrderId) ?? [];
+        const addsHere = ops.some(
+          (o) => o.type === 'addVariant' || o.type === 'addCustomItem',
+        );
         const res = await fetch(
           `/api/shopify/orders/${localOrderId}/apply-edit`,
           {
@@ -580,6 +627,7 @@ export function PoTable({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               operations: ops,
+              costPatches: costPatchesByOrder.get(localOrderId) ?? [],
               purchaseOrderId: purchaseOrder.id,
               appendLinesFromShopifyOrderLocalId:
                 hadAdds && addsHere && newLineTargetOrderId === localOrderId
@@ -597,17 +645,19 @@ export function PoTable({
         }
       } else {
         const responses = await Promise.all(
-          entries.map(([localOrderId, ops]) =>
-            fetch(`/api/shopify/orders/${localOrderId}/apply-edit`, {
+          [...allOrderIds].map((localOrderId) => {
+            const ops = groups.get(localOrderId) ?? [];
+            return fetch(`/api/shopify/orders/${localOrderId}/apply-edit`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 operations: ops,
+                costPatches: costPatchesByOrder.get(localOrderId) ?? [],
                 purchaseOrderId: purchaseOrder.id,
                 deferPurchaseOrderResync: true,
               }),
-            }),
-          ),
+            });
+          }),
         );
         for (const res of responses) {
           const body = await res.json().catch(() => ({}));
@@ -707,6 +757,40 @@ export function PoTable({
     },
     [linkedOrders, newLineTargetOrderId, purchaseOrder.id],
   );
+
+  const addCustomLine = useCallback(() => {
+    const key = poLocalKey();
+    const ord = linkedOrders.find((o) => o.id === newLineTargetOrderId);
+    setEditLines((prev) => [
+      ...prev,
+      {
+        id: key,
+        purchaseOrderId: purchaseOrder.id,
+        sequence: prev.length + 1,
+        quantity: 1,
+        quantityReceived: 0,
+        supplierRef: null,
+        sku: null,
+        variantTitle: null,
+        productTitle: '',
+        imageUrl: null,
+        isCustom: true,
+        itemPrice: '0',
+        itemCost: '0',
+        shopifyOrderLineItemId: null,
+        shopifyLineItemGid: null,
+        shopifyVariantGid: null,
+        shopifyProductGid: null,
+        shopifyOrderId: newLineTargetOrderId || null,
+        shopifyOrderNumber: ord?.name ?? '—',
+        fulfillmentStatus: 'UNFULFILLED' as LineFulfillmentStatus,
+        note: null,
+        _local: key,
+        _isNew: true,
+        _newKind: 'custom' as const,
+      },
+    ]);
+  }, [linkedOrders, newLineTargetOrderId, purchaseOrder.id]);
 
   const lazyLineCount = purchaseOrder.panelMeta?.fulfillTotalCount ?? 0;
   if (items.length === 0 && lazyLineCount > 0) {
@@ -873,6 +957,15 @@ export function PoTable({
             onClick={() => setAddOpen(true)}
           >
             Add line
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="text-[10px] rounded-[5px]"
+            onClick={addCustomLine}
+          >
+            Add custom line
           </Button>
         </div>
       )}
@@ -1071,7 +1164,7 @@ export function PoTable({
                 ['product', 'Product', 'left'],
                 ['admin', '', 'center'],
                 ['ref', 'Ref.', 'left'],
-                ['cost', orderEditMode ? 'Shopify price' : 'Cost', 'left'],
+                ['cost', orderEditMode ? 'Price / Cost' : 'Cost', 'left'],
                 ['qty', 'Qty', 'left'],
                 ['recv', 'Received', 'left'],
                 ['note', 'Note', 'left'],
@@ -1163,22 +1256,39 @@ export function PoTable({
 
                 {/* Product */}
                 <TableCell className="px-3 py-[7px]">
-                  <ShopifyLineProductCell
-                    linkMode="none"
-                    shopifyAdminStoreHandle={shopifyAdminStoreHandle}
-                    shopifyProductGid={item.shopifyProductGid}
-                    shopifyVariantGid={item.shopifyVariantGid}
-                    imageUrl={item.imageUrl}
-                    label={formatProductLabel(item)}
-                    sku={item.sku}
-                    afterTitle={
-                      item.isCustom ? (
-                        <span className="text-[9px] text-muted-foreground ml-1">
-                          (custom)
-                        </span>
-                      ) : null
-                    }
-                  />
+                  {row._isNew && row._newKind === 'custom' ? (
+                    <Input
+                      className="h-7 text-[11px]"
+                      placeholder="Item title"
+                      value={row.productTitle ?? ''}
+                      onChange={(e) =>
+                        setEditLines((prev) =>
+                          prev.map((d) =>
+                            d._local === row._local
+                              ? { ...d, productTitle: e.target.value }
+                              : d,
+                          ),
+                        )
+                      }
+                    />
+                  ) : (
+                    <ShopifyLineProductCell
+                      linkMode="none"
+                      shopifyAdminStoreHandle={shopifyAdminStoreHandle}
+                      shopifyProductGid={item.shopifyProductGid}
+                      shopifyVariantGid={item.shopifyVariantGid}
+                      imageUrl={item.imageUrl}
+                      label={formatProductLabel(item)}
+                      sku={item.sku}
+                      afterTitle={
+                        item.isCustom ? (
+                          <span className="text-[9px] text-muted-foreground ml-1">
+                            (custom)
+                          </span>
+                        ) : null
+                      }
+                    />
+                  )}
                 </TableCell>
 
                 <TableCell className="w-10 px-1 py-[7px] text-center align-middle">
@@ -1194,23 +1304,47 @@ export function PoTable({
                   {item.supplierRef ?? '—'}
                 </TableCell>
 
-                {/* Cost (view) / Shopify unit price when editing order lines */}
+                {/* Cost (view) / Price + Cost inputs when editing */}
                 <TableCell className="px-3 py-[7px] text-[11px]">
                   {editable ? (
-                    <Input
-                      className="h-7 text-[11px]"
-                      value={item.itemPrice ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setEditLines((prev) =>
-                          prev.map((d) =>
-                            d._local === row._local
-                              ? { ...d, itemPrice: v || null }
-                              : d,
-                          ),
-                        );
-                      }}
-                    />
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] text-muted-foreground w-7 shrink-0">Price</span>
+                        <Input
+                          className="h-7 text-[11px]"
+                          placeholder="0.00"
+                          value={item.itemPrice ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setEditLines((prev) =>
+                              prev.map((d) =>
+                                d._local === row._local
+                                  ? { ...d, itemPrice: v || null }
+                                  : d,
+                              ),
+                            );
+                          }}
+                        />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] text-muted-foreground w-7 shrink-0">Cost</span>
+                        <Input
+                          className="h-7 text-[11px]"
+                          placeholder="0.00"
+                          value={item.itemCost ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setEditLines((prev) =>
+                              prev.map((d) =>
+                                d._local === row._local
+                                  ? { ...d, itemCost: v || null }
+                                  : d,
+                              ),
+                            );
+                          }}
+                        />
+                      </div>
+                    </div>
                   ) : (
                     formatItemPrice(
                       item.itemCost ?? null,

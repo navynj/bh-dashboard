@@ -14,6 +14,16 @@ const patchOpSchema = z.discriminatedUnion('type', [
     quantity: z.number().int().min(0),
   }),
   z.object({
+    type: z.literal('setPrice'),
+    lineItemId: z.string(),
+    price: z.number().nonnegative(),
+  }),
+  z.object({
+    type: z.literal('setCost'),
+    lineItemId: z.string(),
+    unitCost: z.number().nonnegative(),
+  }),
+  z.object({
     type: z.literal('removeLine'),
     lineItemId: z.string(),
   }),
@@ -24,6 +34,7 @@ const patchOpSchema = z.discriminatedUnion('type', [
     sku: z.string().nullable().optional(),
     variantTitle: z.string().nullable().optional(),
     itemPrice: z.string().nullable().optional(),
+    unitCost: z.number().nonnegative().nullable().optional(),
     shopifyVariantGid: z.string().nullable().optional(),
     shopifyProductGid: z.string().nullable().optional(),
     imageUrl: z.string().nullable().optional(),
@@ -84,6 +95,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             data: { quantity: op.quantity },
           });
         }
+      } else if (op.type === 'setPrice') {
+        await prisma.shopifyOrderLineItem.updateMany({
+          where: { id: op.lineItemId, orderId: id },
+          data: { price: op.price },
+        });
+      } else if (op.type === 'setCost') {
+        await prisma.shopifyOrderLineItem.updateMany({
+          where: { id: op.lineItemId, orderId: id },
+          data: { unitCost: op.unitCost },
+        });
       } else if (op.type === 'removeLine') {
         await prisma.shopifyOrderLineItem.deleteMany({ where: { id: op.lineItemId, orderId: id } });
       } else if (op.type === 'addLine') {
@@ -102,6 +123,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
             vendor: inferredVendor,
             quantity: op.quantity,
             price: op.itemPrice ? parseFloat(op.itemPrice) : null,
+            unitCost: op.unitCost ?? null,
           },
         });
       }

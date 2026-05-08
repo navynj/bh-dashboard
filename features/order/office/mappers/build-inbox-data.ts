@@ -790,7 +790,7 @@ export function buildInboxData(
       );
     }
 
-    const supKey = po.supplierId;
+    const supKey = po.supplierId ?? UNASSIGNED_SUPPLIER_ID;
 
     if (!byCustSup.has(custKey)) byCustSup.set(custKey, new Map());
     const supMap = byCustSup.get(custKey)!;

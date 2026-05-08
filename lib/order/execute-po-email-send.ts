@@ -75,23 +75,28 @@ export async function executePurchaseOrderOutboundEmailSend(
     throw new Error(`Purchase order not found: ${purchaseOrderId}`);
   }
 
+  if (!po.supplier) {
+    throw new Error('No supplier configured for this purchase order.');
+  }
+  const supplier = po.supplier;
+
   const channelPayload = parseSupplierOrderChannelPayload(
-    (po.supplier.orderChannelType ?? 'email') as 'email' | 'order_link' | 'direct_instruction',
-    po.supplier.orderChannelPayload,
+    (supplier.orderChannelType ?? 'email') as 'email' | 'order_link' | 'direct_instruction',
+    supplier.orderChannelPayload,
   );
 
   let contacts: SupplierEmailContact[] = [];
   let supplierCcEmails: string[] = [];
-  if (channelPayload.success && po.supplier.orderChannelType === 'email') {
+  if (channelPayload.success && supplier.orderChannelType === 'email') {
     const ep = channelPayload.data as EmailOrderChannelPayload;
     contacts = ep.contacts;
     supplierCcEmails = ep.ccEmails;
   }
 
-  if (contacts.length === 0 && po.supplier.contactEmails.length > 0) {
-    contacts = po.supplier.contactEmails.map((email, i) => ({
+  if (contacts.length === 0 && supplier.contactEmails.length > 0) {
+    contacts = supplier.contactEmails.map((email, i) => ({
       email,
-      name: i === 0 ? (po.supplier.contactName ?? null) : null,
+      name: i === 0 ? (supplier.contactName ?? null) : null,
     }));
   }
 
@@ -137,13 +142,14 @@ export async function executePurchaseOrderOutboundEmailSend(
     poNumber: po.poNumber,
     linkedShopifyOrderNames,
     poNote: po.comment?.trim() ? po.comment.trim() : null,
+    orderedAt: null,
     dateCreated: dateToYmd(po.dateCreated),
     expectedDate: dateToYmd(po.expectedDate),
     shippingHeadline: shipAddrObj?.name?.trim() || customerHeadline,
     billingHeadline: billAddrObj?.name?.trim() || customerHeadline,
     billingAddressLines: toAddrLines(billingAddr),
     shippingAddressLines: toAddrLines(po.shippingAddress),
-    supplierCompany: po.supplier.company,
+    supplierCompany: supplier.company,
     lineItems,
   };
 
@@ -172,7 +178,7 @@ export async function executePurchaseOrderOutboundEmailSend(
 
   await sendPoEmail({
     to: contacts,
-    supplierName: po.supplier.company,
+    supplierName: supplier.company,
     pdfInput,
     outbound,
     trackingToken: deliveryTokens[0],

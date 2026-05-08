@@ -912,8 +912,11 @@ export function OrderManagementView({
       if (!entry) return { ok: false, reason: 'unknown' };
 
       const parts = key.split('::');
+      const _supPart = parts.length >= 2 ? parts[1] : null;
       const supplierId =
-        parts.length >= 2 && parts[1] !== 'without-po' ? parts[1] : null;
+        _supPart && _supPart !== 'without-po' && _supPart !== '__unassigned__'
+          ? _supPart
+          : null;
 
       const raw = patchedViewDataMap[key];
       const entryLocal = states[key] ?? null;
@@ -1069,8 +1072,11 @@ export function OrderManagementView({
       if (!entry) return;
 
       const parts = activeKey.split('::');
+      const _supPart = parts.length >= 2 ? parts[1] : null;
       const supplierId =
-        parts.length >= 2 && parts[1] !== 'without-po' ? parts[1] : null;
+        _supPart && _supPart !== 'without-po' && _supPart !== '__unassigned__'
+          ? _supPart
+          : null;
 
       const raw = patchedViewDataMap[activeKey];
       const entryLocalSp = states[activeKey] ?? null;
