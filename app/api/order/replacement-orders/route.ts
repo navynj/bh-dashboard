@@ -140,12 +140,12 @@ export async function POST(request: NextRequest) {
     });
 
     // Create RefundReplacementRecord per line item when reason is provided.
-    if (reasonCategory && reasonSubcategory) {
+    if (reasonCategory) {
       await prisma.refundReplacementRecord.createMany({
         data: lineItems.map((li) => ({
           type: 'replacement',
           reasonCategory,
-          reasonSubcategory,
+          reasonSubcategory: reasonSubcategory ?? '',
           reasonNotes: reasonNotes ?? null,
           purchaseOrderId: sourcePurchaseOrderId,
           purchaseOrderLineItemId: li.sourcePurchaseOrderLineItemId ?? null,

@@ -391,15 +391,32 @@ export function OrderBlock({
     !editing && Boolean(onLineItemNoteChange) && lineItemNotes != null;
 
   return (
-    <div className="bg-background border border-border rounded-[10px] overflow-hidden mb-2">
+    <div
+      className="bg-background border border-border rounded-[10px] overflow-hidden mb-2"
+      data-order-number={order.orderNumber}
+    >
       <div className="px-3.5 py-2 border-b bg-muted/40 flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5 text-[12px] font-medium">
             {order.isReplacementOrder ? (
               <>
-                <Badge variant="blue" className="rounded px-1.5 text-[10px]">
-                  {order.referenceOrderNames ?? order.orderNumber}
-                </Badge>
+                <button
+                  type="button"
+                  className="inline-flex"
+                  title="Go to original order"
+                  onClick={() => {
+                    const ref = order.referenceOrderNames?.split(',')[0]?.trim();
+                    if (!ref) return;
+                    const el = document.querySelector<HTMLElement>(
+                      `[data-order-number="${ref.replace(/"/g, '\\"')}"]`,
+                    );
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                >
+                  <Badge variant="blue" className="rounded px-1.5 text-[10px] cursor-pointer hover:opacity-80">
+                    {order.referenceOrderNames ?? order.orderNumber}
+                  </Badge>
+                </button>
                 <Badge variant="amber" className="rounded px-1.5 text-[10px]">
                   REPLACEMENT
                 </Badge>

@@ -57,10 +57,14 @@ function getLabelFromOptions(value: string, options: ReasonCategory[]): string {
   return value;
 }
 
-function todayIso() { return new Date().toISOString().slice(0, 10); }
 function monthAgoIso() {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
+  return d.toISOString().slice(0, 10);
+}
+function monthAheadIso() {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
   return d.toISOString().slice(0, 10);
 }
 
@@ -78,7 +82,7 @@ export function RefundReplacementView() {
   const [totalOrderedQty, setTotalOrderedQty] = useState(0);
   const [loading, setLoading] = useState(false);
   const [startDate, setStartDate] = useState(monthAgoIso);
-  const [endDate, setEndDate] = useState(todayIso);
+  const [endDate, setEndDate] = useState(monthAheadIso);
   const [typeFilter, setTypeFilter] = useState<'all' | 'refund' | 'replacement'>('all');
   const [editingRecord, setEditingRecord] = useState<RefundReplacementRow | null>(null);
   const { options: fetchedOptions } = useReasonOptions();
@@ -236,7 +240,7 @@ export function RefundReplacementView() {
           <Input type="date" value={startDate} min="2025-04-20" onChange={(e) => setStartDate(e.target.value < '2025-04-20' ? '2025-04-20' : e.target.value)} className="h-7 text-xs w-36" />
         </div>
         <div className="space-y-1">
-          <Label className="text-[11px]">To (Orig. Delivery)</Label>
+          <Label className="text-[11px]">To (Delivery)</Label>
           <Input type="date" value={endDate} min="2025-04-20" onChange={(e) => setEndDate(e.target.value)} className="h-7 text-xs w-36" />
         </div>
         <div className="flex gap-1">
