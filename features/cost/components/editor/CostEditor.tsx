@@ -14,9 +14,10 @@ import { useTranslations } from 'next-intl';
 
 interface Props {
   initialCost?: CostDetailApiResponse;
+  shopifyAdminUrl?: string;
 }
 
-export default function CostEditor({ initialCost }: Props) {
+export default function CostEditor({ initialCost, shopifyAdminUrl }: Props) {
   const t = useTranslations('Cost');
   const editor = useCostEditor(initialCost);
   const disabled = editor.state.locked;
@@ -47,6 +48,7 @@ export default function CostEditor({ initialCost }: Props) {
             title={t('ingredients')}
             items={editor.state.ingredients}
             disabled={disabled}
+            shopifyAdminUrl={shopifyAdminUrl}
             onAdd={editor.addIngredient}
             onUpdate={editor.updateIngredient}
             onRemove={editor.removeIngredient}
@@ -57,6 +59,7 @@ export default function CostEditor({ initialCost }: Props) {
             title={t('packaging')}
             items={editor.state.packagings}
             disabled={disabled}
+            shopifyAdminUrl={shopifyAdminUrl}
             onAdd={editor.addPackaging}
             onUpdate={editor.updatePackaging}
             onRemove={editor.removePackaging}

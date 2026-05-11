@@ -30,7 +30,7 @@ function parseImage(raw: JsonValue): { src: string; alt: string } | null {
 }
 
 function toIngredientItem(
-  i: { id: string; title: string; unit: string; amount: number; costId: string; variantId: string; type: string; image: JsonValue; rank: string } & { unitPrice?: number | null; amountPrice?: number | null; gPrice?: number | null },
+  i: { id: string; title: string; unit: string; amount: number; costId: string; variantId: string; type: string; image: JsonValue; rank: string } & { unitPrice?: number | null; amountPrice?: number | null; gPrice?: number | null; metadata?: Record<string, unknown> },
 ): IngredientApiItem {
   return {
     id: i.id,
@@ -45,6 +45,7 @@ function toIngredientItem(
     unitPrice: i.unitPrice ?? null,
     amountPrice: i.amountPrice ?? null,
     gPrice: i.gPrice ?? null,
+    metadata: i.metadata,
   };
 }
 
@@ -89,9 +90,13 @@ export default async function CostEditPage({ params }: RouteContext) {
     tags: costTagRelations.map((r) => ({ id: r.Tag.id, name: r.Tag.name, color: r.Tag.color })),
   };
 
+  const shopifyAdminUrl = shopifyConfig?.shopifyUrl
+    ? `https://${shopifyConfig.shopifyUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}`
+    : undefined;
+
   return (
     <div className="w-full max-w-6xl mx-auto space-y-4 px-4 py-6">
-      <CostEditor initialCost={cost} />
+      <CostEditor initialCost={cost} shopifyAdminUrl={shopifyAdminUrl} />
     </div>
   );
 }

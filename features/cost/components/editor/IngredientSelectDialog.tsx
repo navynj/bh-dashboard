@@ -182,13 +182,16 @@ function ProductsTab({
     onSelect({
       title: [p.title, p.variantTitle].filter(Boolean).join(' - '),
       variantId: p.variantId,
-      unit: p.unit ?? 'g',
+      // Always use grams as the input unit so "Amount (g)" column is accurate.
+      // pc stays as-is since g_per_pc handles the weight conversion.
+      unit: p.unit === 'pc' ? 'pc' : 'g',
       amount: 0,
       unitPrice: p.unitPrice,
       amountPrice: null,
       gPrice: p.gPrice,
       image: p.imageUrl ? { src: p.imageUrl, alt: p.title } : null,
       type: 'product',
+      metadata: p.metadata ?? undefined,
     });
     onClose();
   }
@@ -270,9 +273,9 @@ function ProductsTab({
                   {p.unitPrice != null ? `$${p.unitPrice.toFixed(2)}/${p.unit}` : '—'}
                 </p>
 
-                {/* gPrice */}
+                {/* gPrice — displayed as $/100g to match column header */}
                 <p className={`text-right tabular-nums text-xs font-medium ${p.gPrice == null ? 'text-destructive' : ''}`}>
-                  {p.gPrice != null ? `$${p.gPrice.toFixed(4)}` : t('gPerPcRequired')}
+                  {p.gPrice != null ? `$${(p.gPrice * 100).toFixed(4)}` : t('gPerPcRequired')}
                 </p>
 
                 <ChevronRight className="h-4 w-4 text-muted-foreground justify-self-end" />
@@ -362,7 +365,7 @@ function CostsTab({
         cost.prices?.[0]?.price ?? 0;
       onSelect({
         title: cost.title,
-        variantId: '',
+        variantId: costId,   // store cost ID so reload can re-fetch prices
         unit: 'g',
         amount: finalWeight,
         unitPrice: unitCost,

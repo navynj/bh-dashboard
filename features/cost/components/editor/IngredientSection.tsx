@@ -20,9 +20,10 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { GripVertical, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { GripVertical, Plus, Trash2, AlertCircle, ExternalLink } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { IngredientEditorItem } from '../../types/cost';
+import { computeItemCost } from '../../utils/calculations';
 import IngredientSelectDialog from './IngredientSelectDialog';
 import GPerPcDialog from './GPerPcDialog';
 
@@ -30,6 +31,7 @@ interface Props {
   title: string;
   items: IngredientEditorItem[];
   disabled?: boolean;
+  shopifyAdminUrl?: string;
   onAdd: () => void;
   onUpdate: (id: string, patch: Partial<IngredientEditorItem>) => void;
   onRemove: (id: string) => void;
@@ -40,6 +42,7 @@ export default function IngredientSection({
   title,
   items,
   disabled,
+  shopifyAdminUrl,
   onAdd,
   onUpdate,
   onRemove,
@@ -98,11 +101,15 @@ export default function IngredientSection({
                   <th className="text-left px-2 py-2 font-medium text-muted-foreground">
                     {t('ingredientName')}
                   </th>
+                  {shopifyAdminUrl && <th className="w-6" />}
                   <th className="text-right px-2 py-2 font-medium text-muted-foreground w-[90px]">
                     {t('amountG')}
                   </th>
                   <th className="text-right px-2 py-2 font-medium text-muted-foreground w-[90px]">
                     {t('gPrice')}
+                  </th>
+                  <th className="text-right px-2 py-2 font-medium text-muted-foreground w-[70px]">
+                    g/pc
                   </th>
                   <th className="text-right px-2 py-2 font-medium text-muted-foreground w-[80px]">
                     {t('cost')}
@@ -118,6 +125,7 @@ export default function IngredientSection({
                       item={item}
                       index={idx}
                       disabled={disabled}
+                      shopifyAdminUrl={shopifyAdminUrl}
                       onUpdate={onUpdate}
                       onRemove={onRemove}
                       onOpenDialog={() => setDialogOpenFor(item.id)}
@@ -174,6 +182,7 @@ function SortableIngredientRow({
   item,
   index,
   disabled,
+  shopifyAdminUrl,
   onUpdate,
   onRemove,
   onOpenDialog,
@@ -183,6 +192,7 @@ function SortableIngredientRow({
   item: IngredientEditorItem;
   index: number;
   disabled?: boolean;
+  shopifyAdminUrl?: string;
   onUpdate: (id: string, patch: Partial<IngredientEditorItem>) => void;
   onRemove: (id: string) => void;
   onOpenDialog: () => void;
@@ -200,14 +210,7 @@ function SortableIngredientRow({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const cost =
-    item.amountPrice != null
-      ? item.amountPrice
-      : item.unitPrice != null
-        ? item.unitPrice * item.amount
-        : item.gPrice != null
-          ? item.gPrice * item.amount
-          : null;
+  const cost = computeItemCost(item);
 
   return (
     <tr
@@ -243,11 +246,34 @@ function SortableIngredientRow({
           ) : (
             <div className="h-6 w-6 shrink-0 rounded border bg-muted" />
           )}
-          <span className={`truncate max-w-[160px] ${!item.title ? 'text-muted-foreground' : ''}`}>
+          <span
+            title={item.title || undefined}
+            className={`truncate max-w-[260px] ${!item.title ? 'text-muted-foreground' : ''}`}
+          >
             {item.title || 'Select ingredient...'}
           </span>
         </button>
       </td>
+
+      {/* Shopify admin link */}
+      {shopifyAdminUrl && (
+        <td className="px-1 py-1">
+          {item.variantId && item.type !== 'cost' ? (
+            <a
+              href={`${shopifyAdminUrl}/admin/products/variants/${item.variantId.split('/').pop()}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              title="Open in Shopify admin"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          ) : (
+            <span />
+          )}
+        </td>
+      )}
 
       {/* Amount (g) */}
       <td className="px-2 py-1">
@@ -263,10 +289,10 @@ function SortableIngredientRow({
         />
       </td>
 
-      {/* gPrice */}
+      {/* gPrice — shown as $/100g to match column header */}
       <td className="px-2 py-1 text-right tabular-nums">
         {item.gPrice != null ? (
-          <span className="text-muted-foreground">${item.gPrice.toFixed(4)}</span>
+          <span className="text-muted-foreground">${(item.gPrice * 100).toFixed(4)}</span>
         ) : item.variantId && item.type !== 'cost' ? (
           <button
             className="flex items-center gap-1 ml-auto text-destructive hover:text-destructive/80 transition-colors"
@@ -277,6 +303,17 @@ function SortableIngredientRow({
             <AlertCircle className="h-3.5 w-3.5" />
             <span className="text-xs">g/pc?</span>
           </button>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+
+      {/* g per pc */}
+      <td className="px-2 py-1 text-right tabular-nums">
+        {((item.metadata?.g_per_pc as number | undefined) ?? 0) > 0 ? (
+          <span className="text-muted-foreground text-xs">
+            {(item.metadata!.g_per_pc as number).toFixed(1)}g
+          </span>
         ) : (
           <span className="text-muted-foreground">—</span>
         )}

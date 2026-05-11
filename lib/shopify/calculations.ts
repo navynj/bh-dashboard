@@ -1,4 +1,4 @@
-import { unitToGram } from '@/constants/cost/unit';
+import { parseUnitToGrams } from '@/constants/cost/unit';
 import type { ProductMetadata } from '@/types/shopify';
 
 export function calculateUnitPrice(productData: {
@@ -35,15 +35,9 @@ export function calculateGPriceFromUnitPrice(
     return unitPrice / gPerPc;
   }
 
-  const numericUnitMatch = unitType.match(/^(\d+(?:\.\d+)?)\s*g$/);
-  if (numericUnitMatch) {
-    const grams = parseFloat(numericUnitMatch[1]);
-    if (grams > 0) return unitPrice / grams;
-  }
-
-  const conversionFactor = unitToGram[unitType];
-  if (!conversionFactor || conversionFactor <= 0) return null;
-  return unitPrice / conversionFactor;
+  const grams = parseUnitToGrams(unitType);
+  if (!grams) return null;
+  return unitPrice / grams;
 }
 
 export function calculateGPrice(productData: {

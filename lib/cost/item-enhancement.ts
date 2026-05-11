@@ -1,4 +1,5 @@
 import { fetchShopifyProductByVariantId } from '@/lib/shopify/fetchByVariant';
+import { prisma } from '@/lib/core/prisma';
 import type { ShopifyConfig } from '@/types/shopify';
 
 interface RawItem {
@@ -20,7 +21,32 @@ interface EnhancedItem extends RawItem {
   metadata?: Record<string, unknown>;
 }
 
+/** Re-derives gPrice for cost-type items by fetching the referenced sub-cost. */
+async function enhanceCostTypeItem(item: RawItem): Promise<EnhancedItem> {
+  if (!item.variantId) {
+    return { ...item, unitPrice: null, amountPrice: null, gPrice: null };
+  }
+  try {
+    const subCost = await prisma.cost.findUnique({
+      where: { id: item.variantId },
+      include: { prices: { orderBy: { rank: 'asc' } } },
+    });
+    if (!subCost) return { ...item, unitPrice: null, amountPrice: null, gPrice: null };
+    const unitPrice =
+      subCost.prices.find((p) => p.isFinalPrice)?.price ?? subCost.prices[0]?.price ?? 0;
+    const finalWeight = subCost.finalWeight ?? 0;
+    const gPrice = finalWeight > 0 ? unitPrice / finalWeight : null;
+    const amountPrice = gPrice != null ? gPrice * item.amount : null;
+    return { ...item, unitPrice, amountPrice, gPrice };
+  } catch {
+    return { ...item, unitPrice: null, amountPrice: null, gPrice: null };
+  }
+}
+
 async function enhanceItem(item: RawItem, config: ShopifyConfig): Promise<EnhancedItem> {
+  if (item.type === 'cost') {
+    return enhanceCostTypeItem(item);
+  }
   if (!item.variantId) {
     return { ...item, unitPrice: null, amountPrice: null, gPrice: null };
   }
@@ -30,7 +56,7 @@ async function enhanceItem(item: RawItem, config: ShopifyConfig): Promise<Enhanc
     if (!p) return { ...item, unitPrice: null, amountPrice: null, gPrice: null };
     const unitPrice = p.unitPrice ?? null;
     const gPrice = p.gPrice ?? null;
-    const amountPrice = unitPrice != null ? unitPrice * item.amount : null;
+    const amountPrice = gPrice != null ? gPrice * item.amount : unitPrice != null ? unitPrice * item.amount : null;
     return {
       ...item,
       image: p.thumbnail ?? item.image,
