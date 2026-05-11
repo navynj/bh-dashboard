@@ -161,5 +161,13 @@ export function mergeProductAndVariantTitle(
 }
 
 export function formatProductLabel(line: PoLineItemView): string {
-  return mergeProductAndVariantTitle(line.productTitle ?? '(untitled)', line.variantTitle);
+  const merged = mergeProductAndVariantTitle(
+    line.productTitle ?? '(untitled)',
+    line.variantTitle,
+  );
+  // Collapse any whitespace (incl. embedded \n / \r from Shopify titles) into
+  // a single space so the PDF renderer matches the HTML table's display: the
+  // browser collapses whitespace in normal flow, but jsPDF's splitTextToSize
+  // treats \n as a hard line break and drops middle content to subsequent rows.
+  return merged.replace(/\s+/g, ' ').trim();
 }
