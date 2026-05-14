@@ -23,6 +23,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { formatItemPrice } from '../mappers/map-purchase-order';
 import type { PoAddress, ShopifyOrderDraft } from '../types';
+import { mergeProductAndVariantTitle } from '../types/purchase-order';
 import {
   formatDefaultShipToLine,
   resolveSeparatePoShippingAddress,
@@ -279,10 +280,10 @@ export function SeparatePoDialog({
                       <div className="flex gap-2 min-w-0">
                         <LineItemThumb
                           imageUrl={item.imageUrl}
-                          label={item.productTitle}
+                          label={mergeProductAndVariantTitle(item.productTitle, item.variantTitle)}
                         />
                         <div className="text-[11px] leading-tight min-w-0 flex-1">
-                          {item.productTitle}
+                          {mergeProductAndVariantTitle(item.productTitle, item.variantTitle)}
                         </div>
                       </div>
                     </TableCell>

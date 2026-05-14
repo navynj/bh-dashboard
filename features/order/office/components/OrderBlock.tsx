@@ -698,7 +698,7 @@ export function OrderBlock({
                       shopifyProductGid={(row as PrePoLineDraft).shopifyProductGid}
                       shopifyVariantGid={(row as PrePoLineDraft).shopifyVariantGid}
                       imageUrl={row.imageUrl}
-                      label={row.productTitle}
+                      label={mergeProductAndVariantTitle(row.productTitle, (row as PrePoLineDraft).variantTitle)}
                       sku={row.sku}
                     />
                   )}

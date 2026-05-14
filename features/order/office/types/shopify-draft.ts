@@ -12,6 +12,7 @@ export type PrePoLineDraft = {
   imageUrl?: string | null;
   sku: string | null;
   productTitle: string;
+  variantTitle?: string | null;
   itemPrice: string | null;
   /** Variant unit cost from Shopify inventory, when synced. */
   itemCost?: string | null;
