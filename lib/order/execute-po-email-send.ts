@@ -5,6 +5,7 @@ import { sendPoEmail } from '@/lib/order/send-po-email';
 import { getPoEmailOutboundSettings } from '@/lib/order/po-email-settings';
 import type { PoPdfInput, KoreanFonts } from '@/features/order/office/utils/purchase-order-pdf';
 import { buildPoPdfBuffer } from '@/features/order/office/utils/purchase-order-pdf';
+import { mergeProductAndVariantTitle } from '@/features/order/office/types/purchase-order';
 import { parseSupplierOrderChannelPayload } from '@/lib/order/supplier-order-channel';
 import type { EmailOrderChannelPayload, SupplierEmailContact } from '@/lib/order/supplier-order-channel';
 
@@ -116,13 +117,16 @@ export async function executePurchaseOrderOutboundEmailSend(
     const srcOrder = soli ? orderById.get(soli.orderId) : undefined;
     const orderName = srcOrder?.name ?? firstOrder?.name ?? '—';
     const title = li.productTitle ?? '(untitled)';
-    const description = li.variantTitle ? `${title} — ${li.variantTitle}` : title;
+    const description = mergeProductAndVariantTitle(title, li.variantTitle);
     const supplierRef = (li.supplierRef?.trim() || li.sku?.trim() || '—').slice(0, 40);
+    const rawCost = soli?.unitCost ?? null;
+    const parsedCost = rawCost != null ? parseFloat(String(rawCost)) : NaN;
     return {
       shopifyOrderNumber: orderName,
       description,
       supplierRef,
       quantity: li.quantity,
+      itemCost: Number.isFinite(parsedCost) ? parsedCost : null,
       note: li.note?.trim() ?? '',
     };
   });

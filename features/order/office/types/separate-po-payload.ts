@@ -3,6 +3,7 @@ import type { PoAddress } from './purchase-order';
 export type SeparatePoLinePayload = {
   sku: string | null;
   productTitle: string;
+  variantTitle?: string | null;
   quantity: number;
   itemPrice: number | null;
   isCustom?: boolean;

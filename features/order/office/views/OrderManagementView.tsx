@@ -957,6 +957,7 @@ export function OrderManagementView({
             {
               sku: li.sku,
               productTitle: li.productTitle,
+              variantTitle: li.variantTitle ?? null,
               quantity: li.quantity,
               itemPrice: li.itemPrice ? parseFloat(li.itemPrice) : null,
               supplierRef: supplierRefFromSku(li.sku),
@@ -1118,6 +1119,7 @@ export function OrderManagementView({
             lineItems: payload.lineItems.map((li) => ({
               sku: li.sku,
               productTitle: li.productTitle,
+              variantTitle: li.variantTitle ?? null,
               quantity: li.quantity,
               itemPrice: li.itemPrice,
               supplierRef: supplierRefFromSku(li.sku),

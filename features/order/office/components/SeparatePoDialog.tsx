@@ -68,6 +68,7 @@ type Props = {
     lineItems: {
       sku: string | null;
       productTitle: string;
+      variantTitle?: string | null;
       quantity: number;
       itemPrice: number | null;
       isCustom?: boolean;
@@ -203,6 +204,7 @@ export function SeparatePoDialog({
         {
           sku: li.sku,
           productTitle: li.productTitle,
+          variantTitle: li.variantTitle ?? null,
           quantity: quantities[idx],
           itemPrice: li.itemPrice ? parseFloat(li.itemPrice) : null,
           isCustom: !li.shopifyVariantGid,
