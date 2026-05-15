@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { YmdDateInput } from '@/components/ui/ymd-date-input';
@@ -34,6 +34,24 @@ import {
 } from '../utils/vancouver-datetime';
 import { LineItemThumb } from './LineItemThumb';
 import { DeliveryLocationPresetPicker } from './DeliveryLocationPresetPicker';
+
+function parseMoney(s: string | null | undefined): number {
+  if (s == null || s === '') return 0;
+  const n = parseFloat(String(s).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatMoney(amount: number, currency = 'CAD'): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+}
 
 type Props = {
   order: ShopifyOrderDraft;
@@ -141,6 +159,24 @@ export function SeparatePoDialog({
   }, [open, order, defaultPoNumber]);
 
   const anyIncluded = included.some(Boolean);
+
+  const totalCost = useMemo(() => {
+    return order.lineItems.reduce((sum, item, idx) => {
+      if (!included[idx]) return sum;
+      const cost = parseMoney(item.itemCost ?? null);
+      const qty = quantities[idx] ?? 0;
+      return sum + cost * qty;
+    }, 0);
+  }, [order.lineItems, included, quantities]);
+
+  const totalPrice = useMemo(() => {
+    return order.lineItems.reduce((sum, item, idx) => {
+      if (!included[idx]) return sum;
+      const price = parseMoney(item.itemPrice);
+      const qty = quantities[idx] ?? 0;
+      return sum + price * qty;
+    }, 0);
+  }, [order.lineItems, included, quantities]);
 
   function handleToggle(idx: number) {
     setIncluded((prev) => {
@@ -434,6 +470,25 @@ export function SeparatePoDialog({
               placeholder="Optional"
               className="min-h-14 resize-none text-sm"
             />
+          </div>
+
+          {/* Totals */}
+          <div className="rounded-lg border bg-muted/30 px-3 py-2.5 space-y-1">
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+              Total (included items)
+            </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-muted-foreground">Price</span>
+              <span className="font-medium tabular-nums">
+                {formatMoney(totalPrice, order.currencyCode?.trim() || 'CAD')}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-muted-foreground">Cost</span>
+              <span className="font-medium tabular-nums">
+                {formatMoney(totalCost, order.currencyCode?.trim() || 'CAD')}
+              </span>
+            </div>
           </div>
 
           {/* Actions */}
